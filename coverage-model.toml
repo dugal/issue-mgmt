@@ -1,0 +1,34 @@
+# coverage-model configuration -- drafted by `coverage-model adopt`.
+#
+# Inferred from this project's Makefile coverage block + repo layout. Review
+# each measure, then validate with `coverage-model check`. The native pieces
+# the enabled measures reference (.coveragerc, requirements-dev.txt, the
+# [REQ:] / `# COVERS:` tags) stay yours -- adopt does not generate them.
+
+[measures.spec]
+requirements = "docs/requirements.md"
+tests = ["tests/verification/*.sh"]
+
+[measures.black-box]
+enabled = true
+coveragerc = ".coveragerc"
+verification = ["tests/verification/*.sh"]
+# lib.sh is a library, not a test. im-230-leak-gate.sh drives publish-source
+# (release-mgmt) against a throwaway fixture repo -- it exercises the publish
+# leak gate, not the issue CLI, so it contributes no issue-mgmt coverage and
+# must not add foreign python3 instrumentation to the measure.
+skip = ["lib.sh", "im-230-leak-gate.sh"]
+# im-029-homebrew.sh Block 5 instruments tools copied into an ephemeral mktemp
+# install prefix it deletes on exit; those paths match the loose .coveragerc
+# include but vanish before `coverage json`. ignore_errors skips the phantom
+# entries at report time instead of aborting the whole measure.
+ignore_errors = true
+
+[measures.unit]
+enabled = true
+# Dedicated rc (not inline source/branch) because the unit measure must
+# `omit` the lib/cli/ CLI surface, which inline config cannot express
+# lib/cli/ is black-box territory; see .coveragerc-unit (v3.0.0
+# consolidation).
+coveragerc = ".coveragerc-unit"
+command = ["-m", "unittest", "discover", "tests/"]

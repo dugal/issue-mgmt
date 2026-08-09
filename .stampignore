@@ -1,0 +1,4 @@
+# Paths excluded from stamp-version (union with built-in skips).
+# .venv-dev is the auto-bootstrapped dev-only venv; the
+# built-in skip list covers .venv but not this name.
+.venv-dev/

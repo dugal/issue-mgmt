@@ -1,0 +1,29 @@
+# Unit (white-box) measure rc -- referenced by coverage-model.toml
+# [measures.unit].coveragerc (v3.0.0).
+#
+# The unit measure covers the internal lib/ helpers. lib/cli/ is the
+# consolidated CLI *surface* (per-verb handlers ported from the flat
+# scripts/ binaries); like scripts/ has always been, it is BLACK-BOX
+# territory -- exercised end-to-end by tests/verification/*.sh through the
+# `issue` dispatcher, and listed in `.coveragerc` (the black-box rc), not
+# here. Omitting it keeps the unit measure meaning "internal lib logic" and
+# stops the CLI surface from diluting the white-box percentage.
+#
+# reindex_core.py is NOT omitted: it is a genuine internal helper (the
+# in-process reindex generator) with its own unit tests in
+# tests/test_reindex_core.py.
+#
+# This dedicated rc exists because coverage-model's inline
+# [measures.unit] source/branch cannot express `omit`; the
+# `coveragerc` key is the sanctioned escape hatch for exactly this.
+
+[run]
+branch = True
+source =
+    lib
+omit =
+    lib/cli/*
+    */lib/cli/*
+
+[report]
+show_missing = True

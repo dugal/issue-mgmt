@@ -1,0 +1,56 @@
+[run]
+branch = True
+parallel = True
+# Black-box (CLI/conformance) measure -- referenced by coverage-model.toml
+# [measures.black-box].coveragerc. Tracks lib/ helpers, the consolidated
+# `issue` dispatcher entrypoint + its per-verb handlers under lib/cli/, and
+# the Python CLI binaries in scripts/.
+#
+# Rewritten for the v3.0.0 CLI consolidation: added the
+# consolidated `issue` entrypoint and `lib/cli/*.py`, and reconciled the
+# stale omission of the Python binaries issue-dep, issue-ready, and
+# issue-reap-expired-claims (added post-v2.4.1 but never listed here).
+#
+# Bash binaries (new-issue.sh, reindex-issues.sh, issue-mgmt-install-skills,
+# issue-mgmt-selftest) are not coverable by coverage.py and stay excluded;
+# gen-formula is internal build tooling and not part of the CLI contract.
+#
+# Transitional coverage of lib/cli/ (WP0->WP10): the verification suite runs
+# the FLAT binaries by default, so lib/cli/ (reached only through the `issue`
+# dispatcher) shows low black-box coverage until the suite runs with
+# ISSUE_MGMT_CLI_STYLE=consolidated -- the flip WP10 makes once every verb is
+# ported and the flat binaries are tombstoned. Listing lib/cli/ here now fixes
+# the denominator once so later WPs do not each shift it; the
+# ramp to full coverage is expected and is documented in the v3.0.0 release
+# notes.
+#
+# Patterns are prefixed with `*/` so they match the absolute paths that
+# subprocess coverage records when verification scripts run from a temp
+# `cd $tmpdir` cwd. A bare `scripts/...` pattern is resolved relative to
+# the subprocess's cwd, so subprocess traces produce empty data files
+# whenever the verification script chdirs out of the worktree.
+include =
+    */lib/*.py
+    */lib/cli/*.py
+    */scripts/issue
+    */scripts/activity-issues
+    */scripts/edit-issue
+    */scripts/init-issue-project
+    */scripts/init-issue-store
+    */scripts/issue-dep
+    */scripts/issue-history
+    */scripts/issue-note
+    */scripts/issue-ready
+    */scripts/issue-reap-expired-claims
+    */scripts/issue-show
+    */scripts/issue-snapshot
+    */scripts/migrate-to-store
+    */scripts/search-history
+    */scripts/search-issues
+    */scripts/show-issue-at
+    */scripts/transition-issue
+    */scripts/validate-issue
+
+[report]
+show_missing = True
+skip_covered = False

@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""
+gen-formula — generate a Homebrew formula for issue-mgmt
+
+Usage: gen-formula <tarball> [--url URL]
+
+Accepts the versioned tarball path, computes its sha256, and writes an
+issue-mgmt.rb Homebrew formula to stdout.
+
+Examples:
+  gen-formula dist/issue-mgmt-v1.1.tar.gz
+  gen-formula dist/issue-mgmt-v1.1.tar.gz > dist/issue-mgmt.rb
+"""
+
+import hashlib
+import os
+import sys
+
+# The single `issue` dispatcher is the only installed binary.
+DISPATCHER = "issue"
+
+BIN_ENTRIES = [DISPATCHER]
+
+# Skill files staged into <pkgshare>/skills/<name>.md by the Makefile tarball recipe.
+# Names match the canonical (non-dev) skill names that issue-mgmt-install-skills
+# copies into ~/.claude/skills/<name>/SKILL.md.
+SKILL_NAMES = [
+    "issue-activity",
+    "issue-block",
+    "issue-cancel",
+    "issue-complete",
+    "issue-create",
+    "issue-edit",
+    "issue-history",
+    "issue-list",
+    "issue-search",
+    "issue-search-history",
+    "issue-note",
+    "issue-dep",
+    "issue-show",
+    "issue-show-at",
+    "issue-start",
+]
+
+FORMULA_TEMPLATE = """\
+# frozen_string_literal: true
+
+class IssueMgmt < Formula
+  desc "File-based issue tracking CLI and Claude Code skill bundle"
+  homepage "https://github.com/dugal/homebrew-tap"
+  url "{url}"
+  sha256 "{sha256}"
+  version "{version}"
+  license "MIT"
+
+  depends_on "python3"
+
+  def install
+{bin_install_lines}
+    # Python helper modules imported by the bin scripts via
+    # Path(__file__).resolve().parent.parent / "lib" -- installing the
+    # directory at <prefix>/lib keeps that resolution working post-install.
+    prefix.install "lib"
+    (share/"issue-mgmt").install "ISSUE-TEMPLATE.md"
+    (share/"issue-mgmt").install "CHEATSHEET.md"
+    (share/"issue-mgmt").install "store-template"
+{skill_install_lines}
+    doc.install "CHANGELOG.md"
+    doc.install "README.md"
+  end
+
+  def caveats
+    <<~EOS
+      Claude Code skills were installed to:
+        #{{share}}/issue-mgmt/skills/
+
+      To install them into Claude Code, run:
+        issue admin install-skills
+
+      This copies each skill to ~/.claude/skills/<name>/SKILL.md and makes
+      the /issue-* slash commands available in Claude Code sessions.
+    EOS
+  end
+
+  test do
+    system "#{{bin}}/issue", "--version"
+    system "#{{bin}}/issue", "--help"
+  end
+end
+"""
+
+
+def sha256_of_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        sys.exit(0)
+
+    url_override = None
+    positional = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--url":
+            if i + 1 >= len(args):
+                print("Error: --url requires a URL argument", file=sys.stderr)
+                sys.exit(1)
+            url_override = args[i + 1]
+            i += 2
+        else:
+            positional.append(args[i])
+            i += 1
+
+    if len(positional) != 1:
+        print(f"Error: expected 1 argument, got {len(positional)}", file=sys.stderr)
+        print("Usage: gen-formula <tarball> [--url URL]", file=sys.stderr)
+        sys.exit(1)
+
+    tarball = positional[0]
+    if not os.path.isfile(tarball):
+        print(f"Error: file not found: {tarball}", file=sys.stderr)
+        sys.exit(1)
+
+    if url_override is not None:
+        url = url_override
+    else:
+        if os.path.isabs(tarball):
+            abs_path = tarball
+        else:
+            logical_cwd = os.environ.get("PWD", os.getcwd())
+            abs_path = os.path.join(logical_cwd, tarball)
+        url = f"file://{abs_path}"
+    digest = sha256_of_file(tarball)
+
+    # Extract version from tarball filename (e.g. issue-mgmt-v1.1.tar.gz -> 1.1)
+    basename = os.path.basename(tarball)
+    version = basename.replace("issue-mgmt-", "").replace(".tar.gz", "").lstrip("v")
+
+    bin_install_lines = "\n".join(
+        f'    bin.install "{name}"' for name in BIN_ENTRIES
+    )
+    skill_install_lines = "\n".join(
+        f'    (share/"issue-mgmt/skills").install "skills/{name}.md"'
+        for name in SKILL_NAMES
+    )
+
+    print(
+        FORMULA_TEMPLATE.format(
+            url=url,
+            sha256=digest,
+            version=version,
+            bin_install_lines=bin_install_lines,
+            skill_install_lines=skill_install_lines,
+        ),
+        end="",
+    )
+
+
+if __name__ == "__main__":
+    main()

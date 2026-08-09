@@ -1,0 +1,16 @@
+.DS_Store
+*.swp
+dist/
+.worktrees/
+.locks/
+__pycache__/
+*.pyc
+.coverage
+.coverage.*
+htmlcov-*/
+coverage.xml
+/coverage/
+.venv-dev/
+.coverage-system-ready
+.claude/*.lock
+.claude/issue-mgmt-sessions/
