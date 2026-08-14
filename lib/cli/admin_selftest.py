@@ -31,7 +31,7 @@ from pathlib import Path
 
 from . import discover
 
-VERSION = "v3.3.0"
+VERSION = "v3.3.1"
 
 _USAGE = """\
 Usage: issue-mgmt-selftest [--help|--version]

@@ -10,7 +10,7 @@
 #      (subdirectories, renamed files, skill staging, etc.).
 #   3. Write scripts/gen-formula to emit your Homebrew formula on stdout.
 
-# Makefile-template-schema: 16
+# Makefile-template-schema: 18
 
 # VERSION resolution: three-case ladder, picked in order.
 #   1. HEAD_TAG        -- HEAD is exactly on a tag (production build).
@@ -30,6 +30,14 @@ VERSION         := $(or $(HEAD_TAG),$(PENDING_RELEASE),dev-$(DEV_VERSION))
 DISTDIR  := dist
 TARBALL  := $(DISTDIR)/issue-mgmt-$(VERSION).tar.gz
 FORMULAS := $(DISTDIR)/issue-mgmt.rb
+
+# Asset-from-mirror (schema 18, RM-147): the public release ASSET is
+# built from the `publish-source` mirror, not the internal tree, so the
+# installable tarball matches the scrubbed public repo (and its formula
+# sha256). release-* set ASSET=$(MIRRORDIR)/$(TARBALL); publish-* stay
+# independently callable (bare `make publish-github` uploads $(TARBALL)).
+MIRRORDIR := $(DISTDIR)/mirror
+ASSET     ?= $(TARBALL)
 
 # Staged promotion pipeline (schema 16): an optional `promote:` block
 # layers a staging -> gate -> production pipeline over the per-backend blocks,
@@ -229,7 +237,7 @@ publish-github: $(FORMULAS)
 	  echo "error: no 'github' remote configured -- run: git remote add github <url> (or: publish-source --init)"; \
 	  exit 1; \
 	}
-	gh release create $(VERSION) $(TARBALL) \
+	gh release create $(VERSION) $(ASSET) \
 	  --target main \
 	  --title "$(VERSION)" \
 	  --notes "Release $(VERSION)" \
@@ -238,12 +246,12 @@ publish-github: $(FORMULAS)
 	  bn=$$(basename $$f); \
 	  name=$${bn%.rb}; \
 	  if [ $(words $(FORMULAS)) -gt 1 ]; then \
-	    scripts/gen-formula --formula $$name $(TARBALL) \
-	      --url "https://github.com/$(GITHUB_REPO)/releases/download/$(VERSION)/$(notdir $(TARBALL))" \
+	    scripts/gen-formula --formula $$name $(ASSET) \
+	      --url "https://github.com/$(GITHUB_REPO)/releases/download/$(VERSION)/$(notdir $(ASSET))" \
 	      > $$f; \
 	  else \
-	    scripts/gen-formula $(TARBALL) \
-	      --url "https://github.com/$(GITHUB_REPO)/releases/download/$(VERSION)/$(notdir $(TARBALL))" \
+	    scripts/gen-formula $(ASSET) \
+	      --url "https://github.com/$(GITHUB_REPO)/releases/download/$(VERSION)/$(notdir $(ASSET))" \
 	      > $$f; \
 	  fi; \
 	  publish-formula --formula $$f --version-string $(VERSION); \
@@ -252,9 +260,13 @@ publish-github: $(FORMULAS)
 # One-command full GitHub release: source mirror + tagged release + formula
 # push to GitHub tap. Does not run `make install` -- post-release installation
 # stays a manual choice.
-release-github: stamp dist
+release-github: stamp
+	publish-source --detect-leaks --strict-leaks
+	rm -rf $(MIRRORDIR)
+	publish-source --export $(MIRRORDIR)
+	$(MAKE) -C $(MIRRORDIR) dist VERSION=$(VERSION)
 	publish-source
-	$(MAKE) publish-github
+	$(MAKE) publish-github ASSET=$(MIRRORDIR)/$(TARBALL)
 
 # Gitea (NAS) distribution: create a release on the Gitea `origin` with the
 # tarball attached, regenerate each formula with the Gitea download URL, and
@@ -279,14 +291,14 @@ release-github: stamp dist
 publish-gitea: $(FORMULAS)
 	@command -v gitea-release >/dev/null 2>&1 || \
 	  { echo 'error: gitea-release not on PATH; install with: brew install dugal/tap/release-mgmt'; exit 1; }
-	URL=$$(gitea-release --tag $(VERSION) --asset $(TARBALL)) || exit 1; \
+	URL=$$(gitea-release --tag $(VERSION) --asset $(ASSET)) || exit 1; \
 	for f in $(FORMULAS); do \
 	  bn=$$(basename $$f); \
 	  name=$${bn%.rb}; \
 	  if [ $(words $(FORMULAS)) -gt 1 ]; then \
-	    scripts/gen-formula --formula $$name $(TARBALL) --url "$$URL" > $$f; \
+	    scripts/gen-formula --formula $$name $(ASSET) --url "$$URL" > $$f; \
 	  else \
-	    scripts/gen-formula $(TARBALL) --url "$$URL" > $$f; \
+	    scripts/gen-formula $(ASSET) --url "$$URL" > $$f; \
 	  fi; \
 	  if grep -Eq 'url[[:space:]]+"file://' $$f; then \
 	    echo "error: refusing to publish $$f with a file:// URL"; exit 1; \
@@ -297,8 +309,11 @@ publish-gitea: $(FORMULAS)
 # One-command full Gitea release: tagged release + tarball attach + formula
 # push to the Gitea tap. No source mirror (source already on the NAS Gitea).
 # Does not run `make install`.
-release-gitea: stamp dist
-	$(MAKE) publish-gitea
+release-gitea: stamp
+	rm -rf $(MIRRORDIR)
+	publish-source --export $(MIRRORDIR)
+	$(MAKE) -C $(MIRRORDIR) dist VERSION=$(VERSION)
+	$(MAKE) publish-gitea ASSET=$(MIRRORDIR)/$(TARBALL)
 
 # --- Staged promotion (schema 16) ---
 #

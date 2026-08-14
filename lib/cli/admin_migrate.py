@@ -103,7 +103,7 @@ import concurrency  # noqa: E402
 import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 
-VERSION = "v3.3.0"
+VERSION = "v3.3.1"
 
 CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
 

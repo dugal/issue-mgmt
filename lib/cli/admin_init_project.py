@@ -71,7 +71,7 @@ import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 import repo as repo_lib  # noqa: E402
 
-VERSION = "v3.3.0"
+VERSION = "v3.3.1"
 
 PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
 RESERVED_PREFIXES = {"ISSUE"}

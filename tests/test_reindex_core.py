@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """Unit tests for the in-process reindex seam.
 
-lib/reindex_core.py is the importable INDEX.md generator extracted from the
-embedded Python in scripts/reindex-issues.sh, and lib/reindex.py's
-reindex_after_mutation() is the in-process seam the consolidated mutating
-verbs call instead of subprocessing a sibling binary (killing the
-failure class structurally).
+lib/reindex_core.py is the importable INDEX.md generator, and lib/reindex.py's
+reindex_after_mutation() is the best-effort in-process seam the consolidated
+mutating verbs call instead of subprocessing a sibling binary (killing the
+sibling-name-mismatch failure class structurally).
 
 Checked here: the seam updates INDEX.md in-process and honors the commit
 contract (suppress_commit True/False), including the legacy single-dir path.
 
-The earlier byte-identity-vs-bash guarantee is retired -- the
-flat `reindex-issues.sh` bash generator is now a tombstone stub, so
-`reindex_core` is the SOLE INDEX.md generator and there is nothing left to
-diff it against. End-to-end INDEX freshness is asserted by the verification
-suite (new-issue-store-mode.sh etc.) against the consolidated surface.
+`reindex_core` is the SOLE INDEX.md generator -- there is no bash twin left to
+diff byte-identity against. End-to-end INDEX freshness is asserted by the
+verification suite (new-issue-store-mode.sh etc.) against the consolidated
+surface.
 
 Run:
     python3 -m unittest tests.test_reindex_core -v

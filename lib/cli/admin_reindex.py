@@ -1,15 +1,9 @@
 """`issue admin reindex` -- regenerate INDEX.md from issue frontmatter.
 
-Dispatcher port of the flat `reindex-issues.sh` bash binary,
-built on the in-process reindex seam ``lib/reindex_core.py`` that WP0
-extracted for exactly this handoff. There is no sibling-binary subprocess
-and no ``.sh`` name resolution, which is the failure class killed
-structurally rather than patched.
-
-The rendered INDEX output, the store-vs-legacy dispatch, the ``--all`` walk,
-and the summary stdout line are byte-for-byte identical to the bash binary
-(the bash copy still backs the flat `reindex-issues` until WP7 tombstones
-it; both must match).
+Thin CLI wrapper over the in-process reindex core ``lib/reindex_core.py``:
+it resolves store-vs-legacy dispatch, the ``--all`` walk, and the summary
+stdout line, then delegates the rendering + commit to the core. There is no
+sibling-binary subprocess and no ``.sh`` name resolution.
 """
 
 from __future__ import annotations
@@ -71,7 +65,7 @@ def register(subparsers):
     return p
 
 
-# also in the flat reindex-issues.sh -- keep in sync
+# --all walk root: workspace root for the legacy multi-.issues sweep.
 def _workspace_root() -> Path:
     env = os.environ.get("ISSUE_MGMT_ROOT")
     if env:

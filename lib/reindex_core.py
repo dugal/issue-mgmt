@@ -1,22 +1,16 @@
 """In-process INDEX.md regeneration core.
 
-Importable store/legacy reindex logic extracted verbatim from the embedded
-Python in ``scripts/reindex-issues.sh`` so mutating verbs -- and the future
-``issue admin reindex`` port (WP5) -- regenerate the index by a direct
-in-process call. There is no sibling-binary subprocess and no name
-resolution, which is the failure class (installed binaries silently
-skipping reindex because the sibling name did not match) killed structurally
-rather than patched.
+The single source of INDEX.md regeneration: the store/legacy reindex logic
+that every mutating verb calls in-process (via
+``reindex.reindex_after_mutation``) and that ``issue admin reindex`` calls
+directly. There is no sibling-binary subprocess and no name resolution,
+which structurally eliminates the failure class where an installed binary
+silently skipped reindex because the sibling name did not match.
 
-Output is byte-for-byte identical to the bash-embedded generator: same
-``STATUS_ORDER``, table shapes, changelog-column rule, header comment,
+Renders INDEX.md deterministically from frontmatter: ``STATUS_ORDER`` group
+order, table shapes, the changelog-column rule, the header comment,
 ``atomic_write`` for the store path, and the store index-lock + per-mutation
 ``reindex INDEX.md`` commit semantics.
-
-NOTE (transitional, WP0->WP5): the bash generator in ``reindex-issues.sh``
-still backs the flat ``reindex-issues`` binary and ``--all``; keep the two in
-sync until WP5 ports ``issue admin reindex`` onto this core and tombstones the
-bash copy.
 """
 
 from __future__ import annotations

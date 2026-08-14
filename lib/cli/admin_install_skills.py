@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "v3.3.0"
+VERSION = "v3.3.1"
 
 _USAGE = """\
 Usage: issue-mgmt-install-skills [--help|--version]

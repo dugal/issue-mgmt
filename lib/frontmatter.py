@@ -32,17 +32,16 @@ section they touch.
 ## Internal API
 
 The structural helpers below are part of the module's public surface but are
-consumed only by `scripts/edit-issue`'s structural-op dispatch
-(--add-section / --rename-section / --remove-section / --move-section) and by
-each other within this module. They are not called from `scripts/new-issue.sh`,
-`scripts/reindex-issues.sh`, or any other CLI binary. Their CLI coverage in
+consumed only by `lib/editcore.py`'s structural-op dispatch
+(--add-section / --rename-section / --remove-section / --move-section, exposed
+via `issue edit`) and by each other within this module. Their CLI coverage in
 `make coverage-black-box` is shallow when `tests/verification/im-061-structural.sh`
 contributes no instrumented runs (a separate CLI-test instrumentation gap,
 not a dead-code finding). Audited (bucket-3 walkthrough):
 
 - list_section_names -- called by add_section, move_section, and tests
 - add_section, rename_section, remove_section, move_section -- called by
-  scripts/edit-issue (structural-op dispatch)
+  lib/editcore.py (structural-op dispatch)
 - _build_section_block -- internal helper for add_section
 - _normalize_extracted_block -- internal helper for move_section
 - _ensure_trailing_blank -- internal helper for add_section and move_section

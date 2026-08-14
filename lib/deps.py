@@ -27,7 +27,7 @@ import re
 
 import idresolve
 
-# The four dependency kinds the interchange schema closes on.
+# The four dependency kinds issue-mgmt recognizes.
 # `blocks` is the sole ordering relation (the only kind that gates
 # readiness); the other three are provenance/containment metadata.
 IM_DEP_KINDS = ("blocks", "parent-child", "related", "discovered-from")

@@ -56,10 +56,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "v3.3.0"
+VERSION = "v3.3.1"
 
 GITIGNORE_BODY = ".locks/\n.DS_Store\n"
-INDEX_BODY = ""  # reindex-issues populates on first run
+INDEX_BODY = ""  # the reindex populates it on first run
 
 SCAFFOLD_FILES = ("README.md", "LAYOUT.md")
 

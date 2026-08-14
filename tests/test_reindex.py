@@ -1,27 +1,21 @@
 #!/usr/bin/env python3
-"""Unit tests for lib/reindex.py (sibling-regenerator resolution).
+"""Unit tests for lib/reindex.py's in-process reindex seam.
 
-resolve_reindex() picks the sibling reindex script from a bin directory,
-preferring the suffixed dev-tree name (reindex-issues.sh) over the
-installed no-suffix name (reindex-issues). run_reindex() invokes it, or
-warns on stderr when neither name is present (a broken install, not a
-transient reindex hiccup).
-
-The subprocess side is exercised against a tiny executable stub so the
-env-var (suppress_commit) and stdout/stderr-routing (to_stderr) contracts
-are checked without a real store. End-to-end installed-layout behavior
-(mutate-then-INDEX against a synthetic install prefix) lives in
-tests/verification/im-029-homebrew.sh Block 5.
+reindex_after_mutation() is the best-effort wrapper the consolidated
+mutating verbs call: it dispatches store-vs-legacy to reindex_core, routes
+the informational notice to stdout (or stderr for --json purity), and
+swallows any reindex error so a hiccup cannot mask a mutation that already
+succeeded. reindex_core itself is mocked here -- this exercises the seam's
+dispatch/routing/error contract, not the generator.
 
 Run:
     python3 -m unittest tests.test_reindex -v
 """
 
 import io
-import os
 import sys
-import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -29,108 +23,71 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
 
 import reindex  # noqa: E402
+import reindex_core  # noqa: E402  (patched per-test; import ensures it is loaded)
 
 
-def _touch_exec(path):
-    path.write_text("#!/usr/bin/env bash\n")
-    path.chmod(0o755)
+class TestReindexAfterMutation(unittest.TestCase):
+    def test_store_mode_calls_reindex_store_and_notices_on_stdout(self):
+        with mock.patch.object(
+            reindex_core, "reindex_store", return_value="Reindexed INDEX.md"
+        ) as m:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                reindex.reindex_after_mutation("STORE", "ANCHOR")
+        m.assert_called_once_with("STORE", suppress_commit=False)
+        assert out.getvalue() == "Reindexed INDEX.md\n"
 
+    def test_legacy_mode_calls_reindex_legacy_dir_with_anchor(self):
+        # store_root None -> legacy single-dir path keyed on the anchor.
+        with mock.patch.object(
+            reindex_core, "reindex_legacy_dir", return_value="Reindexed legacy"
+        ) as m:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                reindex.reindex_after_mutation(None, "/some/anchor")
+        m.assert_called_once_with("/some/anchor")
+        assert out.getvalue() == "Reindexed legacy\n"
 
-class TestResolveReindex(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.bin_dir = Path(self._tmp.name)
+    def test_suppress_commit_is_forwarded_to_the_store_reindex(self):
+        with mock.patch.object(
+            reindex_core, "reindex_store", return_value="msg"
+        ) as m:
+            with redirect_stdout(io.StringIO()):
+                reindex.reindex_after_mutation(
+                    "STORE", "ANCHOR", suppress_commit=True
+                )
+        m.assert_called_once_with("STORE", suppress_commit=True)
 
-    def tearDown(self):
-        self._tmp.cleanup()
+    def test_to_stderr_routes_the_notice_off_stdout(self):
+        # --json callers pass to_stderr so stdout stays one clean document.
+        with mock.patch.object(
+            reindex_core, "reindex_store", return_value="notice"
+        ):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                reindex.reindex_after_mutation("STORE", "ANCHOR", to_stderr=True)
+        assert out.getvalue() == ""
+        assert err.getvalue() == "notice\n"
 
-    def test_suffixed_dev_name_resolves(self):
-        _touch_exec(self.bin_dir / "reindex-issues.sh")
-        got = reindex.resolve_reindex(self.bin_dir)
-        assert got == self.bin_dir / "reindex-issues.sh"
+    def test_reindex_error_is_swallowed_and_nothing_is_written(self):
+        # A reindex hiccup must not raise (it would mask a mutation that
+        # already committed) and must not emit a partial notice.
+        with mock.patch.object(
+            reindex_core, "reindex_store", side_effect=RuntimeError("boom")
+        ):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                reindex.reindex_after_mutation("STORE", "ANCHOR")
+        assert out.getvalue() == ""
+        assert err.getvalue() == ""
 
-    def test_installed_no_suffix_name_resolves(self):
-        _touch_exec(self.bin_dir / "reindex-issues")
-        got = reindex.resolve_reindex(self.bin_dir)
-        assert got == self.bin_dir / "reindex-issues"
-
-    def test_suffixed_name_preferred_when_both_present(self):
-        _touch_exec(self.bin_dir / "reindex-issues.sh")
-        _touch_exec(self.bin_dir / "reindex-issues")
-        got = reindex.resolve_reindex(self.bin_dir)
-        assert got == self.bin_dir / "reindex-issues.sh"
-
-    def test_neither_name_present_returns_none(self):
-        assert reindex.resolve_reindex(self.bin_dir) is None
-
-
-class TestRunReindex(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.bin_dir = Path(self._tmp.name)
-        # A stub regenerator that records how it was invoked: it appends
-        # its argv (minus argv0) and the suppress-commit env flag to a
-        # marker file, and prints to both streams so to_stderr routing is
-        # observable.
-        self.marker = self.bin_dir / "invoked.log"
-        stub = self.bin_dir / "reindex-issues"
-        stub.write_text(
-            "#!/usr/bin/env bash\n"
-            f'echo "args=$* commit=${{ISSUE_MGMT_NO_AUTOCOMMIT:-unset}}" >> "{self.marker}"\n'
-            'echo "stub-stdout"\n'
-            'echo "stub-stderr" >&2\n'
-        )
-        stub.chmod(0o755)
-        self.stub = stub
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    def test_missing_sibling_warns_on_stderr_and_returns(self):
-        empty = Path(tempfile.mkdtemp())
-        try:
-            err = io.StringIO()
-            with mock.patch.object(sys, "stderr", err):
-                reindex.run_reindex(empty, "STORE", "ANCHOR")
-            assert "reindex-issues regenerator not found" in err.getvalue()
-            assert str(empty) in err.getvalue()
-        finally:
-            os.rmdir(empty)
-
-    def test_store_mode_invokes_regenerator_without_anchor_arg(self):
-        # store_root not None -> full store reindex, no positional arg.
-        reindex.run_reindex(self.bin_dir, "STORE_ROOT", "ANCHOR")
-        logged = self.marker.read_text()
-        assert "args= commit=unset" in logged
-
-    def test_legacy_mode_passes_anchor_as_arg(self):
-        # store_root None -> legacy single-dir target passed positionally.
-        reindex.run_reindex(self.bin_dir, None, "/some/anchor")
-        logged = self.marker.read_text()
-        assert "args=/some/anchor" in logged
-
-    def test_suppress_commit_sets_env_flag(self):
-        reindex.run_reindex(self.bin_dir, "STORE_ROOT", "ANCHOR",
-                            suppress_commit=True)
-        logged = self.marker.read_text()
-        assert "commit=1" in logged
-
-    def test_to_stderr_routes_child_stdout_to_stderr(self):
-        err = io.StringIO()
-        with mock.patch.object(sys, "stderr", err):
-            reindex.run_reindex(self.bin_dir, "STORE_ROOT", "ANCHOR",
-                                to_stderr=True)
-        captured = err.getvalue()
-        # Both the child's stdout and stderr are folded onto our stderr so
-        # a --json caller's stdout stays a single clean JSON document.
-        assert "stub-stdout" in captured
-        assert "stub-stderr" in captured
-
-    def test_oserror_from_subprocess_is_swallowed(self):
-        # A runtime OSError launching the child must not mask a successful
-        # mutation -- run_reindex returns without raising.
-        with mock.patch("reindex.subprocess.run", side_effect=OSError("boom")):
-            reindex.run_reindex(self.bin_dir, "STORE_ROOT", "ANCHOR")
+    def test_empty_message_writes_nothing(self):
+        # reindex_core returns a falsy message (nothing to report).
+        with mock.patch.object(reindex_core, "reindex_store", return_value=""):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                reindex.reindex_after_mutation("STORE", "ANCHOR")
+        assert out.getvalue() == ""
 
 
 if __name__ == "__main__":

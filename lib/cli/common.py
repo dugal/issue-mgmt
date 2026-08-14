@@ -21,7 +21,7 @@ import idresolve  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 
 # Single source of the consolidated CLI version. `stamp-version` rewrites
 # this line at release time (directory-wide scan; see docs/releases.md).
-VERSION = "v3.3.0"
+VERSION = "v3.3.1"
 
 # <PREFIX>-NNN, prefix ^[A-Z][A-Z0-9]{1,7}$. Aliased to the single shared
 # grammar in lib/idresolve.py -- do not re-derive it here.
