@@ -14,6 +14,7 @@ are byte-identical to the flat binary (``lib/concurrency.py`` is untouched).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -23,10 +24,23 @@ import errors  # noqa: E402
 
 from . import common
 
+# The one place this verb names itself; every diagnostic formats through
+# it, so the surface manifest sees one name per verb and
+# `surface.self-naming` is checkable (IM-239).
+PROG = "issue admin snapshot"
+
 VERB = "snapshot"
 TIER = "admin"
 SUMMARY = "run the catchup sweep outside any mutation (recovery / cron)"
 ORDER = 30
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
 
 CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
 
@@ -38,11 +52,21 @@ without a commit. Useful as a belt-and-suspenders cron and as the
 post-hook-rejection manual recovery surface."""
 
 _EPILOG = """\
-Store-root resolution order (same as init-issue-project):
+Store-root resolution order (same as `issue admin init-project`):
   1. --store ROOT
   2. ISSUE_STORE_ROOT environment variable
   3. <cwd>/.issues/.migrated-to-store sentinel (walking up)
   4. ~/.config/issue-mgmt/config, key store_root
+
+JSON mode (--json): exactly one object on stdout, shape
+
+  {"store": PATH, "committed": BOOL, "commit": SHA|null, "paths": [PATH, ...]}
+
+`committed` is false on a clean store (and on a hook-rejected catchup,
+which warns on stderr and leaves the files on disk), in which case
+`commit` is null. `paths` lists the pending tracked store paths the sweep
+found -- empty on a clean store. Every key is present in both outcomes, so
+the shape is a function of argv alone.
 
 Exit codes:
   0  clean store, successful catchup commit, or hook-rejected catchup (warned)
@@ -52,7 +76,9 @@ Exit codes:
 
 Examples:
   issue admin snapshot
+  issue admin snapshot --commit-timeout 30
   issue admin snapshot --store /Users/me/issues-store
+  issue admin snapshot --json
   ISSUE_STORE_ROOT=/path/to/store issue admin snapshot
 """
 
@@ -66,20 +92,20 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     common.add_store_flag(p)
-    p.add_argument(
-        "--timeout",
-        type=float,
-        default=concurrency.DEFAULT_LOCK_TIMEOUT,
-        metavar="SECONDS",
-        help="Store commit lock timeout in seconds.",
+    # IM-242: the flag name follows the lock it bounds. This verb takes only
+    # the store-wide commit lock, so it carries --commit-timeout; the retired
+    # --timeout spelling is accepted (hidden) for one release.
+    common.add_commit_timeout_flag(
+        p, default=concurrency.DEFAULT_LOCK_TIMEOUT, synonyms=("--timeout",)
     )
+    common.add_json_flag(p)
     common.add_version_flag(p)
     p.set_defaults(_run=run)
     return p
 
 
 def _die(msg, code=1):
-    print(f"issue admin snapshot: {msg}", file=sys.stderr)
+    print(f"{PROG}: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
@@ -130,19 +156,40 @@ def _resolve_store_root(cli_store):
 
 
 def run(args) -> int:
+    json_mode = bool(getattr(args, "json_mode", False))
     store_root = _resolve_store_root(args.store)
     if not Path(store_root).is_dir():
         _die(f"store root does not exist or is not a directory: {store_root}")
 
     try:
-        with concurrency.store_commit_lock(store_root, timeout=args.timeout):
+        with concurrency.store_commit_lock(
+                store_root, timeout=args.commit_timeout):
+            # Read the pending set before the sweep claims it, so --json
+            # can name what was swept; the sweep itself returns only a sha.
+            paths = concurrency.pending_tracked_paths(store_root)
             sha = concurrency.catchup_sweep(store_root)
     except errors.ContractError as e:
-        print(e.format_stderr("issue admin snapshot"), file=sys.stderr)
+        print(e.format_stderr(PROG, json_mode=json_mode),
+              file=sys.stderr)
         return e.exit_code
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr("issue admin snapshot"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         return errors.EXIT_PRECONDITION
+
+    if json_mode:
+        json.dump(
+            {
+                "store": str(store_root),
+                "committed": bool(sha),
+                "commit": sha or None,
+                "paths": paths,
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=False,
+        )
+        sys.stdout.write("\n")
+        return 0
 
     if sha:
         print(f"catchup commit: {sha}")

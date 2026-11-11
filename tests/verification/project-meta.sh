@@ -6,6 +6,12 @@
 #   - general.bash-python-stdlib   -- no third-party Python imports
 #   - general.changelog-releases-semver -- CHANGELOG version headings follow
 #                                         vMAJOR.MINOR.PATCH
+#
+# Plus one project policy with no requirement of its own: the public view
+# carries ONE fixture git identity (IM-268). It lives here rather than only
+# in the publish gate because the publish gate is the wrong place to learn
+# it -- a new fixture address sat red on an integration branch for a day
+# with nothing failing locally.
 
 set -u
 
@@ -40,6 +46,11 @@ local_modules |= {
     p.name for p in (root / "lib").iterdir()
     if p.is_dir() and (p / "__init__.py").is_file()
 }
+# Sibling modules under scripts/ are local too: the dev-only surface-manifest
+# entrypoint (scripts/cli-surface) imports scripts/cli_surface.py the same way
+# the dispatcher imports lib/cli (IM-245). A scripts/-local module is as local
+# as a lib/-local one; the check is for third-party PACKAGES.
+local_modules |= {p.stem for p in (root / "scripts").glob("*.py")}
 
 # Python 3.10+ exposes the authoritative stdlib set.
 stdlib_names = getattr(sys, "stdlib_module_names", None)
@@ -129,27 +140,47 @@ echo "[3] skill set matches the documented boundary"
 EXPECTED_SKILLS="issue-activity issue-block issue-cancel issue-complete issue-create issue-dep issue-edit issue-history issue-list issue-note issue-search issue-search-history issue-show issue-show-at issue-start"
 ACTUAL_SKILLS=$(ls -d "$PROJECT_ROOT"/.claude/skills/*-dev 2>/dev/null \
                 | xargs -n1 basename | sed 's/-dev$//' | sort | tr '\n' ' ' | sed 's/ $//')
+EXPECTED_SKILL_COUNT=$(printf '%s\n' $EXPECTED_SKILLS | wc -l | tr -d '[:space:]')
 if [ "$ACTUAL_SKILLS" = "$EXPECTED_SKILLS" ]; then
     # COVERS: dist.skills-one-per-cli
-    pass "skill set is exactly the 15 live-state + history skills"
+    pass "skill set is exactly the $EXPECTED_SKILL_COUNT live-state + history skills"
 else
     fail "skill set drifted from the documented boundary:"
     echo "    expected: $EXPECTED_SKILLS"
     echo "    actual:   $ACTUAL_SKILLS"
 fi
 
-NO_SKILL_TOOLS="reindex-issues validate-issue issue-snapshot init-issue-project init-issue-store migrate-to-store issue-ready issue-reap-expired-claims issue-mgmt-selftest issue-mgmt-install-skills"
-LEAKED=""
-for tool in $NO_SKILL_TOOLS; do
-    if [ -d "$PROJECT_ROOT/.claude/skills/$tool-dev" ]; then
-        LEAKED="$LEAKED $tool"
-    fi
-done
-if [ -z "$LEAKED" ]; then
-    # COVERS: dist.skills-one-per-cli
-    pass "no skill exists for the exempt maintenance/utility binaries"
+# The former NO_SKILL_TOOLS loop was deleted in IM-264. It probed for
+# .claude/skills/<name>-dev directories named after the retired FLAT
+# binaries (reindex-issues, init-issue-project, ...), but post-v3.0.0 skills
+# are named issue-<verb>-dev, so eight of its ten entries asked whether a
+# directory the project cannot produce exists -- a vacuous PASS. It was also
+# redundant: the set-equality check above is exact, so a skill added for ANY
+# verb, exempt or not, already fails it. A mapping-based lint (does each
+# shipped skill name a verb that still exists?) needs the skill-to-verb
+# mapping IM-265 builds, and belongs there rather than in a second
+# mechanism here.
+
+# ---------------------------------------------------------------------------
+# Check 4: the public view carries one fixture git identity (IM-268).
+#
+# Delegated to scripts/check-fixture-emails, which derives the shared
+# address from tests/fixture_identity.py and the allowlist from
+# .publish.yaml, so neither side of the comparison is restated here. Its
+# gate-bites cases are pinned in tests/test_fixture_identity.py.
+#
+# No `# COVERS:` marker: this is project policy with no requirements.md
+# entry, and inventing a tag with no `[REQ:]` behind it would register as a
+# coverage-spec orphan.
+# ---------------------------------------------------------------------------
+echo
+echo "[4] one fixture git identity across the public view"
+
+if FIXTURE_OUT=$("$PROJECT_ROOT/scripts/check-fixture-emails" 2>&1); then
+    pass "${FIXTURE_OUT#check-fixture-emails: }"
 else
-    fail "exempt binaries unexpectedly have skills:$LEAKED (update requirements.md if deliberate)"
+    fail "fixture git identities have drifted:"
+    printf '%s\n' "$FIXTURE_OUT" | sed 's/^/    /'
 fi
 
 echo

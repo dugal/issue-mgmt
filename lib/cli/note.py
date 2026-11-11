@@ -27,10 +27,27 @@ import reindex as _reindex  # noqa: E402
 
 from . import common
 
+# The one place this verb names itself; every diagnostic formats through
+# it, so the surface manifest sees one name per verb and
+# `surface.self-naming` is checkable (IM-239).
+PROG = "issue note"
+
 VERB = "note"
 TIER = "tier1"
 SUMMARY = "append a date-stamped line to an issue's Implementation Notes"
 ORDER = 50
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-250 / IM-262: both clock-derived and both persisted into the issue --
+# `date` is the note's date and `note` is the `<date>: <text>` line appended
+# to the body, so the date rides inside it too.
+SURFACE_RECORD_FIELDS = ("date", "note")
 
 _DESCRIPTION = """\
 Append `<date>: <text>` to a level-2 section (default ## Implementation
@@ -64,8 +81,7 @@ def register(subparsers):
                    help="Target level-2 section (default: Implementation Notes).")
     common.add_json_flag(p)
     p.add_argument("--no-reindex", action="store_true")
-    p.add_argument("--lock-timeout", type=float,
-                   default=concurrency.DEFAULT_LOCK_TIMEOUT, metavar="SECONDS")
+    common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
     common.add_store_flag(p)
     common.add_version_flag(p)
     p.set_defaults(_run=run)
@@ -91,11 +107,11 @@ def _resolve_paths(issue_id, cli_store, *, emit_note=None):
 
 def run(args) -> int:
     if not args.issue_id:
-        print("issue note: missing issue ID (use -h)", file=sys.stderr)
+        print(f"{PROG}: missing issue ID (use -h)", file=sys.stderr)
         return 2
     if args.text is None:
         print(
-            "issue note: missing note text (positional arg, or '-' for stdin)",
+            f"{PROG}: missing note text (positional arg, or '-' for stdin)",
             file=sys.stderr,
         )
         return 2
@@ -103,12 +119,12 @@ def run(args) -> int:
     try:
         date = _note.resolve_date(args.date)
     except ValueError as e:
-        print(f"issue note: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 2
 
     text = _note.read_text(args.text)
     if not text.strip():
-        print("issue note: note text is empty", file=sys.stderr)
+        print(f"{PROG}: note text is empty", file=sys.stderr)
         return 2
 
     payload = f"{date}: {text}"
@@ -116,19 +132,19 @@ def run(args) -> int:
     try:
         _EI._check_body_nests(payload, "note", f"section {args.section!r}")
     except ValueError as e:
-        print(f"issue note: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 2
 
     def _resolved_note(before, after):
-        print(f"issue note: resolved {before} -> {after}", file=sys.stderr)
+        print(f"{PROG}: resolved {before} -> {after}", file=sys.stderr)
 
     try:
         _rr = _resolve_paths(args.issue_id, args.store, emit_note=_resolved_note)
     except ValueError as e:
-        print(f"issue note: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 2
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr("issue note", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     issue_file = _rr.issue_file
@@ -138,7 +154,7 @@ def run(args) -> int:
     canonical_id = _rr.canonical_id
 
     if not issue_file.exists():
-        print(f"issue note: issue file not found: {issue_file}",
+        print(f"{PROG}: issue file not found: {issue_file}",
               file=sys.stderr)
         return 1
 
@@ -184,17 +200,17 @@ def run(args) -> int:
             reindex_fn=reindex_fn,
         )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr("issue note"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr("issue note"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         return e.exit_code
     except FileNotFoundError as e:
-        print(f"issue note: file disappeared between resolve and read: {e}",
+        print(f"{PROG}: file disappeared between resolve and read: {e}",
               file=sys.stderr)
         return 1
     except ValueError as e:
-        print(f"issue note: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
 
     if args.json_mode:

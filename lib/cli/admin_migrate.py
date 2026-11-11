@@ -1,11 +1,11 @@
-"""migrate-to-store -- copy a project's .issues/ corpus into the issue store.
+"""issue admin migrate -- copy a project's .issues/ corpus into the issue store.
 
 Synopsis:
-  migrate-to-store --project PATH [--store ROOT] [--prefix PREFIX]
-                   [--repo NAME] [--dry-run] [--json]
-                   [--lock-timeout SECONDS] [--message MSG]
-  migrate-to-store [-h | --help]
-  migrate-to-store [--version]
+  issue admin migrate --project PATH [--store ROOT] [--prefix PREFIX]
+                      [--repo NAME] [--dry-run] [--json]
+                      [--lock-timeout SECONDS] [--message MSG]
+  issue admin migrate [-h | --help]
+  issue admin migrate [--version]
 
 What it does:
   Copies every `<PREFIX>-NNN.md` issue file from `<project>/.issues/`
@@ -103,7 +103,13 @@ import concurrency  # noqa: E402
 import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 
-VERSION = "v3.3.1"
+VERSION = "v3.4.0"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue admin migrate"
 
 CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
 
@@ -130,14 +136,27 @@ def resolve_canonical_template() -> Path | None:
     return None
 
 
-def parse_args(argv):
-    p = argparse.ArgumentParser(prog="migrate-to-store", add_help=False)
+def build_parser():
+    """The verb's real argparse parser.
+
+    Split out of `parse_args` for the surface manifest (IM-245): the
+    dispatcher subparser for this verb is a `prefix_chars="\\x00"`
+    passthrough, so an argparse walk over it sees none of these flags.
+    `SURFACE_PARSER` below points the extractor here instead of letting it
+    emit a false-CLEAN empty flag set.
+    """
+    p = argparse.ArgumentParser(prog=PROG, add_help=False)
     p.add_argument("--project", metavar="PATH", default=None)
     p.add_argument("--store", metavar="ROOT", default=None)
     p.add_argument("--prefix", metavar="PREFIX", default=None)
     p.add_argument("--repo", metavar="NAME", default=None)
     p.add_argument("--dry-run", action="store_true", dest="dry_run")
     p.add_argument("--json", action="store_true", dest="json_mode")
+    # Hand-rolled parser (add_help=False + a hand-written usage string), so
+    # common.add_lock_timeout_flag's help= would never render and importing
+    # `common` here buys nothing. Registered locally with the same name and
+    # meaning: the per-record advisory lock (IM-242). The hand-rolled-parser
+    # question itself is IM-239 / IM-245.
     p.add_argument(
         "--lock-timeout",
         type=float,
@@ -148,7 +167,11 @@ def parse_args(argv):
                    help="Override the migration commit message")
     p.add_argument("-h", "--help", action="store_true")
     p.add_argument("--version", action="store_true")
-    return p.parse_args(argv)
+    return p
+
+
+def parse_args(argv):
+    return build_parser().parse_args(argv)
 
 
 def show_help():
@@ -202,7 +225,8 @@ def emit_human_plan(plan: migrate_lib.MigrationPlan, *, dry_run: bool):
     if plan.registry_present:
         print(f"  registry:      present ({plan.registry_prefix})")
     else:
-        print("  registry:      ABSENT (run init-issue-project after migration)")
+        print("  registry:      ABSENT "
+              "(run `issue admin init-project` after migration)")
     if plan.template_action == migrate_lib.TEMPLATE_ACTION_ABSENT:
         print("  template:      absent in source (none to copy)")
     elif plan.template_action == migrate_lib.TEMPLATE_ACTION_SKIP_CANONICAL:
@@ -285,13 +309,13 @@ def main(argv=None):
         return 0
 
     if not args.project:
-        print("migrate-to-store: --project PATH is required", file=sys.stderr)
+        print(f"{PROG}: --project PATH is required", file=sys.stderr)
         return 2
 
     project_path = Path(args.project).expanduser().resolve()
     if not project_path.is_dir():
         print(
-            f"migrate-to-store: project path is not a directory: {project_path}",
+            f"{PROG}: project path is not a directory: {project_path}",
             file=sys.stderr,
         )
         return 1
@@ -299,7 +323,7 @@ def main(argv=None):
     store_root = resolve_store_root(args.store)
     if store_root is None:
         print(
-            "migrate-to-store: no store root resolved; set ISSUE_STORE_ROOT, "
+            f"{PROG}: no store root resolved; set ISSUE_STORE_ROOT, "
             "pass --store, or configure ~/.config/issue-mgmt/config",
             file=sys.stderr,
         )
@@ -329,12 +353,12 @@ def main(argv=None):
             print(f"already migrated; sentinel at {e.sentinel_path}")
         return 0
     except migrate_lib.MigrationError as e:
-        print(f"migrate-to-store: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
 
     if plan.has_validation_errors:
         print(
-            "migrate-to-store: validation errors -- no files written.",
+            f"{PROG}: validation errors -- no files written.",
             file=sys.stderr,
         )
         for r in plan.validation_results:
@@ -359,10 +383,10 @@ def main(argv=None):
             commit_message=args.message,
         )
     except errors.ContractError as e:
-        print(e.format_stderr("migrate-to-store"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         return e.exit_code
     except migrate_lib.MigrationError as e:
-        print(f"migrate-to-store: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
 
     if args.json_mode:
@@ -389,6 +413,17 @@ VERB = "migrate"
 TIER = "admin"
 SUMMARY = "copy a project's .issues/ corpus into the issue store"
 ORDER = 30
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-245: this verb's dispatcher subparser is a prefix_chars="\x00"
+# passthrough, so point the extractor at the real parser.
+SURFACE_PARSER = build_parser
 
 
 def register(subparsers):

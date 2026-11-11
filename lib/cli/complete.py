@@ -30,6 +30,14 @@ TIER = "tier1"
 SUMMARY = "move an issue to done (open issues pass through in-progress)"
 ORDER = 20
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
 _DESCRIPTION = """\
 Mark an issue done. On an `open` issue this performs
 open -> in-progress -> done atomically (one lock, one commit, both audit

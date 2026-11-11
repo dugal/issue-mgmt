@@ -471,6 +471,18 @@ def _git_status_pending_tracked_paths(store_root):
     return paths
 
 
+def pending_tracked_paths(store_root):
+    """Public read of the pending tracked-store-path set.
+
+    The same list `catchup_sweep` is about to claim. Exposed for
+    `issue admin snapshot --json`, which reports WHICH paths the sweep
+    swept (IM-240) -- the sweep itself returns only the commit sha. Call
+    it inside the store commit lock so the read and the sweep see one
+    state.
+    """
+    return _git_status_pending_tracked_paths(store_root)
+
+
 def catchup_sweep(store_root, *, message=CATCHUP_COMMIT_MESSAGE,
                   exclude=None):
     """If the store has pending tracked-path changes, stage and commit

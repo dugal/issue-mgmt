@@ -56,7 +56,7 @@ mk_store() {
     local path="$WORKDIR/$1"
     mkdir -p "$path"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     git -C "$path" commit -q --allow-empty -m "init store"
     echo "$path"
@@ -67,7 +67,7 @@ mk_registered_repo() {
     local path="$WORKDIR/$1"
     mkdir -p "$path/.issues"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     echo "$3" > "$path/.issues/.prefix"
     echo "$2" > "$path/.issues/.migrated-to-store"

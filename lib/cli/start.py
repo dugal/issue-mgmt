@@ -32,6 +32,17 @@ TIER = "tier1"
 SUMMARY = "claim an issue and move it to in-progress (auto-reaps expired leases)"
 ORDER = 10
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-250 / IM-262: `start` claims as it transitions, so it echoes the same
+# two lease stamps `transition --claim` writes.
+SURFACE_RECORD_FIELDS = ("claim.claimed_at", "claim.lease_until")
+
 _DESCRIPTION = """\
 Claim an issue with a TTL lease and flip it to in-progress, recording the
 working branch in the same write. Expired leases in the issue's prefix are

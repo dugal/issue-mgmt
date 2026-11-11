@@ -12,7 +12,7 @@
 #   - non-blocks dep (related) -> ignored
 #   - blocks dep with no store file -> filtered (status=unknown)
 #   - --actor filtering against store claim frontmatter
-#   - --repo prefix restriction (blocker status still resolved store-wide)
+#   - --prefix prefix restriction (blocker status still resolved store-wide)
 #   - deterministic ready ordering (priority, then created, then id)
 #   - --text rendering
 #   - regression: >100 store-wide ready rows never truncate the
@@ -127,6 +127,16 @@ run_ready() {
     ISSUE_STORE_ROOT="$STORE" "$ISSUE_READY" "$@"
 }
 
+# IM-241: `ready` emits human-readable text by default like every other
+# verb; a JSON consumer opts in with --json. Sections that parse the
+# documented JSON shape go through this wrapper.
+# IM-249: `filtered_out` is opt-in explanatory output. Sections asserting
+# on the readiness COMPUTATION ask for it explicitly; the argv-shape
+# behavior of the flag itself is pinned in its own section below.
+run_ready_json() {
+    run_ready "$@" --json --filtered all
+}
+
 ready_ids() {
     python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(sorted(r['id'] for r in d['ready'])))"
 }
@@ -135,8 +145,8 @@ filtered_ids() {
     python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(sorted(f['id'] for f in d['filtered_out'])))"
 }
 
-echo "== default JSON output, --repo IM =="
-OUT=$(run_ready --repo IM)
+echo "== --json output, --prefix IM =="
+OUT=$(run_ready_json --prefix IM)
 RC=$?
 assert_eq 0 "$RC" "exit 0 with ready issues"
 # COVERS: workflow.readiness-filter
@@ -154,8 +164,8 @@ echo "== ready entry shape =="
 PREFIX_OF_301=$(echo "$OUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print([r['prefix'] for r in d['ready'] if r['id']=='IM-301'][0])")
 assert_eq "IM" "$PREFIX_OF_301" "ready entries carry the prefix field"
 
-echo "== no --repo: other-prefix candidates included, closed excluded =="
-OUT=$(run_ready)
+echo "== no --prefix: other-prefix candidates included, closed excluded =="
+OUT=$(run_ready_json)
 assert_contains "DOUG-302" "$(echo "$OUT" | ready_ids)" \
     "open DOUG record is a candidate across prefixes"
 assert_not_contains "DOUG-301" "$(echo "$OUT" | ready_ids)" \
@@ -169,31 +179,66 @@ write_issue IM-050 open "low"    low    2026-01-01
 write_issue IM-010 open "hi-may" high   2026-05-01
 write_issue IM-020 open "hi-mar" high   2026-03-01
 write_issue IM-030 open "med"    medium 2026-02-01
-ORDER=$(ISSUE_STORE_ROOT="$ORD_STORE" "$ISSUE_READY" --repo IM | \
+ORDER=$(ISSUE_STORE_ROOT="$ORD_STORE" "$ISSUE_READY" --prefix IM --json | \
     python3 -c "import json,sys; print(' '.join(r['id'] for r in json.load(sys.stdin)['ready']))")
 assert_eq "IM-020 IM-010 IM-030 IM-050" "$ORDER" \
     "ready ordered high(by created) > medium > low"
 STORE="$STORE_SAVE"
 
 echo "== --actor filtering =="
-OUT=$(run_ready --repo IM --actor bob)
+OUT=$(run_ready_json --prefix IM --actor bob)
 assert_eq "IM-301 IM-302 IM-306 IM-308" "$(echo "$OUT" | ready_ids)" \
     "actor bob: claimed-by-alice candidate dropped"
 assert_contains '"reason": "claim held by alice, not bob"' "$OUT" \
     "actor filter reason names the claim holder"
-OUT=$(run_ready --repo IM --actor alice)
+OUT=$(run_ready_json --prefix IM --actor alice)
 assert_contains "IM-307" "$(echo "$OUT" | ready_ids)" \
     "actor alice keeps her own claim"
 
 echo "== --text rendering =="
-OUT=$(run_ready --repo IM --text)
+OUT=$(run_ready --prefix IM --text)
 assert_contains "Ready:" "$OUT" "text mode has Ready: header"
 assert_contains "IM-301" "$OUT" "text mode lists ready id"
 assert_contains "No deps" "$OUT" "text mode lists ready title"
+OUT=$(run_ready --prefix IM --text --filtered all)
 assert_contains "Filtered out (not ready):" "$OUT" \
     "text mode has filtered header"
 assert_contains "IM-303  blocked by DOUG-302 (open)" "$OUT" \
     "text mode filtered line"
+
+echo "== IM-249: filtered_out is opt-in explanatory output =="
+# The verb answers "what can I claim"; "why can I not claim X" is a
+# different question, so it rides under its own argv control. --limit
+# keeps one meaning across the surface: it caps a verb's PRIMARY result
+# rows and never bounds explanatory output.
+OUT=$(run_ready --prefix IM)
+# COVERS: workflow.readiness-filter
+assert_not_contains "Filtered out" "$OUT" \
+    "default text output carries no filtered section"
+assert_not_contains "IM-303" "$OUT" \
+    "default text output names no unclaimable candidate"
+OUT=$(run_ready --prefix IM --json 2>/dev/null)
+# The key is unconditional -- output shape is a function of argv, never of
+# store state -- so a caller never branches on its presence.
+# COVERS: workflow.readiness-filter
+assert_eq "" "$(echo "$OUT" | filtered_ids)" \
+    "default --json emits filtered_out as an empty list"
+assert_contains '"filtered_out"' "$OUT" \
+    "default --json still carries the filtered_out key"
+OUT=$(run_ready --prefix IM --json --filtered all 2>/dev/null)
+# COVERS: workflow.readiness-filter
+assert_eq "IM-303 IM-304 IM-305" "$(echo "$OUT" | filtered_ids)" \
+    "--filtered all emits the explanatory section"
+assert_eq "$(run_ready --prefix IM --filtered none)" "$(run_ready --prefix IM)" \
+    "--filtered none is the explicit spelling of the default"
+run_ready --prefix IM --filtered some >/dev/null 2>&1
+assert_eq 2 "$?" "unknown --filtered mode is a usage error"
+# --limit bounds the ready list only; the section it does not bound is
+# the one a capped caller most needs left intact.
+OUT=$(run_ready --prefix IM --json --filtered all --limit 1 2>/dev/null)
+# COVERS: workflow.readiness-filter
+assert_eq "IM-303 IM-304 IM-305" "$(echo "$OUT" | filtered_ids)" \
+    "--limit never truncates the explanatory section"
 
 echo "== no bd binary on PATH and no .beads/ present =="
 if [ -d "$STORE/.beads" ]; then
@@ -206,7 +251,7 @@ fi
 # directly (its shebang, or the consolidated shim) rather than via an
 # explicit python3 -- under ISSUE_MGMT_CLI_STYLE=consolidated $ISSUE_READY
 # resolves to a bash shim that execs `issue ready`, which python3 cannot run.
-OUT=$(PATH="/usr/bin:/bin" ISSUE_STORE_ROOT="$STORE" "$ISSUE_READY" --repo IM 2>/dev/null | ready_ids)
+OUT=$(PATH="/usr/bin:/bin" ISSUE_STORE_ROOT="$STORE" "$ISSUE_READY" --prefix IM --json 2>/dev/null | ready_ids)
 assert_contains "IM-301" "$OUT" "issue-ready works with bd absent from PATH"
 
 echo "== IM-175: >100 store-wide ready rows never truncate the ready set =="
@@ -214,27 +259,27 @@ for i in $(seq 401 510); do
     write_issue "PAD-$i" open "Flood $i"
 done
 write_issue IM-399 open "Low-priority sentinel" low
-TOTAL_READY=$(run_ready | python3 -c "import json,sys; print(len(json.load(sys.stdin)['ready']))")
+TOTAL_READY=$(run_ready_json | python3 -c "import json,sys; print(len(json.load(sys.stdin)['ready']))")
 if [ "$TOTAL_READY" -gt 100 ]; then
     pass "no-repo ready set exceeds 100 rows ($TOTAL_READY rows)"
 else
     fail "no-repo ready set unexpectedly small ($TOTAL_READY rows; fixture broken?)"
 fi
-OUT=$(run_ready --repo IM 2>"$WORKDIR/stderr.txt")
+OUT=$(run_ready_json --prefix IM 2>"$WORKDIR/stderr.txt")
 # COVERS: workflow.readiness-filter
 assert_contains "IM-399" "$(echo "$OUT" | ready_ids)" \
-    "low-priority sentinel visible under --repo IM despite >100 store-wide ready"
+    "low-priority sentinel visible under --prefix IM despite >100 store-wide ready"
 assert_eq "" "$(cat "$WORKDIR/stderr.txt")" \
     "no truncation notice when no --limit is passed"
 
 echo "== IM-175: --limit is post-filter and never silent =="
-OUT=$(run_ready --repo IM --limit 2 2>"$WORKDIR/stderr.txt")
+OUT=$(run_ready_json --prefix IM --limit 2 2>"$WORKDIR/stderr.txt")
 assert_eq 0 "$?" "--limit exits 0 when capped set is non-empty"
 LIMITED=$(echo "$OUT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['ready']))")
 assert_eq 2 "$LIMITED" "--limit 2 caps the ready list at 2"
 assert_contains "more ready issue(s) not shown" "$(cat "$WORKDIR/stderr.txt")" \
     "suppressed rows announced on stderr"
-OUT=$(run_ready --repo IM --limit 0 2>"$WORKDIR/stderr.txt")
+OUT=$(run_ready_json --prefix IM --limit 0 2>"$WORKDIR/stderr.txt")
 assert_contains "IM-399" "$(echo "$OUT" | ready_ids)" \
     "--limit 0 is unlimited"
 assert_eq "" "$(cat "$WORKDIR/stderr.txt")" \
@@ -243,14 +288,53 @@ run_ready --limit -3 >/dev/null 2>&1
 assert_eq 2 "$?" "negative --limit is a usage error"
 
 echo "== empty ready set: exit 1 + error=no-ready-work =="
-OUT=$(run_ready --repo ZZ 2>"$WORKDIR/stderr.txt")
+# A genuinely empty scope, NOT an absent one: every issue in the EMPTY
+# prefix is closed, so the ready set is empty but the prefix exists.
+# IM-238 separates the two -- an absent prefix is exit 2 (see below).
+mkdir -p "$STORE/EMPTY"
+write_issue_in() { :; }
+cat > "$STORE/EMPTY/EMPTY-001.md" <<'EOF'
+---
+id: EMPTY-001
+title: "closed"
+type: bug
+status: done
+priority: low
+created: 2026-01-01
+updated: 2026-01-01
+branch: ""
+tags: []
+changelog:
+---
+
+## Summary
+
+closed
+EOF
+# Bare invocation: text stdout, key=value stderr.
+OUT=$(run_ready --prefix EMPTY 2>"$WORKDIR/stderr.txt")
 RC=$?
+# COVERS: output.exit-codes
 assert_eq 1 "$RC" "exit 1 when ready set is empty"
+# IM-249: an empty ready set is the one case where the explanation is the
+# only useful output, so the verb points at it -- on stderr, leaving
+# stdout a function of argv alone.
+write_issue BLKD-001 in-progress "Blocker, not itself ready"
+write_issue BLKD-002 open "Blocked candidate" medium 2026-07-01 "$(blocks_dep BLKD-001)"
+OUT2=$(run_ready --prefix BLKD 2>"$WORKDIR/hint.txt")
+assert_contains "pass --filtered all to see why" "$(cat "$WORKDIR/hint.txt")" \
+    "empty ready set hints at the explanatory section on stderr"
+assert_not_contains "Filtered out" "$OUT2" \
+    "the hint does not change stdout shape"
 assert_contains "error=no-ready-work" "$(cat "$WORKDIR/stderr.txt")" \
     "key=value stderr by default"
-assert_eq "" "$(echo "$OUT" | ready_ids)" "stdout shape still emitted (empty ready)"
+assert_contains "(none)" "$OUT" "text stdout still emitted (empty ready)"
 
-OUT=$(run_ready --repo ZZ --json 2>"$WORKDIR/stderr.txt")
+# --json: the documented shape is still emitted on an empty set.
+OUT=$(run_ready_json --prefix EMPTY 2>/dev/null)
+assert_eq "" "$(echo "$OUT" | ready_ids)" "--json shape still emitted (empty ready)"
+
+OUT=$(run_ready --prefix EMPTY --json 2>"$WORKDIR/stderr.txt")
 RC=$?
 assert_eq 1 "$RC" "exit 1 under explicit --json"
 assert_contains '"class":"no-ready-work"' "$(cat "$WORKDIR/stderr.txt")" \
@@ -258,11 +342,23 @@ assert_contains '"class":"no-ready-work"' "$(cat "$WORKDIR/stderr.txt")" \
 assert_contains '"exit":1' "$(cat "$WORKDIR/stderr.txt")" \
     "JSON stderr carries exit field"
 
+echo "== absent prefix: exit 2 + error=unknown-prefix (IM-238) =="
+# Scoping to a prefix the store does not have is an ARGUMENT error, so a
+# typo is never reported as "no ready work".
+run_ready --prefix ZZ >/dev/null 2>"$WORKDIR/stderr.txt"
+RC=$?
+# COVERS: output.exit-codes
+assert_eq 2 "$RC" "absent --prefix is a usage error, not an empty ready set"
+assert_contains "error=unknown-prefix" "$(cat "$WORKDIR/stderr.txt")" \
+    "absent-prefix stderr names the condition"
+assert_contains "unknown=ZZ" "$(cat "$WORKDIR/stderr.txt")" \
+    "absent-prefix stderr names the bad value"
+
 echo "== usage and preconditions =="
 run_ready --json --text >/dev/null 2>&1
 assert_eq 2 "$?" "--json with --text is a usage error"
-run_ready --repo lowercase >/dev/null 2>&1
-assert_eq 2 "$?" "malformed --repo prefix is a usage error"
+run_ready --prefix lowercase >/dev/null 2>&1
+assert_eq 2 "$?" "malformed --prefix prefix is a usage error"
 ISSUE_STORE_ROOT="$WORKDIR/does-not-exist" "$ISSUE_READY" >/dev/null 2>"$WORKDIR/stderr.txt"
 assert_eq 1 "$?" "unresolvable store is a precondition failure"
 assert_contains "reason=store-unresolvable" "$(cat "$WORKDIR/stderr.txt")" \

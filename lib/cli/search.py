@@ -29,12 +29,18 @@ TIER = "tier1"
 SUMMARY = "search issue titles and bodies (text query + filters)"
 ORDER = 30
 
-# Top-level keys of each per-issue --json object (search.IssueMatch.to_dict);
-# the field-selection set for `--json <fields>`.
-VALID_JSON_FIELDS = (
-    "id", "file", "title", "status", "priority", "type", "title_match",
-    "body_matches",
-)
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "enumeration-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
+# Top-level keys of each per-issue --json object, derived from the row
+# builder itself (search.IssueMatch.to_dict) rather than restated, so a
+# field added there is selectable here by construction (IM-263).
+VALID_JSON_FIELDS = search.IssueMatch.json_fields()
 
 _DESCRIPTION = """\
 Read-only search across the issue corpus. Ported from the flat search-issues
@@ -57,6 +63,10 @@ object to those top-level fields, in the order given; bare --json emits the
 full shape and an unknown field name is a usage error (exit 2)."""
 
 _EPILOG = """\
+Exit codes: 0 at least one row emitted; 1 zero rows (grep convention,
+uniform across every enumeration read); 2 argument/usage error, including
+a --prefix the store does not have (error=unknown-prefix).
+
 Examples:
   issue search "concurrent edit"
   issue search "lock" --prefix ABC,XYZ
@@ -90,13 +100,14 @@ def register(subparsers):
         dest="case_sensitive",
         help="Disable the default case-insensitive match.",
     )
-    p.add_argument(
-        "--prefix", default=None, metavar="PFX[,PFX...]",
+    common.add_prefix_scope_flag(
+        p,
         help="Limit scan to these prefix directories (OR within the flag).",
     )
-    p.add_argument(
-        "--status", default=None, metavar="STATUS[,STATUS...]",
-        help="Match only these frontmatter status values.",
+    common.add_value_set_flag(
+        p, "--status", metavar="STATUS[,STATUS...]",
+        help="Repeatable/comma-separated. Match only these frontmatter "
+             "status values.",
     )
     p.add_argument(
         "--type", default=None, metavar="TYPE[,TYPE...]",
@@ -145,9 +156,25 @@ def run(args) -> int:
     def _note(before, after):
         print(f"issue search: resolved {before} -> {after}", file=sys.stderr)
 
+    rc = common.require_store(
+        store_root, prog="issue search",
+        json_mode=jsonfields.json_enabled(args.json_mode),
+        legacy_anchor=anchor,
+    )
+    if rc is not None:
+        return rc
+
+    raw_prefixes = search.parse_csv_set(args.prefix)
+    rc = common.enforce_prefix_scope(
+        raw_prefixes, store_root, anchor, prog="issue search",
+        json_mode=jsonfields.json_enabled(args.json_mode),
+    )
+    if rc is not None:
+        return rc
+
     ff = search.FrontmatterFilter(
         prefixes=common.canonicalize_prefix_set(
-            search.parse_csv_set(args.prefix), store_root, anchor,
+            raw_prefixes, store_root, anchor,
             emit_note=_note,
         ),
         statuses=search.parse_csv_set(args.status),

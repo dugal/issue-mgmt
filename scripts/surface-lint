@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""surface-lint -- check the CLI surface against the vocabulary registry.
+
+`docs/cli-surface.json` (IM-245) says what the surface IS, extracted from
+the argparse registrations. `docs/cli-vocabulary.json` (IM-246) says what it
+is allowed to MEAN: one concept per flag name, one canonical spelling per
+concept, and the deviations a documented capability licenses. This checks
+the first against the second.
+
+Findings an open issue owns are waived in the registry's baseline, which is
+shrink-only by construction: a waiver matching no finding fails as
+obsolete, and (with --check-issues) a waiver whose issue has been closed
+fails as unowned. So the gate lands green today and gets stricter as the
+review-cluster issues close, rather than being re-measured by hand.
+
+Exit codes:
+  0  no unwaived findings
+  1  unwaived findings, or the lint could not run
+  2  argument/usage error
+
+usage:
+  scripts/surface-lint                  # lint; one line per finding
+  scripts/surface-lint --waived         # also list what the baseline hides
+  scripts/surface-lint --check-issues   # verify each waiver's issue is open
+  scripts/surface-lint --json           # machine-readable findings
+  scripts/surface-lint --help
+
+example:
+  scripts/surface-lint --waived --check-issues
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import surface_lint  # noqa: E402
+
+sys.path.insert(0, str(surface_lint.REPO_ROOT / "lib"))
+from cli import common  # noqa: E402
+
+
+def store_issue_status():
+    """Resolve each waiver's issue status from the store, or None.
+
+    Returns a lookup callable, or None when no store can be resolved. The
+    lint has to stay usable in a tree with no store attached -- a public
+    clone, a container -- so a missing store downgrades the waiver-owner
+    check to a notice rather than failing the lint.
+
+    The status is read straight off the frontmatter rather than through a
+    read verb, so the lint shells out to nothing and acquires no lock.
+    """
+    try:
+        anchor = common.find_project_anchor()
+        store_root = common.resolve_store_root(anchor, None)
+    except Exception:
+        return None
+    if not store_root or not Path(store_root).is_dir():
+        return None
+
+    root = Path(store_root)
+
+    def status_of(issue_id):
+        prefix = issue_id.split("-")[0]
+        path = root / prefix / f"{issue_id}.md"
+        if not path.is_file():
+            return None
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("status:"):
+                return line.split(":", 1)[1].strip()
+        return None
+
+    return status_of
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(
+        prog="surface-lint",
+        description=__doc__.split("\n\n")[1],
+        epilog="example:\n  scripts/surface-lint --waived --check-issues",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--waived", action="store_true",
+                   help="Also list the findings the baseline waives, with "
+                        "the issue that owns each.")
+    p.add_argument("--check-issues", action="store_true",
+                   help="Resolve each waiver's issue in the store and fail "
+                        "when one is done or cancelled (an unowned waiver).")
+    p.add_argument("--json", action="store_true",
+                   help="Emit a machine-readable JSON document on stdout.")
+    p.add_argument("--version", action="version", version=common.VERSION)
+    args = p.parse_args(argv)
+
+    try:
+        manifest = surface_lint.manifest_from_disk()
+        registry = surface_lint.load_registry()
+        lookup = store_issue_status() if args.check_issues else None
+        unwaived, waived = surface_lint.lint(
+            manifest, registry, issue_status=lookup)
+    except surface_lint.LintError as e:
+        if args.json:
+            json.dump({"error": "precondition-failed", "detail": str(e)},
+                      sys.stdout)
+            sys.stdout.write("\n")
+        else:
+            print(f"surface-lint: {e}", file=sys.stderr)
+        return 1
+
+    if args.check_issues and lookup is None:
+        print("surface-lint: no store resolved, so waiver owners were not "
+              "checked", file=sys.stderr)
+
+    if args.json:
+        json.dump({
+            "unwaived": [f.as_dict() for f in unwaived],
+            "waived": [dict(f.as_dict(), issue=w["issue"])
+                       for f, w in waived],
+            "transitional": [
+                {"flag": name, "concept": cid, **record}
+                for name, cid, record in
+                surface_lint.transitional_spellings(registry)],
+            "totals": {"unwaived": len(unwaived), "waived": len(waived)},
+        }, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 1 if unwaived else 0
+
+    for finding in unwaived:
+        print(f"{finding.clause}: {finding.key}")
+        print(f"  {finding.detail}")
+    if args.waived:
+        for finding, waiver in waived:
+            print(f"waived ({waiver['issue']}): {finding.key}")
+
+    if unwaived:
+        print(f"\nsurface-lint: {len(unwaived)} unwaived finding(s); "
+              f"{len(waived)} waived", file=sys.stderr)
+        return 1
+    print(f"surface-lint: clean -- {len(waived)} finding(s) waived to open "
+          f"issues")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

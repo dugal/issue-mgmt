@@ -28,6 +28,80 @@ run      func ``run(args) -> int``: execute with the parsed namespace;
 
 ``show.py`` is the reference implementation. Discovery is import-time and
 deterministic (sorted by ``(ORDER, VERB)``).
+
+Surface-manifest declarations (IM-245)
+--------------------------------------
+Three further constants are REQUIRED on every verb module. They carry the
+facts the CLI surface manifest (``docs/cli-surface.json``) cannot read off an
+argparse parser, so the manifest records intent rather than inferring it.
+``scripts/cli-surface`` fails loud on a module missing or mis-spelling any of
+them -- a silently incomplete manifest is worse than none, because it reads
+as CLEAN.
+
+============================= ==========================================
+attr                          meaning
+============================= ==========================================
+SURFACE_CLASS                 ``surface.verb-class-contract``: one of
+                              ``enumeration-read`` | ``point-read`` |
+                              ``mutating`` | ``scaffolding``. The class
+                              determines the verb's obligations. The
+                              extractor checks only that the value is
+                              legal; asserting the class-IMPLIED behavior
+                              per verb (an enumeration read exits 1 on
+                              zero rows, a mutating verb offers
+                              ``--lock-timeout``) is IM-246's job, so do
+                              not read this field as behaviorally
+                              validated.
+SURFACE_STORE                 IM-251: how the verb gets a store --
+                              ``flag`` (resolves via the precedence chain
+                              and must therefore offer ``--store``),
+                              ``positional`` (an operand names it),
+                              ``pinned`` (pins its own deliberately), or
+                              ``none`` (touches no store).
+SURFACE_STRUCTURED_ERRORS     IM-254: ``converted`` | ``unconverted``.
+                              Ratchets: a converted verb never reverts, a
+                              new verb is born converted, and the
+                              unconverted set is enumerated rather than
+                              waived. Conversion work is IM-260.
+============================= ==========================================
+
+Five more are optional, declared only by the verbs that need them:
+
+============================= ==========================================
+SURFACE_GENERATION_FIELDS     IM-250: ambient-derived output fields of the
+                              first kind -- GENERATION METADATA, a value
+                              describing this invocation's own rendering.
+                              ``index.generated_at`` and
+                              ``history activity.since``.
+SURFACE_RECORD_FIELDS         IM-250 / IM-262: ambient-derived output
+                              fields of the second kind -- RECORD CONTENT,
+                              a clock-read value persisted into the issue
+                              being written (``create.created``,
+                              ``note.date``, the lease stamps). Dotted
+                              paths address nested fields
+                              (``claim.lease_until``).
+                              Both kinds are measured against the real
+                              ``--json`` output by
+                              ``tests/test_surface_ambient_fields.py``, so
+                              an undeclared ambient field fails the suite
+                              rather than riding along unrecorded.
+SURFACE_SYNONYMS              ``{canonical: (retired, ...)}`` for synonyms
+                              declared inline rather than through a
+                              ``common.add_*`` helper. Needed where no
+                              heuristic can find the pair -- ``edit``
+                              spells ``--kind`` and ``--dep-type`` with
+                              two DIFFERENT dests.
+SURFACE_PARSER                A zero-arg builder returning the verb's real
+                              ``ArgumentParser``, for a verb whose
+                              dispatcher subparser is a
+                              ``prefix_chars="\x00"`` passthrough
+                              (``admin init-store`` / ``init-project`` /
+                              ``migrate``).
+SURFACE_MANUAL_FLAGS          Literal flag specs for a passthrough verb
+                              with no parser at all, which walks argv by
+                              hand (``admin selftest`` /
+                              ``install-skills``).
+============================= ==========================================
 """
 
 from __future__ import annotations

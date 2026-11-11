@@ -35,10 +35,27 @@ import repo as _repo  # noqa: E402
 
 from . import common
 
+# The one place this verb names itself; the hand-written usage line
+# below formats through it (IM-239).
+PROG = "issue create"
+
 VERB = "create"
 TIER = "tier1"
 SUMMARY = "create a new issue in the resolved store (or legacy .issues/)"
 ORDER = 10
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-250 / IM-262: `created` is the new issue's own creation date, read from
+# the clock and written into the record -- record content, not a stamp
+# describing this render. Declared so an ambient value cannot reach `--json`
+# undeclared; `tests/test_surface_ambient_fields.py` measures it.
+SURFACE_RECORD_FIELDS = ("created",)
 
 VALID_TYPES = ("bug", "feature", "chore", "spike", "decision")
 VALID_PRIORITIES = ("high", "medium", "low")
@@ -51,7 +68,7 @@ Store mode is selected (highest precedence) by --store ROOT, the
 ISSUE_STORE_ROOT environment variable, or a nearest
 .issues/.migrated-to-store sentinel; the repo identity is the main
 checkout's basename (override with --repo NAME) and its prefix is looked up
-in <store>/.repos (run init-issue-project to register). A local
+in <store>/.repos (run `issue admin init-project` to register). A local
 .issues/.prefix, when present, is cross-validated against the registry.
 Legacy mode (none of the above) writes to the nearest .issues/ walking up
 from cwd."""
@@ -335,7 +352,7 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
             print(
                 f"Error: repo '{repo_name}' is not registered in "
                 f"{store_root}/.repos\n"
-                "       Run 'init-issue-project' to register this project.",
+                "       Run 'issue admin init-project' to register this project.",
                 file=sys.stderr,
             )
             return 1
@@ -398,8 +415,9 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
             return 1
     else:
         print(
-            "Error: provide 0 or 3 positional arguments (title type priority)\n"
-            'Usage: issue create [--repo NAME] ["title" type priority]',
+            "Error: provide 0 or 3 positional arguments (title type "
+            "priority)\n"
+            f'Usage: {PROG} [--repo NAME] ["title" type priority]',
             file=sys.stderr,
         )
         return 1

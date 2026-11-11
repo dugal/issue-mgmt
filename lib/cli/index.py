@@ -1,7 +1,7 @@
 """`issue index` -- grouped-by-status board view of the store.
 
 New Tier-1 verb. Renders the issue store grouped by status,
-scoped by `--repo`/`--status`, with a bounded default. Deferred from the
+scoped by `--prefix`/`--status`, with a bounded default. Deferred from the
 flat v2.x CLI to v3 per the design's section 11: under consolidation the grouped
 board is an explicit scoped verb rather than the accidental zero-arg dump
 (design Q9 -- bare `issue` prints help, not the whole 1000+-issue board).
@@ -13,7 +13,8 @@ design:
     rendering `<store>/INDEX.md`. Live computation is always fresh, so the
     earlier `--refresh` flag and its dependency both fall away, and
     scoping/bounding become natural. No `lib/*.py` data path is modified.
-  - Scoping flag is `--repo` (design 2a / plan WP1), not the earlier
+  - Scoping flag is `--prefix` (IM-237; `--repo` scoping is a retired
+    synonym), not the earlier
     `--prefix`; the --json prefix field is emitted as `repo`.
   - Default output is bounded: each status group is capped at --limit
     entries (default 20; 0 = unlimited), never silently -- a suppression
@@ -33,6 +34,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
+import errors  # noqa: E402
 import frontmatter  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import jsonfields  # noqa: E402
 import idresolve  # noqa: E402
@@ -43,8 +45,19 @@ from . import common
 
 VERB = "index"
 TIER = "tier1"
-SUMMARY = "grouped-by-status board (scoped by --repo/--status, bounded)"
+SUMMARY = "grouped-by-status board (scoped by --prefix/--status, bounded)"
 ORDER = 50
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "enumeration-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-250: `generated_at` is wall-clock-derived, declared so output SHAPE
+# stays a function of argv while the carve-out cannot quietly widen.
+SURFACE_GENERATION_FIELDS = ("generated_at",)
 
 # Top-level keys of each per-issue object nested under groups[].issues; the
 # field-selection set for `--json <fields>`. Field selection projects
@@ -65,14 +78,16 @@ Render the issue store as a board grouped by status. Read-only: no locks
 acquired; computed live from store frontmatter, so the view is always fresh.
 
 Groups appear in workflow order (In Progress, Open, Blocked, Done,
-Cancelled). --repo restricts to one prefix; --status restricts to the named
+Cancelled). --prefix restricts to one prefix; --status restricts to the named
 statuses. Each group is capped at --limit entries (default 20; pass
 --limit 0 for the full group); suppressed rows are announced, never hidden
 silently.
 
 Store mode only -- run inside a migrated project or set ISSUE_STORE_ROOT.
 
---json emits {store, repo, generated_at, groups[{status, count, issues}]}.
+--json emits {store, prefix, repo, generated_at,
+              groups[{status, count, issues}]}. `repo` duplicates `prefix`
+              and is retained only for compatibility.
 It accepts an optional comma-separated field list (e.g. --json id,title) that
 projects each per-issue object under groups[].issues to those top-level
 fields, in the order given, leaving the wrapper and per-group metadata
@@ -80,13 +95,17 @@ intact; bare --json emits the full shape and an unknown field name is a usage
 error (exit 2)."""
 
 _EPILOG = """\
+Exit codes: 0 at least one row emitted; 1 zero rows (grep convention,
+uniform across every enumeration read); 2 argument/usage error, including
+a --prefix the store does not have (error=unknown-prefix).
+
 Examples:
   issue index
-  issue index --repo ABC
+  issue index --prefix ABC
   issue index --status open,in-progress
-  issue index --repo ABC --status open --limit 0
+  issue index --prefix ABC --status open --limit 0
   issue index --json
-  issue index --repo ABC --json id,title
+  issue index --prefix ABC --json id,title
 """
 
 
@@ -98,8 +117,8 @@ def register(subparsers):
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument(
-        "--repo", default=None, metavar="PFX",
+    common.add_prefix_scope_flag(
+        p, multi=False,
         help="Restrict the board to one prefix (e.g. ABC, XYZ).",
     )
     p.add_argument(
@@ -178,7 +197,7 @@ def _collect(store_root, repo):
 
 def _render_text(store_root, repo, generated_at, groups, statuses, limit):
     out = []
-    scope = " (repo %s)" % repo if repo else ""
+    scope = " (prefix %s)" % repo if repo else ""
     out.append("Issues board -- %s%s" % (store_root, scope))
     out.append("generated %s" % generated_at)
     for status in statuses:
@@ -223,6 +242,10 @@ def _render_json(store_root, repo, generated_at, groups, statuses, limit, fields
         })
     payload = {
         "store": str(store_root),
+        # `prefix` is the canonical key (IM-237); `repo` is retained because
+        # surface.stability forbids removing a shipped --json field. Both
+        # carry the same value.
+        "prefix": repo,
         "repo": repo,
         "generated_at": generated_at,
         "groups": group_list,
@@ -231,10 +254,10 @@ def _render_json(store_root, repo, generated_at, groups, statuses, limit, fields
 
 
 def run(args) -> int:
-    if args.repo is not None and not _PFX_RE.match(args.repo.upper()):
+    if args.prefix is not None and not _PFX_RE.match(args.prefix.upper()):
         print(
-            "issue index: invalid --repo prefix '%s' (expected e.g. ABC, XYZ)"
-            % args.repo,
+            "issue index: invalid --prefix '%s' (expected e.g. ABC, XYZ)"
+            % args.prefix,
             file=sys.stderr,
         )
         return 2
@@ -265,16 +288,21 @@ def run(args) -> int:
     store_root = common.resolve_store_root(anchor, args.store)
     if store_root is not None:
         store_root = store_root.expanduser()
-    if store_root is None or not store_root.is_dir():
-        print(
-            "issue index: requires store mode; set ISSUE_STORE_ROOT, pass "
-            "--store ROOT, or run inside a migrated project",
-            file=sys.stderr,
-        )
-        return 1
+    rc = common.require_store(
+        store_root, prog="issue index",
+        json_mode=jsonfields.json_enabled(args.json_mode),
+    )
+    if rc is not None:
+        return rc
 
-    repo = args.repo
+    repo = args.prefix
     if repo is not None:
+        rc = common.enforce_prefix_scope(
+            [repo], store_root, anchor, prog="issue index",
+            json_mode=jsonfields.json_enabled(args.json_mode),
+        )
+        if rc is not None:
+            return rc
         resolved = idresolve.resolve_prefix(
             repo, idresolve._known_prefixes(store_root, anchor)
         ) or repo.upper()
@@ -295,4 +323,10 @@ def run(args) -> int:
         sys.stdout.write(
             _render_text(store_root, repo, generated_at, groups, statuses, args.limit)
         )
-    return 0
+
+    # IM-238: one zero-result rule for every enumeration read -- 0 = at
+    # least one row, 1 = zero rows (grep convention). The board still
+    # renders (an empty board is meaningful output); only the exit code
+    # tells a caller there was nothing in it.
+    rows = sum(len(groups.get(st, ())) for st in statuses)
+    return errors.EXIT_SUCCESS if rows else errors.EXIT_PRECONDITION

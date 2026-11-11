@@ -12,16 +12,19 @@ the arg surface moved onto the ``issue`` dispatcher.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "v3.3.1"
+VERSION = "v3.4.0"
 
-_USAGE = """\
-Usage: issue-mgmt-install-skills [--help|--version]
+# The one place this verb names itself (IM-239); `_USAGE` interpolates it.
+PROG = "issue admin install-skills"
+
+_USAGE = f"Usage: {PROG} [--json] [--help|--version]\n" + """\
 
 Installs Claude Code skills from the issue-mgmt Homebrew formula into
 ~/.claude/skills/.
@@ -38,27 +41,49 @@ printed. Idempotent -- a re-run overwrites the copy.
 HOME may be overridden in the environment to install into a different
 target tree -- useful for verification scripts that exercise this tool
 end-to-end without touching the real ~/.claude/.
+
+JSON mode (--json): exactly one object on stdout, shape
+
+  {
+    "source": PATH,              # <brew-prefix>/share/issue-mgmt/skills
+    "dest": PATH,                # <HOME>/.claude/skills
+    "installed": [{"name": NAME, "path": PATH}, ...],
+    "count": N,                  # len(installed)
+    "cheatsheet": PATH|null      # null when the formula predates it
+  }
+
+Every key is present on every successful run, so output shape is a
+function of argv alone. The per-skill progress lines are replaced by the
+JSON document, not duplicated, and the "older formula?" notice stays on
+stderr. A failure (no brew, no skills dir, zero skill files) exits 1 with
+a diagnostic on stderr and no JSON document.
 """
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
 
+    # Hand-rolled argv walk (the dispatcher hands this verb its argv
+    # verbatim through a prefix_chars=chr(0) catch-all), so --json is wired
+    # in here rather than through common.add_json_flag.
+    json_mode = False
     for arg in argv:
         if arg in ("-h", "--help"):
             sys.stdout.write(_USAGE)
             return 0
         if arg == "--version":
-            print(f"issue-mgmt-install-skills {VERSION}")
+            print(f"{PROG} {VERSION}")
             return 0
+        if arg == "--json":
+            json_mode = True
+            continue
         print(f"Unknown argument: {arg}", file=sys.stderr)
         print("Run with --help for usage.", file=sys.stderr)
         return 2
 
     if shutil.which("brew") is None:
         print(
-            "Error: brew not found on PATH; issue-mgmt-install-skills relies "
-            "on Homebrew.",
+            f"Error: brew not found on PATH; {PROG} relies on Homebrew.",
             file=sys.stderr,
         )
         return 1
@@ -78,7 +103,7 @@ def main(argv=None):
         return 1
 
     skills_dir = Path(os.environ["HOME"]) / ".claude" / "skills"
-    count = 0
+    installed = []
 
     for src in sorted(pkgshare.glob("*.md")):
         if not src.is_file():
@@ -88,9 +113,11 @@ def main(argv=None):
         dest = dest_dir / "SKILL.md"
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dest)
-        print(f"Installed: {name} -> {dest}")
-        count += 1
+        if not json_mode:
+            print(f"Installed: {name} -> {dest}")
+        installed.append({"name": name, "path": str(dest)})
 
+    count = len(installed)
     if count == 0:
         print(f"Warning: no skill files found in {pkgshare}", file=sys.stderr)
         return 1
@@ -101,16 +128,35 @@ def main(argv=None):
     # idempotent (overwrite); a missing source is a non-fatal skip so an
     # older formula that predates the cheat sheet still installs skills.
     cheatsheet_src = pkgshare.parent / "CHEATSHEET.md"
+    cheatsheet_dest = None
     if cheatsheet_src.is_file():
         cheatsheet_dest = skills_dir / "issue-mgmt-CHEATSHEET.md"
         skills_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(cheatsheet_src, cheatsheet_dest)
-        print(f"Installed cheat sheet: {cheatsheet_dest}")
+        if not json_mode:
+            print(f"Installed cheat sheet: {cheatsheet_dest}")
     else:
         print(
             f"Note: no cheat sheet found at {cheatsheet_src} (older formula?)",
             file=sys.stderr,
         )
+
+    if json_mode:
+        json.dump(
+            {
+                "source": str(pkgshare),
+                "dest": str(skills_dir),
+                "installed": installed,
+                "count": count,
+                "cheatsheet": str(cheatsheet_dest) if cheatsheet_dest
+                else None,
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=False,
+        )
+        sys.stdout.write("\n")
+        return 0
 
     print("")
     print(
@@ -126,6 +172,27 @@ VERB = "install-skills"
 TIER = "admin"
 SUMMARY = "install the shipped Claude Code skills into ~/.claude/skills/"
 ORDER = 50
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "scaffolding"
+# IM-251: writes ~/.claude/skills/, no store at all.
+SURFACE_STORE = "none"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-245: this verb has NO parser -- `register()` installs a
+# prefix_chars="\x00" passthrough subparser with one nargs="*" catch-all and
+# `main()` walks argv by hand, so an argparse walk sees zero flags while the
+# verb really accepts these. Declared literally so the manifest records the
+# true surface instead of a false-CLEAN empty flag set. Keep in sync with the
+# argv loop in `main()`.
+SURFACE_MANUAL_FLAGS = (
+    {"names": ["-h", "--help"], "action": "help"},
+    {"names": ["--version"], "action": "version"},
+    {"names": ["--json"], "action": "store_true",
+     "dest": "json_mode", "default": False},
+)
 
 
 def register(subparsers):

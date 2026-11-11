@@ -156,10 +156,10 @@ wait $HOLDER_PID
 
 assert_eq "3" "$RC_TRANS" "transition-issue blocked by held lock exits 3"
 
-if grep -q "transition-issue: error=concurrent-edit" "$ERR_FILE"; then
-    pass "transition-issue stderr names 'transition-issue: error=concurrent-edit'"
+if grep -q "issue transition: error=concurrent-edit" "$ERR_FILE"; then
+    pass "transition-issue stderr names 'issue transition: error=concurrent-edit'"
 else
-    fail "transition-issue stderr missing 'transition-issue: error=concurrent-edit'"
+    fail "transition-issue stderr missing 'issue transition: error=concurrent-edit'"
     echo "--- stderr was: ---"
     cat "$ERR_FILE"
     echo "-------------------"

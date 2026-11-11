@@ -43,8 +43,13 @@ Default output is TSV, sorted by most-recent commit date descending, ties broken
 
 ## Error semantics (exit codes)
 
-- `0` -- success, including the zero-activity case (writes a `no activity in window (<since>) in <store>` note to stderr but exits 0).
-- `1` -- precondition failed: legacy mode active (store-only, see fallback below), store root not a git repo, prefix directory missing.
+- `0` -- success: at least one issue with activity in the window was emitted.
+- `1` -- EITHER zero activity in the window (the grep convention every
+  enumeration read follows) OR a precondition failure: legacy mode active,
+  store root not a git repo, prefix directory missing. Distinguish them by
+  the stderr line, not by the code: a zero-activity run writes
+  `no activity in window (<since>) in <store>` and is a NORMAL outcome --
+  often it just means a quiet week. Do not report it as a broken store.
 - `2` -- argument/usage error: invalid `--prefix` shape, empty `--prefix` after parsing, non-positive `--limit`, unknown flag.
 
 This skill is read-only; exit code 3 (`concurrent-edit`) is not produced.

@@ -65,7 +65,7 @@ Run the steps below in order. `ID` is the target issue, `PFX` its prefix (the pa
 **Step 2 -- opportunistic reap.** Clear any expired leases in the prefix before claiming:
 
 ```bash
-issue admin reap --repo <PFX>
+issue admin reap --prefix <PFX>
 ```
 
 Best-effort: on a nonzero exit, note the error and continue to step 3.
@@ -116,7 +116,7 @@ Contiguous 3-7 loser-side exit-code contract. Per-skill handling -- "Retry once"
 - `1` -- precondition failed (store unresolvable).
 - `2` -- argument / usage error (malformed claimant, bad `--lease-ttl`).
 - `3` -- `concurrent-edit` (per-issue lock timeout). Not part of this skill's decision matrix (no body edit), but the claim path can still surface it on lock contention: **retry once**.
-- `4` -- `lost-race`: another actor holds a valid lease. Render the contender (see Structured stderr below), then suggest the next ready issue via `issue ready --repo <PFX> --actor "$ACTOR"` and offer to wait for `lease_until` instead. Do not retry the same target while the contender's lease is valid.
+- `4` -- `lost-race`: another actor holds a valid lease. Render the contender (see Structured stderr below), then suggest the next ready issue via `issue ready --prefix <PFX> --actor "$ACTOR"` and offer to wait for `lease_until` instead. Do not retry the same target while the contender's lease is valid.
 - `5` -- `stale-local-view`: the passed `--claim-generation` is behind the store. Refresh (re-read frontmatter and `$SESSION_STATE`), **retry once**.
 - `6` -- `dependency-state-changed`: a blocker changed mid-operation (reserved; no current emitter). Re-query `issue ready` and offer the next candidate.
 - `7` -- `not-claimable`: status not claimable (`blocked`/`done`/`cancelled`), ID not found, or the lease died. **Escalate** -- surface the structured stderr (status / reason) to the user and stop; do not retry without operator input.
@@ -128,7 +128,7 @@ Always pass `--json` on the wrapped CLI calls. On a contract error stderr carrie
 ```
 [issue-start] Acquiring claim on ABC-098...
 [issue-start] FAILED: lost-race. Contender: claude-code-other (claimed at 2026-06-26T14:00:00Z, lease until 2026-06-26T15:00:00Z).
-[issue-start] Suggested action: try a different ready issue (issue ready --repo ABC), or wait for the lease to lapse.
+[issue-start] Suggested action: try a different ready issue (issue ready --prefix ABC), or wait for the lease to lapse.
 ```
 
 ## Examples

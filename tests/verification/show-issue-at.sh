@@ -64,7 +64,7 @@ mkdir -p "$STORE/IM" "$STORE/DOUG"
 (
     cd "$STORE"
     git init --quiet --initial-branch=main
-    git config user.email "verify@example.com"
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name "Verify User"
     git config commit.gpgsign false
 )
@@ -112,7 +112,11 @@ echo
 echo "[A] Help and version"
 
 HELP_OUTPUT=$("$SHOW_ISSUE_AT" --help 2>&1)
-assert_contains "show-issue-at" "$HELP_OUTPUT" "--help prints tool banner"
+# COVERS: surface.self-naming
+# The retired flat name appears in the DESCRIPTION as a qualified
+# lineage note, which the clause permits, so matching on it proved
+# nothing about the banner. Assert the current form (IM-239).
+assert_contains "issue history at" "$HELP_OUTPUT" "--help names the current verb"
 assert_contains "--at" "$HELP_OUTPUT" "--help documents --at flag"
 assert_contains "--json" "$HELP_OUTPUT" "--help documents --json flag"
 assert_contains "Examples:" "$HELP_OUTPUT" "--help has an Examples block"

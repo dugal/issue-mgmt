@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""cli-surface -- regenerate or check the committed CLI surface manifest.
+
+The manifest at docs/cli-surface.json is the surface-change detector
+(IM-245): tests/test_cli_surface.py regenerates it in-process and
+byte-compares, so any change to a flag, default, metavar, positional, or
+verb fails `make test` until the manifest is deliberately regenerated.
+
+Regeneration is an explicit dev act, and the rule is that you regenerate
+only TOGETHER WITH A LINT PASS -- never to make a red test green. A surface
+change is supposed to be reviewed, which is the whole point of committing
+the manifest; running `--write` to silence the diff test and moving on is
+the one way to defeat it.
+
+Dev-tree only: not listed in the Makefile's SCRIPTS, so it is never staged
+into the release tarball (same as scripts/gen-formula).
+
+usage:
+  scripts/cli-surface                 # print the manifest on stdout
+  scripts/cli-surface --check         # exit 1 if the committed copy is stale
+  scripts/cli-surface --write         # regenerate docs/cli-surface.json
+  scripts/cli-surface --help
+
+example:
+  make cli-surface && make test       # regenerate, then re-run the gate
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import cli_surface  # noqa: E402
+
+sys.path.insert(0, str(cli_surface.REPO_ROOT / "lib"))
+from cli import common  # noqa: E402
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(
+        prog="cli-surface",
+        description=__doc__.split("\n\n")[1],
+        epilog="example:\n  make cli-surface && make test",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true",
+                      help="Compare the committed manifest against a fresh "
+                           "extraction; exit 1 (and print a hint) if stale.")
+    mode.add_argument("--write", action="store_true",
+                      help="Regenerate docs/cli-surface.json in place.")
+    p.add_argument("--version", action="version", version=common.VERSION)
+    args = p.parse_args(argv)
+
+    try:
+        current = cli_surface.render_current()
+    except cli_surface.SurfaceError as e:
+        print(f"cli-surface: {e}", file=sys.stderr)
+        return 1
+
+    path = cli_surface.MANIFEST_PATH
+    if args.check:
+        if not path.is_file():
+            print(f"cli-surface: no committed manifest at {path}; run "
+                  f"`make cli-surface`", file=sys.stderr)
+            return 1
+        if path.read_text(encoding="utf-8") != current:
+            print("cli-surface: committed manifest is stale -- the CLI "
+                  "surface changed.", file=sys.stderr)
+            print("Regenerate it together with a lint pass: "
+                  "make cli-surface", file=sys.stderr)
+            return 1
+        print(f"cli-surface: {path.relative_to(cli_surface.REPO_ROOT)} is "
+              f"up to date.")
+        return 0
+
+    if args.write:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(current, encoding="utf-8")
+        print(f"cli-surface: wrote "
+              f"{path.relative_to(cli_surface.REPO_ROOT)}")
+        return 0
+
+    sys.stdout.write(current)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

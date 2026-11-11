@@ -96,7 +96,11 @@ echo
 echo "[A] Help and version"
 
 HELP_OUTPUT=$("$SEARCH" --help 2>&1)
-assert_contains "search-issues" "$HELP_OUTPUT" "--help prints tool banner"
+# COVERS: surface.self-naming
+# Matched the retired flat name, which survives only as a qualified
+# lineage note in the DESCRIPTION -- so it proved nothing about the
+# banner. Assert the current form (IM-239).
+assert_contains "issue search" "$HELP_OUTPUT" "--help names the current verb"
 assert_contains "--syntax" "$HELP_OUTPUT" "--help documents --syntax flag"
 assert_contains "--prefix" "$HELP_OUTPUT" "--help documents --prefix flag"
 assert_contains "--status" "$HELP_OUTPUT" "--help documents --status flag"
@@ -211,6 +215,17 @@ assert_contains "IM-001"  "$OUT"  "OR-within --status hits open IM-001"
 assert_contains "DOUG-002" "$OUT" "OR-within --status hits blocked DOUG-002"
 assert_not_contains "IM-002" "$OUT" "OR-within --status excludes in-progress"
 assert_not_contains "IM-003" "$OUT" "OR-within --status excludes done"
+
+# Repeated --status accumulates, matching the comma form and `issue index`
+# (IM-269). Before the fix this silently returned only the last value.
+OUT=$("$SEARCH" "" --status open --status blocked)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001"  "$OUT"  "repeated --status hits open IM-001"
+assert_contains "DOUG-002" "$OUT" "repeated --status hits blocked DOUG-002"
+assert_not_contains "IM-002" "$OUT" "repeated --status excludes in-progress"
+OUT=$("$SEARCH" "" --status open --status "blocked,done")
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-003" "$OUT" "mixed --status forms hit done IM-003"
 
 # ---------------------------------------------------------------------------
 # Section E: --json shape
@@ -445,6 +460,70 @@ JOUT=$("$SEARCH" --store "$TSTORE" kumquat --json 2>/dev/null)
 assert_contains '"title_match": true' "$JOUT" "--json reports title_match true for a title hit"
 assert_contains '"body_matches": []' "$JOUT" "a title-only hit carries no body_matches"
 rm -rf "$TSTORE"
+
+
+# ---------------------------------------------------------------------------
+# Section: an unusable store is a precondition failure, not a zero-result
+# ---------------------------------------------------------------------------
+# IM-253: `issue search` exits 1 both for "matched nothing" (the grep convention)
+# and for a store that never resolved. It used to report the second case with
+# ZERO bytes on both streams, so an unconfigured store was indistinguishable
+# from an empty one -- the exact confusion IM-238 ruled out one level up for
+# an absent --prefix, and the degenerate case of the non-branchable error
+# surface.structured-errors forbids.
+echo
+echo "== unusable store is branchable (IM-253) =="
+
+UNRESOLVABLE_HOME="$TMPDIR_ROOT/unresolvable-home"
+UNRESOLVABLE_PROJ="$TMPDIR_ROOT/unresolvable-proj"
+mkdir -p "$UNRESOLVABLE_HOME" "$UNRESOLVABLE_PROJ"
+
+# No ISSUE_STORE_ROOT, no sentinel, no legacy .issues/ corpus.
+ERR_OUT=$( cd "$UNRESOLVABLE_PROJ" && env -u ISSUE_STORE_ROOT \
+    HOME="$UNRESOLVABLE_HOME" $SEARCH zzz-no-such-token 2>&1 >/dev/null )
+RC=$?
+# COVERS: surface.structured-errors
+assert_eq "1" "$RC" "unresolvable store is a precondition failure"
+# COVERS: surface.structured-errors
+assert_contains "error=precondition-failed" "$ERR_OUT" \
+    "unresolvable store names the condition"
+# COVERS: surface.structured-errors
+assert_contains "reason=store-unresolvable" "$ERR_OUT" \
+    "unresolvable store carries a branchable reason"
+
+# The same condition under --json is one JSON object on stderr.
+JERR=$( cd "$UNRESOLVABLE_PROJ" && env -u ISSUE_STORE_ROOT \
+    HOME="$UNRESOLVABLE_HOME" $SEARCH zzz-no-such-token --json 2>&1 >/dev/null )
+# COVERS: surface.structured-errors
+PY_CHECK=$(python3 -c '
+import json, sys
+obj = json.loads(sys.stdin.read())
+assert obj["exit"] == 1, obj
+assert obj["reason"] == "store-unresolvable", obj
+print("ok")
+' <<< "$JERR")
+assert_eq "ok" "$PY_CHECK" "--json renders the condition as one JSON object"
+
+# A store root that resolves but is absent names the path it was pointed at.
+ERR_OUT=$( cd "$UNRESOLVABLE_PROJ" && \
+    ISSUE_STORE_ROOT="$TMPDIR_ROOT/no-such-store" \
+    HOME="$UNRESOLVABLE_HOME" $SEARCH zzz-no-such-token 2>&1 >/dev/null )
+# COVERS: surface.structured-errors
+assert_contains "store=$TMPDIR_ROOT/no-such-store" "$ERR_OUT" \
+    "an absent store root is named in the payload"
+
+# Legacy .issues/ mode is still a usable corpus: a genuine zero-result there
+# stays a silent exit 1, so the new gate did not swallow legacy mode.
+LEGACY_PROJ="$TMPDIR_ROOT/legacy-corpus"
+mkdir -p "$LEGACY_PROJ/.issues"
+printf 'LG\n' > "$LEGACY_PROJ/.issues/.prefix"
+ERR_OUT=$( cd "$LEGACY_PROJ" && env -u ISSUE_STORE_ROOT \
+    HOME="$UNRESOLVABLE_HOME" $SEARCH zzz-no-such-token 2>&1 >/dev/null )
+RC=$?
+# COVERS: output.exit-codes
+assert_eq "1" "$RC" "legacy mode with no match still exits 1 (zero-result)"
+# COVERS: output.exit-codes
+assert_eq "" "$ERR_OUT" "a genuine zero-result stays silent, not a precondition"
 
 # ---------------------------------------------------------------------------
 echo

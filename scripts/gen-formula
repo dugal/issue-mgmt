@@ -21,26 +21,15 @@ DISPATCHER = "issue"
 
 BIN_ENTRIES = [DISPATCHER]
 
-# Skill files staged into <pkgshare>/skills/<name>.md by the Makefile tarball recipe.
-# Names match the canonical (non-dev) skill names that issue-mgmt-install-skills
-# copies into ~/.claude/skills/<name>/SKILL.md.
-SKILL_NAMES = [
-    "issue-activity",
-    "issue-block",
-    "issue-cancel",
-    "issue-complete",
-    "issue-create",
-    "issue-edit",
-    "issue-history",
-    "issue-list",
-    "issue-search",
-    "issue-search-history",
-    "issue-note",
-    "issue-dep",
-    "issue-show",
-    "issue-show-at",
-    "issue-start",
-]
+# Skills are installed as a DIRECTORY, deliberately: the Makefile stages
+# .claude/skills/<name>-dev/SKILL.md to skills/<name>.md, so the staged
+# skills/ tree IS the shipped set and the formula need not name its members.
+# A hand-maintained SKILL_NAMES list lived here through v3.3.1 and silently
+# omitted `issue-dep` and `issue-note` -- a formula that omits a skill
+# installs nothing for it and fails nothing, because <pkgshare>/skills/ is
+# the only place `issue admin install-skills` reads from (IM-264). The list
+# is gone rather than corrected: a declaration that does not exist cannot
+# drift. Mirrors how lib/ and store-template/ are already installed.
 
 FORMULA_TEMPLATE = """\
 # frozen_string_literal: true
@@ -64,7 +53,8 @@ class IssueMgmt < Formula
     (share/"issue-mgmt").install "ISSUE-TEMPLATE.md"
     (share/"issue-mgmt").install "CHEATSHEET.md"
     (share/"issue-mgmt").install "store-template"
-{skill_install_lines}
+    (share/"issue-mgmt").install "skills"
+    doc.install "LICENSE"
     doc.install "CHANGELOG.md"
     doc.install "README.md"
   end
@@ -146,18 +136,12 @@ def main():
     bin_install_lines = "\n".join(
         f'    bin.install "{name}"' for name in BIN_ENTRIES
     )
-    skill_install_lines = "\n".join(
-        f'    (share/"issue-mgmt/skills").install "skills/{name}.md"'
-        for name in SKILL_NAMES
-    )
-
     print(
         FORMULA_TEMPLATE.format(
             url=url,
             sha256=digest,
             version=version,
             bin_install_lines=bin_install_lines,
-            skill_install_lines=skill_install_lines,
         ),
         end="",
     )

@@ -70,7 +70,7 @@ mkdir -p "$STORE/IM" "$STORE/DOUG"
 (
     cd "$STORE"
     git init --quiet --initial-branch=main
-    git config user.email "verify@example.com"
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name "Verify User"
     git config commit.gpgsign false
 )
@@ -116,7 +116,11 @@ echo
 echo "[A] Help and version"
 
 HELP_OUTPUT=$("$ISSUE_HISTORY" --help 2>&1)
-assert_contains "issue-history" "$HELP_OUTPUT" "--help prints tool banner"
+# COVERS: surface.self-naming
+# The retired flat name appears in the DESCRIPTION as a qualified
+# lineage note, which the clause permits, so matching on it proved
+# nothing about the banner. Assert the current form (IM-239).
+assert_contains "issue history show" "$HELP_OUTPUT" "--help names the current verb"
 assert_contains "--limit" "$HELP_OUTPUT" "--help documents --limit flag"
 assert_contains "--json" "$HELP_OUTPUT" "--help documents --json flag"
 assert_contains "Examples:" "$HELP_OUTPUT" "--help has an Examples block"
@@ -187,16 +191,29 @@ OUT=$("$ISSUE_HISTORY" IM-100 --limit 1)
 LIMIT_COUNT=$(echo "$OUT" | grep -c .)
 assert_eq "1" "$LIMIT_COUNT" "--limit 1 returns exactly one commit"
 
-# --limit must be a positive integer
-OUT_ERR=$("$ISSUE_HISTORY" IM-100 --limit 0 2>&1 >/dev/null)
+# IM-241: `--limit 0` means unlimited on every verb that takes --limit
+# (it was exit 2 here through v3.3.x, while index and ready already read
+# it as unlimited).
+OUT=$("$ISSUE_HISTORY" IM-100 --limit 0 2>/dev/null)
 RC=$?
-assert_eq "2" "$RC" "--limit 0 -> exit 2"
-assert_contains "positive integer" "$OUT_ERR" "--limit 0 error mentions positive integer"
+UNLIMITED_COUNT=$(echo "$OUT" | grep -c .)
+FULL_COUNT=$("$ISSUE_HISTORY" IM-100 2>/dev/null | grep -c .)
+# COVERS: surface.vocabulary-registry
+assert_eq "0" "$RC" "--limit 0 is unlimited, not a usage error"
+assert_eq "$FULL_COUNT" "$UNLIMITED_COUNT" "--limit 0 matches the unbounded default"
+
+# A negative cap is still a usage error.
+OUT_ERR=$("$ISSUE_HISTORY" IM-100 --limit -3 2>&1 >/dev/null)
+RC=$?
+assert_eq "2" "$RC" "--limit -3 -> exit 2"
+assert_contains "0 (unlimited) or a positive" "$OUT_ERR" \
+    "negative-limit error names the accepted range"
 
 OUT_ERR=$("$ISSUE_HISTORY" IM-100 --limit notanint 2>&1 >/dev/null)
 RC=$?
 assert_eq "2" "$RC" "--limit notanint -> exit 2"
-assert_contains "positive integer" "$OUT_ERR" "--limit notanint error mentions positive integer"
+assert_contains "0 (unlimited) or a positive" "$OUT_ERR" \
+    "--limit notanint error names the accepted range"
 
 # ---------------------------------------------------------------------------
 # Section D: Empty history (file exists, no commits)

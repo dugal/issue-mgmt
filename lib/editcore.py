@@ -37,7 +37,7 @@ import idresolve  # noqa: E402
 import lease  # noqa: E402
 
 GUARDED_FIELDS = {
-    "status": "use `transition-issue` to change status",
+    "status": "use `issue transition` to change status",
     "id": "immutable (rename via migration tool)",
     "created": "immutable",
 }
@@ -103,7 +103,14 @@ _BODY_OP_FLAGS = {"--append", "--prepend", "--replace"}
 _BODY_FILE_FLAGS = {"--append-file", "--prepend-file", "--replace-file"}
 _POSITION_FLAGS = {"--after", "--before", "--to-position", "--at-end"}
 _DEP_FLAGS = {"--add-dep", "--remove-dep"}
-_DEP_QUALIFIER_FLAGS = {"--dep-type", "--dep-note"}
+_DEP_QUALIFIER_FLAGS = {"--kind", "--dep-note"}
+
+# IM-241: retired spelling -> canonical, normalized at the top of the walk
+# so every downstream check AND every error message names the current form
+# (surface.self-naming). `--dep-type` was `edit`'s spelling for the
+# dependency kind through v3.3.x; `--kind` is now canonical on both `edit`
+# and `dep`, which spelled the same operand `--type`.
+_RETIRED_FLAG_SPELLINGS = {"--dep-type": "--kind"}
 
 
 def _check_body_nests(text, op_label, anchor_label):
@@ -208,6 +215,7 @@ def interpret_section_actions(ordered_flags):
             )
 
     for flag, value in ordered_flags:
+        flag = _RETIRED_FLAG_SPELLINGS.get(flag, flag)
         if flag in _ANCHOR_FLAGS:
             _close_anchor()
             if flag == "--section":
@@ -242,11 +250,11 @@ def interpret_section_actions(ordered_flags):
             continue
 
         if flag in _DEP_QUALIFIER_FLAGS:
-            if flag == "--dep-type":
+            if flag == "--kind":
                 _require_anchor_for(flag, "remove-dep")
                 if anchor.get("dep_kind") is not None:
                     raise ValueError(
-                        "--dep-type already set for this --remove-dep"
+                        "--kind already set for this --remove-dep"
                     )
                 anchor["dep_kind"] = value
             elif flag == "--dep-note":

@@ -30,7 +30,6 @@ Optional flags forwarded to `issue create`:
 
 - `--store <root>` -- override store root (otherwise resolved via `ISSUE_STORE_ROOT` or the `.migrated-to-store` sentinel).
 - `--repo <name>` -- override the cwd-derived git toplevel basename for registry lookup.
-- `--prefix <PFX>` -- explicit prefix; must agree with the registry and any local `.prefix` file.
 
 ## How it works
 

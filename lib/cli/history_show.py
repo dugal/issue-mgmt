@@ -28,8 +28,22 @@ from . import common
 
 VERB = "show"
 TIER = "history"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue history show"
 SUMMARY = "git commit history for one issue file (git log --follow)"
 ORDER = 10
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "point-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
 
 # Top-level keys of each per-commit object under `commits`; the
 # field-selection set for `--json <fields>`. Projection applies to
@@ -77,7 +91,7 @@ def register(subparsers):
         "--limit",
         default=None,
         metavar="N",
-        help="Show at most N commits (positive integer).",
+        help="Show at most N commits; 0 = unlimited (the default).",
     )
     common.add_json_field_flag(p)
     common.add_store_flag(p)
@@ -88,7 +102,7 @@ def register(subparsers):
 
 def legacy_mode_error(issue_id: str) -> str:
     return (
-        "issue-history: store mode not active "
+        f"{PROG}: store mode not active "
         "(ISSUE_STORE_ROOT unset and no .issues/.migrated-to-store sentinel). "
         "This subcommand operates only on the issue store. "
         f"For pre-migration history, run the following inside the "
@@ -110,14 +124,14 @@ def emit_json(payload, out):
 def run(args) -> int:
     if args.id is None:
         print(
-            "issue-history: missing ID (use --help for usage)",
+            f"{PROG}: missing ID (use --help for usage)",
             file=sys.stderr,
         )
         return 2
 
     if idresolve.split_id(args.id) is None:
         print(
-            f"issue-history: invalid ID '{args.id}' "
+            f"{PROG}: invalid ID '{args.id}' "
             f"(expected <PREFIX>-NNN, e.g. ABC-123 or XYZ-9)",
             file=sys.stderr,
         )
@@ -129,24 +143,28 @@ def run(args) -> int:
             limit = int(args.limit)
         except ValueError:
             print(
-                f"issue-history: --limit must be a positive integer, "
-                f"got '{args.limit}'",
+                f"{PROG}: --limit must be 0 (unlimited) or a positive "
+                f"integer, got '{args.limit}'",
                 file=sys.stderr,
             )
             return 2
-        if limit <= 0:
+        if limit < 0:
             print(
-                f"issue-history: --limit must be a positive integer, "
-                f"got {limit}",
+                f"{PROG}: --limit must be 0 (unlimited) or a positive "
+                f"integer, got {limit}",
                 file=sys.stderr,
             )
             return 2
+        if limit == 0:
+            # IM-241: `--limit 0` means unlimited on every verb that takes
+            # --limit; here that is the same as not passing the flag.
+            limit = None
 
     json_fields = None
     if jsonfields.json_enabled(args.json_mode):
         try:
             json_fields = jsonfields.parse_fields(
-                args.json_mode, VALID_JSON_FIELDS, prog="issue-history"
+                args.json_mode, VALID_JSON_FIELDS, prog=PROG
             )
         except jsonfields.FieldSelectionError as e:
             print(e.message, file=sys.stderr)
@@ -161,20 +179,20 @@ def run(args) -> int:
     store_root = store_root.expanduser().resolve()
     if not store_root.is_dir():
         print(
-            f"issue-history: store root does not exist: {store_root}",
+            f"{PROG}: store root does not exist: {store_root}",
             file=sys.stderr,
         )
         return 1
 
     def _note(before, after):
-        print(f"issue-history: resolved {before} -> {after}", file=sys.stderr)
+        print(f"{PROG}: resolved {before} -> {after}", file=sys.stderr)
 
     try:
         _rr = idresolve.resolve_issue_paths(
             args.id, store_root, anchor, emit_note=_note
         )
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr("issue-history", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     canonical_id = _rr.canonical_id
@@ -182,7 +200,7 @@ def run(args) -> int:
     prefix_dir = store_root / rel_path.split("/", 1)[0]
     if not prefix_dir.is_dir():
         print(
-            f"issue-history: prefix directory does not exist: {prefix_dir}",
+            f"{PROG}: prefix directory does not exist: {prefix_dir}",
             file=sys.stderr,
         )
         return 1
@@ -190,7 +208,7 @@ def run(args) -> int:
     issue_file = store_root / rel_path
     if not issue_file.is_file():
         print(
-            f"issue-history: issue file not found: {issue_file}",
+            f"{PROG}: issue file not found: {issue_file}",
             file=sys.stderr,
         )
         return 1
@@ -198,12 +216,12 @@ def run(args) -> int:
     try:
         commits = history.git_log(store_root, rel_path, limit=limit)
     except history.HistoryError as e:
-        print(f"issue-history: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "").strip().splitlines()[-1:] or [""]
         print(
-            f"issue-history: git log failed ({e.returncode}): {stderr_tail[0]}",
+            f"{PROG}: git log failed ({e.returncode}): {stderr_tail[0]}",
             file=sys.stderr,
         )
         return 1
@@ -221,7 +239,7 @@ def run(args) -> int:
     else:
         if not commits:
             print(
-                f"issue-history: no history for {args.id} in {store_root}",
+                f"{PROG}: no history for {args.id} in {store_root}",
                 file=sys.stderr,
             )
         else:

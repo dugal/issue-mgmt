@@ -29,16 +29,35 @@ import reindex as _reindex  # noqa: E402
 
 from . import common
 
+# The one place this verb names itself; every diagnostic formats through
+# it, so the surface manifest sees one name per verb and
+# `surface.self-naming` is checkable (IM-239).
+PROG = "issue dep"
+
 VERB = "dep"
 TIER = "tier1"
 SUMMARY = "add, remove, or list an issue's depends_on edges"
 ORDER = 45
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-245: locally declared retired spellings (IM-241 synonym window). The
+# shared `common.add_*` helpers register their own synonyms and the extractor
+# attributes those automatically; these two are declared inline, so they are
+# declared here too. No same-dest heuristic could find them reliably -- see
+# `edit`, where the pair has two different dests.
+SURFACE_SYNONYMS = {"--kind": ("--type",), "--dep-note": ("--note",)}
+
 _DESCRIPTION = """\
 Author and read `depends_on` dependency edges.
 
-  issue dep add    ID KIND:TARGET [--note TEXT]
-  issue dep remove ID TARGET [--type KIND]
+  issue dep add    ID KIND:TARGET [--dep-note TEXT]
+  issue dep remove ID TARGET [--kind KIND]
   issue dep list   ID [--json]
 
 KIND is one of blocks, parent-child, related, discovered-from. TARGET is a
@@ -50,8 +69,8 @@ key). `list` acquires no lock."""
 _EPILOG = """\
 Examples:
   issue dep add ABC-123 blocks:XYZ-9
-  issue dep add ABC-124 parent-child:ABC-100 --note "spun out of parent"
-  issue dep remove ABC-123 XYZ-9 --type blocks
+  issue dep add ABC-124 parent-child:ABC-100 --dep-note "spun out of parent"
+  issue dep remove ABC-123 XYZ-9 --kind blocks
   issue dep list ABC-123 --json
 """
 
@@ -69,12 +88,23 @@ def register(subparsers):
     p.add_argument("issue_id", nargs="?", metavar="ID")
     p.add_argument("operand", nargs="?", metavar="OPERAND",
                    help="KIND:TARGET (add) or TARGET (remove).")
-    p.add_argument("--note", default=None, metavar="TEXT")
-    p.add_argument("--type", default=None, dest="dep_type", metavar="KIND")
+    # IM-241: the dependency kind and the dependency note are one concept
+    # each, spelled the same way on `dep` and on `edit` -- `--kind` and
+    # `--dep-note`. The retired `--type` / `--note` spellings are accepted
+    # for one release and hidden from help (surface.self-naming); they
+    # collided with `--type` = issue type (search/list/create) and
+    # `--note` = closing note (transition/complete).
+    p.add_argument("--dep-note", default=None, dest="note", metavar="TEXT",
+                   help="Note recorded on the new edge.")
+    p.add_argument("--note", default=argparse.SUPPRESS, dest="note",
+                   metavar="TEXT", help=argparse.SUPPRESS)
+    p.add_argument("--kind", default=None, dest="dep_type", metavar="KIND",
+                   help="Restrict the removal to edges of this kind.")
+    p.add_argument("--type", default=argparse.SUPPRESS, dest="dep_type",
+                   metavar="KIND", help=argparse.SUPPRESS)
     common.add_json_flag(p)
     p.add_argument("--no-reindex", action="store_true")
-    p.add_argument("--lock-timeout", type=float,
-                   default=concurrency.DEFAULT_LOCK_TIMEOUT, metavar="SECONDS")
+    common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
     common.add_store_flag(p)
     common.add_version_flag(p)
     p.set_defaults(_run=run)
@@ -95,15 +125,15 @@ def _resolve_paths(issue_id, cli_store, *, emit_note=None):
 
 def _do_edit(args, dep_actions) -> int:
     def _note(before, after):
-        print(f"issue dep: resolved {before} -> {after}", file=sys.stderr)
+        print(f"{PROG}: resolved {before} -> {after}", file=sys.stderr)
 
     try:
         _rr = _resolve_paths(args.issue_id, args.store, emit_note=_note)
     except ValueError as e:
-        print(f"issue dep: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 2
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr("issue dep", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     issue_file = _rr.issue_file
@@ -113,7 +143,7 @@ def _do_edit(args, dep_actions) -> int:
     canonical_id = _rr.canonical_id
 
     if not issue_file.exists():
-        print(f"issue dep: issue file not found: {issue_file}", file=sys.stderr)
+        print(f"{PROG}: issue file not found: {issue_file}", file=sys.stderr)
         return 1
 
     autocommit_enabled = (
@@ -157,18 +187,18 @@ def _do_edit(args, dep_actions) -> int:
             dep_actions=dep_actions,
         )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr("issue dep"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr("issue dep", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     except FileNotFoundError as e:
-        print(f"issue dep: file disappeared between resolve and read: {e}",
+        print(f"{PROG}: file disappeared between resolve and read: {e}",
               file=sys.stderr)
         return 1
     except ValueError as e:
-        print(f"issue dep: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
 
     if args.json_mode:
@@ -219,15 +249,15 @@ def _cmd_remove(args) -> int:
 
 def run(args) -> int:
     if not args.command:
-        print("issue dep: missing subcommand (add|remove|list); use -h",
+        print(f"{PROG}: missing subcommand (add|remove|list); use -h",
               file=sys.stderr)
         return 2
     if args.command not in ("add", "remove", "list"):
-        print(f"issue dep: unknown subcommand {args.command!r} "
+        print(f"{PROG}: unknown subcommand {args.command!r} "
               "(expected add, remove, or list)", file=sys.stderr)
         return 2
     if not args.issue_id:
-        print("issue dep: missing issue ID (use -h)", file=sys.stderr)
+        print(f"{PROG}: missing issue ID (use -h)", file=sys.stderr)
         return 2
 
     if args.command == "add":

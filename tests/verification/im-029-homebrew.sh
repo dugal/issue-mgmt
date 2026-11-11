@@ -6,14 +6,20 @@
 #   - The `issue` dispatcher exists, is executable, and answers --help /
 #     --version
 #   - gen-formula emits a formula that installs `issue`, the lib/ directory
-#     (incl the lib/cli/ verb package), ISSUE-TEMPLATE.md, all skill .md
-#     files, and CHANGELOG / README; the caveats block points at
-#     `issue admin install-skills`; the test block exercises `issue`
+#     (incl the lib/cli/ verb package), ISSUE-TEMPLATE.md, the skills
+#     DIRECTORY, and LICENSE / CHANGELOG / README; the caveats block points
+#     at `issue admin install-skills`; the test block exercises `issue`
 #   - install-skills, given a synthetic pkgshare and an
 #     HOME-pointed-at-a-tmp-dir, populates ~/.claude/skills/<name>/SKILL.md
-#     for each of the 13 skill names with byte-identical content
+#     for every shipped skill with byte-identical content
 #   - install-skills exits non-zero when the pkgshare is missing
 #     or empty
+#
+# Every skill name and count below is DERIVED from .claude/skills/*-dev via
+# lib.sh's shipped_skill_names (IM-264). A hand-maintained EXPECTED_SKILLS
+# literal lived here from v2.0.0 and declared 13 of the 15 shipped skills,
+# while being the only guard for gen-formula's own hand list -- two hand
+# lists compared to each other, neither to ground truth.
 #
 # The final post-publish step (real `make install` + the user's own
 # Claude Code restart) is a separate manual gate -- this script does NOT
@@ -65,21 +71,12 @@ trap 'rm -rf "$TMPDIR_ROOT"' EXIT
 DISPATCHER=issue
 EXPECTED_BINS=("$DISPATCHER")
 
-EXPECTED_SKILLS=(
-    issue-activity
-    issue-block
-    issue-cancel
-    issue-complete
-    issue-create
-    issue-edit
-    issue-history
-    issue-list
-    issue-search
-    issue-search-history
-    issue-show
-    issue-show-at
-    issue-start
-)
+# Ground truth, derived (lib.sh). Newline-delimited; bash 3.2 has no
+# process substitution into an array without a temp file, and a space-safe
+# skill name is guaranteed by the directory-name grammar, so word splitting
+# over the list is safe here.
+SHIPPED_SKILLS=$(shipped_skill_names) || exit 1
+SHIPPED_SKILL_COUNT=$(shipped_skill_count)
 
 # ---------------------------------------------------------------------------
 # Block 1: the `issue` dispatcher is present and self-executing -- it answers
@@ -130,10 +127,40 @@ assert_contains "(share/\"issue-mgmt\").install \"CHEATSHEET.md\"" "$FORMULA_BOD
 assert_contains "doc.install \"CHANGELOG.md\"" "$FORMULA_BODY" "formula installs CHANGELOG.md"
 assert_contains "doc.install \"README.md\"" "$FORMULA_BODY" "formula installs README.md"
 
+# The formula installs the skills DIRECTORY, so it names no skill and cannot
+# drift from the shipped set. These two assertions pin that property: the
+# directive is present, and no per-skill filename survives anywhere in the
+# formula. A declaration that does not exist cannot go stale -- which is the
+# IM-264 fix, as distinct from correcting a stale list.
 # COVERS: dist.skills-one-per-cli
-for name in "${EXPECTED_SKILLS[@]}"; do
-    assert_contains "skills/$name.md" "$FORMULA_BODY" "formula installs skill: $name"
-done
+assert_contains '(share/"issue-mgmt").install "skills"' "$FORMULA_BODY" \
+    "formula installs the skills directory"
+# COVERS: dist.skills-one-per-cli
+if printf '%s\n' "$FORMULA_BODY" | grep -q 'skills/[a-z-]*\.md'; then
+    fail "formula enumerates individual skill files (re-introduces the IM-264 hand list)"
+else
+    pass "formula enumerates no individual skill file"
+fi
+
+# The three independent declarations of the pkgshare skills path must agree:
+# the Makefile stages into $(STAGE)/skills, the formula installs "skills"
+# under share/issue-mgmt, and install-skills reads
+# <brew-prefix>/share/issue-mgmt/skills. A directory install only ships the
+# skills if all three spell the same path; nothing else checks that.
+# COVERS: dist.skills-install-binary
+grep -q '\$(STAGE)/skills' "$PROJECT_ROOT/Makefile" \
+    && pass "Makefile stages skills into \$(STAGE)/skills" \
+    || fail "Makefile no longer stages skills into \$(STAGE)/skills"
+# COVERS: dist.skills-install-binary
+grep -q '"share" / "issue-mgmt" / "skills"' "$PROJECT_ROOT/lib/cli/admin_install_skills.py" \
+    && pass "install-skills reads <brew-prefix>/share/issue-mgmt/skills" \
+    || fail "install-skills pkgshare path no longer matches the formula install target"
+
+# LICENSE is tracked and the formula declares license "MIT", but it reached
+# no packaging list from v3.1.0 until IM-264, so a brew-installed
+# issue-mgmt carried no license text.
+# COVERS: dist.formula-bundling
+assert_contains 'doc.install "LICENSE"' "$FORMULA_BODY" "formula installs LICENSE"
 
 assert_contains "def caveats" "$FORMULA_BODY" "formula has caveats block"
 assert_contains "issue admin install-skills" "$FORMULA_BODY" "caveats reference 'issue admin install-skills'"
@@ -148,7 +175,7 @@ assert_not_contains "bin.install \"transition-issue\"" "$FORMULA_BODY" "formula 
 # ---------------------------------------------------------------------------
 # Block 3: issue-mgmt-install-skills, given a synthetic pkgshare and an
 #          isolated HOME, populates ~/.claude/skills/<name>/SKILL.md for
-#          each of the 13 names with byte-identical content.
+#          every shipped skill with byte-identical content.
 # ---------------------------------------------------------------------------
 echo "== Block 3: issue-mgmt-install-skills works against a synthetic pkgshare =="
 
@@ -165,9 +192,9 @@ exit 1
 EOF
 chmod +x "$FAKE_BREW_PREFIX/bin/brew"
 
-# Populate the synthetic pkgshare with the same 13 names the formula installs,
-# each carrying a unique sentinel line so we can confirm exact copy.
-for name in "${EXPECTED_SKILLS[@]}"; do
+# Populate the synthetic pkgshare from ground truth, each file carrying a
+# unique sentinel line so we can confirm an exact copy.
+for name in $SHIPPED_SKILLS; do
     printf 'sentinel-for-%s\n' "$name" > "$FAKE_BREW_PREFIX/share/issue-mgmt/skills/$name.md"
 done
 
@@ -181,7 +208,7 @@ RC=$?
 # COVERS: dist.skills-install-binary
 assert_eq "0" "$RC" "issue-mgmt-install-skills exit code"
 
-for name in "${EXPECTED_SKILLS[@]}"; do
+for name in $SHIPPED_SKILLS; do
     dest="$FAKE_HOME/.claude/skills/$name/SKILL.md"
     if [ ! -f "$dest" ]; then
         fail "skill not installed: $name (expected $dest)"
@@ -193,8 +220,19 @@ for name in "${EXPECTED_SKILLS[@]}"; do
 done
 
 # The "Done. N skill(s) installed." footer is what a developer sees and is
-# the simplest health signal -- make sure it reports 13.
-assert_contains "13 skill(s) installed" "$(cat "$TMPDIR_ROOT/install.out")" "installer summary reports 13 skills"
+# the simplest health signal. The count is interpolated from ground truth;
+# it read a hard-coded 13 from v2.0.0 through v3.3.1.
+assert_contains "$SHIPPED_SKILL_COUNT skill(s) installed" "$(cat "$TMPDIR_ROOT/install.out")" \
+    "installer summary reports $SHIPPED_SKILL_COUNT skills"
+
+# The installed set must be EXACTLY the shipped set, not merely a superset:
+# an installer that silently skipped a file would pass every per-name check
+# above, since each only asserts its own name is present.
+INSTALLED_SKILLS=$(ls -d "$FAKE_HOME"/.claude/skills/*/ 2>/dev/null \
+                   | xargs -n1 basename | sort)
+# COVERS: dist.skills-install-binary
+assert_eq "$SHIPPED_SKILLS" "$INSTALLED_SKILLS" \
+    "installed skill set is exactly the shipped set"
 
 # The cheat sheet is copied next to the installed skills, and its install
 # path is printed so an agent/operator can find it on disk.
@@ -300,7 +338,7 @@ else
         export HOME="$IDX_HOME"
         export ISSUE_STORE_ROOT="$IDX_STORE"
         git config --global user.name  "im189-verify" 2>/dev/null
-        git config --global user.email "im189@issue-mgmt.invalid" 2>/dev/null
+        git config --global user.email "$FIXTURE_EMAIL" 2>/dev/null
         git config --global init.defaultBranch main 2>/dev/null
 
         "$PKG/bin/issue" admin init-store "$IDX_STORE" --non-interactive >/dev/null 2>&1
@@ -357,8 +395,10 @@ stamped version:
 
   issue --version
 
-And confirm the 13 skills landed under ~/.claude/skills/ as
-'<name>/SKILL.md' (no -dev suffix):
+And confirm all $SHIPPED_SKILL_COUNT skills landed under ~/.claude/skills/
+as '<name>/SKILL.md' (no -dev suffix) -- this prints the diff, so empty
+output means the installed set matches what this tree ships:
 
-  ls ~/.claude/skills/ | grep -E '^issue-(activity|block|cancel|complete|create|edit|history|list|search|search-history|show|show-at|start)\$'
+  diff <(ls -d .claude/skills/*-dev | xargs -n1 basename | sed 's/-dev\$//' | sort) \\
+       <(ls -d ~/.claude/skills/issue-*/ | xargs -n1 basename | sort)
 EOF

@@ -28,8 +28,22 @@ from . import common
 
 VERB = "at"
 TIER = "history"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue history at"
 SUMMARY = "print an issue's contents at a past commit or date (git show)"
 ORDER = 30
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "point-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
 
 # Top-level keys of the single --json object; the field-selection set for
 # `--json <fields>`. The whole object is the per-object here.
@@ -92,7 +106,7 @@ def register(subparsers):
 
 def legacy_mode_error(issue_id: str, at: str) -> str:
     return (
-        "show-issue-at: store mode not active "
+        f"{PROG}: store mode not active "
         "(ISSUE_STORE_ROOT unset and no .issues/.migrated-to-store sentinel). "
         "This subcommand operates only on the issue store. "
         f"For pre-migration history, run the following inside the "
@@ -109,14 +123,14 @@ def emit_json(payload, out):
 def run(args) -> int:
     if args.id is None:
         print(
-            "show-issue-at: missing ID (use --help for usage)",
+            f"{PROG}: missing ID (use --help for usage)",
             file=sys.stderr,
         )
         return 2
 
     if idresolve.split_id(args.id) is None:
         print(
-            f"show-issue-at: invalid ID '{args.id}' "
+            f"{PROG}: invalid ID '{args.id}' "
             f"(expected <PREFIX>-NNN, e.g. ABC-123 or XYZ-9)",
             file=sys.stderr,
         )
@@ -124,7 +138,7 @@ def run(args) -> int:
 
     if args.at is None:
         print(
-            "show-issue-at: --at REF is required (use --help for usage)",
+            f"{PROG}: --at REF is required (use --help for usage)",
             file=sys.stderr,
         )
         return 2
@@ -133,7 +147,7 @@ def run(args) -> int:
     if jsonfields.json_enabled(args.json_mode):
         try:
             json_fields = jsonfields.parse_fields(
-                args.json_mode, VALID_JSON_FIELDS, prog="show-issue-at"
+                args.json_mode, VALID_JSON_FIELDS, prog=PROG
             )
         except jsonfields.FieldSelectionError as e:
             print(e.message, file=sys.stderr)
@@ -148,20 +162,20 @@ def run(args) -> int:
     store_root = store_root.expanduser().resolve()
     if not store_root.is_dir():
         print(
-            f"show-issue-at: store root does not exist: {store_root}",
+            f"{PROG}: store root does not exist: {store_root}",
             file=sys.stderr,
         )
         return 1
 
     def _note(before, after):
-        print(f"show-issue-at: resolved {before} -> {after}", file=sys.stderr)
+        print(f"{PROG}: resolved {before} -> {after}", file=sys.stderr)
 
     try:
         _rr = idresolve.resolve_issue_paths(
             args.id, store_root, anchor, emit_note=_note
         )
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr("show-issue-at", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     canonical_id = _rr.canonical_id
@@ -170,12 +184,12 @@ def run(args) -> int:
     try:
         sha = history.resolve_ref(store_root, args.at)
     except history.HistoryError as e:
-        print(f"show-issue-at: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "").strip().splitlines()[-1:] or [""]
         print(
-            f"show-issue-at: git failed ({e.returncode}): {stderr_tail[0]}",
+            f"{PROG}: git failed ({e.returncode}): {stderr_tail[0]}",
             file=sys.stderr,
         )
         return 1
@@ -183,12 +197,12 @@ def run(args) -> int:
     try:
         content = history.git_show(store_root, sha, rel_path)
     except history.HistoryError as e:
-        print(f"show-issue-at: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "").strip().splitlines()[-1:] or [""]
         print(
-            f"show-issue-at: git show failed ({e.returncode}): {stderr_tail[0]}",
+            f"{PROG}: git show failed ({e.returncode}): {stderr_tail[0]}",
             file=sys.stderr,
         )
         return 1

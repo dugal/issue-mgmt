@@ -23,6 +23,14 @@ TIER = "tier1"
 SUMMARY = "move an issue to cancelled (the never-delete substitute)"
 ORDER = 40
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
 _DESCRIPTION = """\
 Mark an issue cancelled -- the terminal state for work that will not
 happen (issue files are never deleted). A reason is recommended."""

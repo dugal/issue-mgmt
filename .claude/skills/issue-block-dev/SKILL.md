@@ -76,7 +76,7 @@ Contiguous 3-7 loser-side exit-code contract. Per-skill handling -- "Retry once"
 
 - `0` -- success (including same-state no-op when the issue is already `blocked` and a `--reason` is supplied; the reason is still recorded for audit continuity).
 - `1` -- issue file not found.
-- `2` -- usage error: blocking without `--reason`, or illegal source state. `blocked` is reachable from `open`, `in-progress`, or `done`. Unblocking is illegal from any state other than `blocked`.
+- `2` -- usage error: blocking without `--reason`, or an illegal source state. The legal-transition matrix is owned by `issue transition` and is deliberately NOT restated here (`state.canonical-states`): a copy in a skill drifts from the CLI silently, and this one had -- it listed `blocked` as reachable from `open`, `in-progress`, or `done`, omitting `cancelled`, which `LEGAL_TRANSITIONS` permits. Run `issue transition -h` for the current matrix, or just attempt the transition and read the error.
 - `3` -- `concurrent-edit` on the per-issue lock. **Retry once** with fresh state.
 - `4` -- `lost-race`: someone else holds the claim. **Refresh and re-prompt** -- re-read the issue frontmatter, show the user the current holder, and ask whether to proceed (unguarded, with their confirmation) or abort.
 - `5` -- `stale-local-view`: the recorded generation drifted. **Refresh and re-prompt** -- re-read the issue frontmatter (`issue show <id> --frontmatter --json`), show the user the current holder and generation, and ask whether to proceed or abort.
@@ -101,6 +101,6 @@ Always pass `--json` on the wrapped call. On a contract error stderr carries a s
 ## Notes
 
 - The `--reason` argument is enforced by the CLI for `blocked` transitions (exit 2 without it). The skill must not silently default the reason.
-- "Unblock" is not a state -- it is a transition out of `blocked` into one of `open` or `in-progress`. The CLI does not have a special `unblock` verb; this skill composes the right `issue transition` call.
+- "Unblock" is not a state -- it is a transition out of `blocked` into one of `open` or `in-progress`. The CLI does have an `issue unblock` convenience verb (added in v3.0.0) alongside the `issue transition` call this skill composes; either reaches the same state machine, which `issue transition` owns.
 - Same-state `blocked -> blocked` with a new reason is supported and recorded; use this to re-affirm a still-blocked status or document a change in the blocker.
 - A `blocked` issue is not claimable (`issue transition --claim` exits 7). To resume work on a blocked issue, unblock it first, then `/issue-start-dev`.

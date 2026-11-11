@@ -196,6 +196,32 @@ class TestParseCsvSet(unittest.TestCase):
     def test_duplicates_deduped(self):
         self.assertEqual(search.parse_csv_set("a,a,b"), {"a", "b"})
 
+    # A repeatable flag hands this a list rather than a string (IM-269).
+    # The repeated and comma forms must flatten through the one path, so a
+    # caller need not learn which verbs accept which shape.
+
+    def test_repeated_flag_list_accumulates(self):
+        self.assertEqual(search.parse_csv_set(["open", "done"]),
+                         {"open", "done"})
+
+    def test_single_item_list(self):
+        self.assertEqual(search.parse_csv_set(["open"]), {"open"})
+
+    def test_repeated_and_comma_forms_mix(self):
+        """`--status open --status done,cancelled` -- all three."""
+        self.assertEqual(search.parse_csv_set(["open", "done,cancelled"]),
+                         {"open", "done", "cancelled"})
+
+    def test_list_whitespace_trimmed_and_deduped(self):
+        self.assertEqual(search.parse_csv_set([" open ", "done, open"]),
+                         {"open", "done"})
+
+    def test_empty_list_returns_none(self):
+        self.assertIsNone(search.parse_csv_set([]))
+
+    def test_list_of_empty_strings_returns_none(self):
+        self.assertIsNone(search.parse_csv_set(["", "  ,  "]))
+
 
 # ----------------------------------------------------------------------
 # FrontmatterFilter.accepts

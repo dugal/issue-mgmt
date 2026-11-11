@@ -123,7 +123,7 @@ mk_store() {
     (
         cd "$1"
         git init -q
-        git config user.email test@example.com
+        git config user.email "$FIXTURE_EMAIL"
         git config user.name test
         git commit -q --allow-empty -m "init store"
     )
@@ -450,8 +450,8 @@ assert_eq "2" "$?" "invalid claimant exits 2"
 assert_eq "2" "$?" "--lease-ttl 0 exits 2"
 "$TRANSITION" IM-201 in-progress --lease-ttl 60 2>/dev/null
 assert_eq "2" "$?" "--lease-ttl on a plain transition exits 2"
-"$REAP" --repo lowercase 2>/dev/null
-assert_eq "2" "$?" "reaper invalid --repo exits 2"
+"$REAP" --prefix lowercase 2>/dev/null
+assert_eq "2" "$?" "reaper invalid --prefix exits 2"
 # Additional transition-primitive argument-shape errors (each fails before
 # any store access):
 "$TRANSITION" 2>/dev/null

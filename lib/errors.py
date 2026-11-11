@@ -32,7 +32,7 @@ Public import path:
         EXIT_DEP_CHANGED, EXIT_NOT_CLAIMABLE,
         ContractError, ConcurrentEdit, LostRaceError, StaleViewError,
         DependencyChangedError, NotClaimableError, LeaseExpiredError,
-        IssueNotFoundError, DependencyCycleError,
+        IssueNotFoundError, DependencyCycleError, PreconditionError,
     )
 
 `ConcurrentEdit` moved here from lib/concurrency.py; its
@@ -103,6 +103,33 @@ class ContractError(Exception):
         if self.message:
             parts.append(f"detail={_fmt_value(self.message)}")
         return " ".join(parts)
+
+
+class PreconditionError(ContractError):
+    """A generic precondition failure, carrying a `reason=` discriminator.
+
+    IM-253: the shape every verb uses to report a condition that is not a
+    zero-result and not an argument error -- most notably an unusable
+    issue store, where an enumeration read's exit 1 would otherwise be
+    indistinguishable from "matched nothing". The caller branches on
+    `reason`; `detail` names the recovery in prose.
+    """
+
+    exit_code = EXIT_PRECONDITION
+    error_class = "precondition-failed"
+
+
+class UnknownPrefixError(ContractError):
+    """A `--prefix` scope names a prefix the store does not have.
+
+    IM-238: scoping a read to a prefix that exists nowhere in the store is
+    an argument error, not a zero-result -- a typo'd prefix is otherwise
+    indistinguishable from a genuinely empty scope. Store mode only; legacy
+    mode has no registry to validate against.
+    """
+
+    exit_code = EXIT_USAGE
+    error_class = "unknown-prefix"
 
 
 class DependencyCycleError(ContractError):

@@ -54,7 +54,7 @@ mkdir -p "$STORE/IM"
 (
     cd "$STORE"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     git commit -q --allow-empty -m "init store"
 )
@@ -211,7 +211,8 @@ assert_file_contains "expired lease for ghost reaped" "$STORE/IM/IM-010.md" \
 
 echo "== [F] issue ready: auto-reaps expired leases before computing the ready set =="
 make_issue IM-020 open "${EXPIRED_CLAIM[@]}"   # expired claim -> should be reaped, then ready
-OUT=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" ready --repo IM --actor bob 2>/dev/null)
+# IM-241: `ready` is text-by-default, so a JSON consumer opts in.
+OUT=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" ready --prefix IM --actor bob --json 2>/dev/null)
 READY_IDS=$(echo "$OUT" | python3 -c "import json,sys; print(' '.join(sorted(r['id'] for r in json.load(sys.stdin)['ready'])))")
 # COVERS: workflow.auto-reap
 assert_contains "IM-020" "$READY_IDS" \

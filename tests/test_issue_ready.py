@@ -104,6 +104,16 @@ class IssueReadyBase(unittest.TestCase):
         )
 
     def run_json(self, *argv, expect_exit=0):
+        # IM-241: `ready` is text-by-default like every other verb, so a
+        # caller that wants the JSON shape opts in explicitly.
+        if not any(a == "--json" or a.startswith("--json=") for a in argv):
+            argv = argv + ("--json",)
+        # IM-249: `filtered_out` is opt-in explanatory output. These tests
+        # assert on the readiness COMPUTATION, so they ask for the section
+        # explicitly; the argv-shape behavior of the flag itself is pinned
+        # by TestFilteredSection below.
+        if not any(a == "--filtered" for a in argv):
+            argv = argv + ("--filtered", "all")
         r = self.run_cli(*argv)
         self.assertEqual(r.returncode, expect_exit, r.stderr)
         return json.loads(r.stdout)
@@ -341,7 +351,7 @@ class TestRepoFilter(IssueReadyBase):
         self.write_issue("IM-001")
         r = self.run_cli("--repo", "1x")
         self.assertEqual(r.returncode, 2)
-        self.assertIn("invalid --repo prefix", r.stderr)
+        self.assertIn("invalid --prefix", r.stderr)
 
 
 class TestNoReadyWork(IssueReadyBase):
@@ -353,10 +363,27 @@ class TestNoReadyWork(IssueReadyBase):
         self.assertIn("error=no-ready-work", r.stderr)
 
     def test_empty_store_stdout_still_carries_shape(self):
-        r = self.run_cli()
+        # IM-241: the documented JSON shape is now the --json opt-in.
+        r = self.run_cli("--json")
         self.assertEqual(r.returncode, 1)
         payload = json.loads(r.stdout)
         self.assertEqual(payload, {"ready": [], "filtered_out": []})
+
+    def test_default_output_is_human_readable_text(self):
+        # IM-241 / surface.explicit-output-mode: text is the default on
+        # every verb; `ready` was the surface's only inverted verb.
+        self.write_issue("IM-001")
+        r = self.run_cli()
+        self.assertEqual(r.returncode, 0)
+        self.assertTrue(r.stdout.startswith("Ready:"), r.stdout)
+        self.assertNotIn('"ready"', r.stdout)
+
+    def test_retired_text_flag_still_accepted(self):
+        # --text names the default now; kept working for one release.
+        self.write_issue("IM-001")
+        r = self.run_cli("--text")
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout, self.run_cli().stdout)
 
     def test_empty_set_json_flag_emits_json_stderr(self):
         r = self.run_cli("--json")
@@ -425,14 +452,14 @@ class TestTextRendering(IssueReadyBase):
         self.write_issue("DOUG-001", status="open")
         self.write_issue("IM-001")
         self.write_issue("IM-002", deps=[("DOUG-001", "blocks")])
-        r = self.run_cli("--text")
+        r = self.run_cli("--text", "--filtered", "all")
         self.assertIn("Filtered out (not ready):", r.stdout)
         self.assertIn("  IM-002  blocked by DOUG-001 (open)", r.stdout)
 
     def test_text_claim_filtered_line(self):
         self.write_issue("IM-001", claim=CLAIM_ALICE_ACTIVE)
         self.write_issue("IM-002")
-        r = self.run_cli("--text", "--actor", "bob")
+        r = self.run_cli("--text", "--actor", "bob", "--filtered", "all")
         self.assertIn("  IM-001  claim held by alice", r.stdout)
 
     def test_text_empty_ready_prints_none(self):
@@ -442,7 +469,7 @@ class TestTextRendering(IssueReadyBase):
 
     def test_text_no_filtered_section_when_nothing_filtered(self):
         self.write_issue("IM-001")
-        r = self.run_cli("--text")
+        r = self.run_cli("--text", "--filtered", "all")
         self.assertNotIn("Filtered out", r.stdout)
 
 
@@ -488,7 +515,7 @@ class TestLimit(IssueReadyBase):
     def test_limit_caps_ready_with_stderr_notice(self):
         for i in range(1, 11):
             self.write_issue("IM-%03d" % i)
-        r = self.run_cli("--limit", "3")
+        r = self.run_cli("--limit", "3", "--json")
         self.assertEqual(r.returncode, 0)
         payload = json.loads(r.stdout)
         self.assertEqual(self.ready_ids(payload),
@@ -499,7 +526,7 @@ class TestLimit(IssueReadyBase):
     def test_limit_without_suppression_no_notice(self):
         self.write_issue("IM-001")
         self.write_issue("IM-002")
-        r = self.run_cli("--limit", "5")
+        r = self.run_cli("--limit", "5", "--json")
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stderr, "")
         self.assertEqual(len(json.loads(r.stdout)["ready"]), 2)
@@ -507,7 +534,7 @@ class TestLimit(IssueReadyBase):
     def test_limit_zero_is_unlimited(self):
         for i in range(1, 11):
             self.write_issue("IM-%03d" % i)
-        r = self.run_cli("--limit", "0")
+        r = self.run_cli("--limit", "0", "--json")
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stderr, "")
         self.assertEqual(len(json.loads(r.stdout)["ready"]), 10)
@@ -522,7 +549,7 @@ class TestLimit(IssueReadyBase):
         for i in range(1, 6):
             self.write_issue("DOUG-%03d" % i)
             self.write_issue("IM-%03d" % i)
-        r = self.run_cli("--repo", "IM", "--limit", "4")
+        r = self.run_cli("--repo", "IM", "--limit", "4", "--json")
         self.assertEqual(r.returncode, 0)
         payload = json.loads(r.stdout)
         self.assertEqual(self.ready_ids(payload),
@@ -530,15 +557,111 @@ class TestLimit(IssueReadyBase):
         self.assertIn("1 more ready issue(s) not shown", r.stderr)
 
     def test_limit_never_truncates_filtered_out(self):
+        # IM-249 registered --limit's single meaning: it caps this verb's
+        # PRIMARY result rows (the ready list) and never bounds
+        # explanatory output. Same rule as `index` (per-group primary
+        # rows) and `history show` / `history activity` (emitted rows).
         self.write_issue("DOUG-900", status="open")
         for i in range(1, 5):
             self.write_issue("IM-%03d" % i)
         self.write_issue("IM-999", deps=[("DOUG-900", "blocks")])
-        r = self.run_cli("--limit", "2")
+        r = self.run_cli("--limit", "2", "--json", "--filtered", "all")
         self.assertEqual(r.returncode, 0)
         payload = json.loads(r.stdout)
         self.assertEqual(len(payload["ready"]), 2)
         self.assertEqual(self.filtered_ids(payload), ["IM-999"])
+
+
+class TestFilteredSection(IssueReadyBase):
+    """IM-249: `filtered_out` is a secondary explanatory section under its
+    own argv control, defaulting to off. The verb answers "what can I
+    claim"; "why can I not claim X" is a different question."""
+
+    def blocked_store(self):
+        self.write_issue("DOUG-900", status="in-progress")
+        self.write_issue("IM-001")
+        self.write_issue("IM-999", deps=[("DOUG-900", "blocks")])
+
+    def test_default_omits_section_from_text(self):
+        self.blocked_store()
+        r = self.run_cli()
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("  IM-001", r.stdout)
+        self.assertNotIn("Filtered out", r.stdout)
+        self.assertNotIn("IM-999", r.stdout)
+
+    def test_default_empties_the_json_key_but_keeps_it(self):
+        # Output shape is a function of argv, never of store state
+        # (surface.explicit-output-mode), so the key is unconditional --
+        # a caller never has to branch on its presence.
+        self.blocked_store()
+        payload = json.loads(self.run_cli("--json").stdout)
+        self.assertIn("filtered_out", payload)
+        self.assertEqual(payload["filtered_out"], [])
+
+    def test_filtered_all_emits_the_section(self):
+        self.blocked_store()
+        r = self.run_cli("--text", "--filtered", "all")
+        self.assertIn("Filtered out (not ready):", r.stdout)
+        self.assertIn("  IM-999  blocked by DOUG-900 (in-progress)", r.stdout)
+        payload = json.loads(
+            self.run_cli("--json", "--filtered", "all").stdout
+        )
+        self.assertEqual(self.filtered_ids(payload), ["IM-999"])
+
+    def test_filtered_none_is_the_explicit_default(self):
+        self.blocked_store()
+        self.assertEqual(
+            self.run_cli("--filtered", "none").stdout, self.run_cli().stdout,
+        )
+
+    def test_filtered_rejects_unknown_mode(self):
+        self.blocked_store()
+        r = self.run_cli("--filtered", "some")
+        self.assertEqual(r.returncode, 2)
+
+    def test_empty_ready_set_hints_at_the_section_on_stderr(self):
+        # The one case where the explanation is the only useful output.
+        # The pointer rides on stderr so stdout stays argv-determined.
+        self.write_issue("DOUG-900", status="in-progress")
+        self.write_issue("IM-999", deps=[("DOUG-900", "blocks")])
+        r = self.run_cli()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("1 candidate issue(s) filtered out", r.stderr)
+        self.assertIn("--filtered all", r.stderr)
+
+    def test_no_hint_when_nothing_was_filtered(self):
+        r = self.run_cli()
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("filtered out", r.stderr)
+
+    def test_no_hint_when_the_section_was_requested(self):
+        self.write_issue("DOUG-900", status="in-progress")
+        self.write_issue("IM-999", deps=[("DOUG-900", "blocks")])
+        r = self.run_cli("--filtered", "all")
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("pass --filtered all", r.stderr)
+
+    def test_empty_ready_set_json_stderr_stays_one_document(self):
+        # The hint is a plain informational notice; the structured error
+        # line remains parseable as its own JSON document.
+        self.write_issue("DOUG-900", status="in-progress")
+        self.write_issue("IM-999", deps=[("DOUG-900", "blocks")])
+        r = self.run_cli("--json")
+        self.assertEqual(r.returncode, 1)
+        lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
+        obj = json.loads(lines[-1])
+        self.assertEqual(obj["error"], "no-ready-work")
+
+    def test_section_is_unaffected_by_json_field_selection(self):
+        self.blocked_store()
+        payload = json.loads(
+            self.run_cli("--json=id", "--filtered", "all").stdout
+        )
+        self.assertEqual(payload["ready"], [{"id": "IM-001"}])
+        self.assertEqual(payload["filtered_out"],
+                         [{"id": "IM-999",
+                           "reason": "blocked by DOUG-900 (in-progress)"}])
 
 
 if __name__ == "__main__":

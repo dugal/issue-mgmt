@@ -56,7 +56,7 @@ mk_registered_project() {
     local path="$WORKDIR/$repo_name"
     mkdir -p "$path/.issues"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     echo "$prefix" > "$path/.issues/.prefix"
     echo "$store_path" > "$path/.issues/.migrated-to-store"
@@ -65,7 +65,7 @@ mk_registered_project() {
     git -C "$path" commit -q -m "init"
     mkdir -p "$store_path"
     git -C "$store_path" init -q
-    git -C "$store_path" config user.email test@example.com
+    git -C "$store_path" config user.email "$FIXTURE_EMAIL"
     git -C "$store_path" config user.name test
     printf '%s:%s\n' "$repo_name" "$prefix" > "$store_path/.repos"
     cp "$TEMPLATE_SRC" "$store_path/ISSUE-TEMPLATE.md"
@@ -115,14 +115,14 @@ fi
 FRESH_STORE="$WORKDIR/fresh-store"
 mkdir -p "$FRESH_STORE"
 git -C "$FRESH_STORE" init -q
-git -C "$FRESH_STORE" config user.email test@example.com
+git -C "$FRESH_STORE" config user.email "$FIXTURE_EMAIL"
 git -C "$FRESH_STORE" config user.name test
 git -C "$FRESH_STORE" commit -q --allow-empty -m "init store"
 
 FRESH="$WORKDIR/fresh-proj"
 mkdir -p "$FRESH"
 git -C "$FRESH" init -q
-git -C "$FRESH" config user.email test@example.com
+git -C "$FRESH" config user.email "$FIXTURE_EMAIL"
 git -C "$FRESH" config user.name test
 echo "x" > "$FRESH/README.md"
 git -C "$FRESH" add .

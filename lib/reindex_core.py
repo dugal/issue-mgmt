@@ -99,14 +99,18 @@ def render_status_sections(groups):
     return lines
 
 
-def reindex_store(store_root, *, suppress_commit: bool = False) -> str:
+def reindex_store_detail(store_root, *, suppress_commit: bool = False) -> dict:
     """Regenerate the store root + every per-prefix INDEX.md in-process.
 
     Under the store index lock, exactly like the bash wrapper. When
     ``suppress_commit`` is False the writes are wrapped in the per-mutation
     ``reindex INDEX.md`` store commit; when True (an outer mutation owns the
-    commit) the writes run bare. Returns the summary line the flat binary
-    printed on stdout.
+    commit) the writes run bare.
+
+    Returns the structured result `issue admin reindex --json` renders
+    (IM-240), carrying the human summary line under ``summary`` so the
+    string-returning ``reindex_store`` stays a thin projection of it and
+    the two can never drift.
     """
     store_root = Path(str(store_root).rstrip("/"))
     if not store_root.is_dir():
@@ -169,18 +173,39 @@ def reindex_store(store_root, *, suppress_commit: bool = False) -> str:
             with concurrency.store_mutation(store_root, commit_paths, "reindex INDEX.md"):
                 per_prefix, total = do_writes()
 
-    return (
-        f"Reindexed {store_root}/INDEX.md and {len(per_prefix)} "
-        f"per-prefix index(es) -- {total} issue(s) total."
-    )
+    return {
+        "mode": "store",
+        "store": str(store_root),
+        "index": str(store_root / "INDEX.md"),
+        "prefixes": [
+            {"prefix": name, "issues": n} for name, n in per_prefix
+        ],
+        "indexes_written": 1 + len(per_prefix),
+        "issues": total,
+        "summary": (
+            f"Reindexed {store_root}/INDEX.md and {len(per_prefix)} "
+            f"per-prefix index(es) -- {total} issue(s) total."
+        ),
+    }
 
 
-def reindex_legacy_dir(issues_dir) -> str:
+def reindex_store(store_root, *, suppress_commit: bool = False) -> str:
+    """Summary-line projection of :func:`reindex_store_detail`.
+
+    The stable string surface every mutating verb's in-process reindex
+    seam prints; see ``reindex.reindex_after_mutation``.
+    """
+    return reindex_store_detail(
+        store_root, suppress_commit=suppress_commit
+    )["summary"]
+
+
+def reindex_legacy_dir_detail(issues_dir) -> dict:
     """Regenerate a single legacy ``.issues/INDEX.md`` in-process.
 
     Preserved verbatim from the v1.5.1 generator: plain ``write_text`` (no
     lock, no store commit), and the em-dash summary line the legacy binary
-    printed.
+    printed (carried under ``summary``).
     """
     issues_dir = Path(str(issues_dir).rstrip("/"))
     if not issues_dir.is_dir():
@@ -208,4 +233,16 @@ def reindex_legacy_dir(issues_dir) -> str:
     ]
     lines.extend(render_status_sections(groups))
     index_path.write_text("\n".join(lines))
-    return f"Reindexed {index_path} — {count} issue(s) found."
+    return {
+        "mode": "legacy",
+        "issues_dir": str(issues_dir),
+        "index": str(index_path),
+        "indexes_written": 1,
+        "issues": count,
+        "summary": f"Reindexed {index_path} — {count} issue(s) found.",
+    }
+
+
+def reindex_legacy_dir(issues_dir) -> str:
+    """Summary-line projection of :func:`reindex_legacy_dir_detail`."""
+    return reindex_legacy_dir_detail(issues_dir)["summary"]

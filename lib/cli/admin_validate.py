@@ -22,10 +22,26 @@ import validate  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 
 from . import common
 
+# The one place this verb names itself; every diagnostic formats through
+# it, so the surface manifest sees one name per verb and
+# `surface.self-naming` is checkable (IM-239).
+PROG = "issue admin validate"
+
 VERB = "validate"
 TIER = "admin"
 SUMMARY = "structural validator for issue files (schema + id/filename/prefix + deps shape)"
 ORDER = 20
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "point-read"
+# IM-251: never resolves a store at all; operates on FILE positionals that
+# already carry their own location. Corrects this verb's row in IM-251's
+# own gap table, which had assumed it resolved one.
+SURFACE_STORE = "none"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
 
 _DESCRIPTION = """\
 Validate the YAML frontmatter and ID/filename consistency of one or more
@@ -70,7 +86,7 @@ def register(subparsers):
 def run(args) -> int:
     if not args.files:
         print(
-            "issue admin validate: no files given (use -h for usage)",
+            f"{PROG}: no files given (use -h for usage)",
             file=sys.stderr,
         )
         return 2
@@ -85,20 +101,20 @@ def run(args) -> int:
             result = validate.validate_file(path)
         except FileNotFoundError:
             had_tool_error = True
-            print(f"issue admin validate: file not found: {path}", file=sys.stderr)
+            print(f"{PROG}: file not found: {path}", file=sys.stderr)
             continue
         except IsADirectoryError:
             had_tool_error = True
-            print(f"issue admin validate: is a directory: {path}", file=sys.stderr)
+            print(f"{PROG}: is a directory: {path}", file=sys.stderr)
             continue
         except OSError as e:
             had_tool_error = True
-            print(f"issue admin validate: cannot read {path}: {e}", file=sys.stderr)
+            print(f"{PROG}: cannot read {path}: {e}", file=sys.stderr)
             continue
         except UnicodeDecodeError as e:
             had_tool_error = True
             print(
-                f"issue admin validate: cannot decode {path} as utf-8: {e}",
+                f"{PROG}: cannot decode {path} as utf-8: {e}",
                 file=sys.stderr,
             )
             continue

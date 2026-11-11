@@ -1,0 +1,410 @@
+#!/usr/bin/env python3
+"""
+check-skill-contract -- assert shipped skills match the CLI they drive
+
+Usage: check-skill-contract [--list]
+
+Shipped `SKILL.md` files are executable behavior, not documentation: a
+model-invoked skill keys its retry and error handling on the exit codes it
+names and calls the flags it documents. A skill that names a code the CLI
+never returns silently never fires that branch, and a skill that documents
+a flag the verb does not accept hands the agent a command that exits 2.
+
+`tests/verification/skill-exit-codes.sh` (the IM-228 guard) checks the
+exit-code CEILING -- that no skill names a code outside the current
+contract. That is necessary and not sufficient: it never checks WHICH code
+a skill maps to a condition, so when IM-238 flipped the zero-result rule
+for the enumeration reads, two shipped skills kept telling the agent that a
+zero-result history query exits 0 and the guard stayed green. Both skills
+read exit 1 as "store misconfigured", so a perfectly normal empty search
+was reported to the user as a broken store.
+
+This checker adds the two condition-level checks, both driven by ground
+truth rather than by a restated table:
+
+  [zero-result]  Each read skill's documented zero-result / not-found exit
+                 code must equal the one its verb's CLASS fixes
+                 (`output.exit-codes`: enumeration reads exit 1 on zero
+                 rows, point reads exit 1 when the record was not found).
+                 The class is read from `docs/cli-surface.json`, so the
+                 check moves with the manifest instead of with a literal.
+
+  [flags]        Every `--flag` a skill documents in a flag table must be
+                 accepted by at least one verb that skill actually invokes.
+                 Both the verb set and the accepted flags come from the
+                 manifest and the skill's own fenced invocation blocks, so
+                 neither side is hand-maintained here.
+
+Skill -> verb resolution is derived, not declared: the verbs a skill drives
+are the `issue <verb>` invocations inside its fenced code blocks. A
+multi-verb skill (`issue-start` drives `transition`, `edit`, `admin reap`)
+therefore satisfies the flag check if any verb it invokes accepts the flag.
+
+Exit 0 when every skill agrees with the CLI, 1 naming each divergence,
+2 on a usage or I/O error.
+
+Examples:
+  check-skill-contract                # check every shipped skill
+  check-skill-contract --list         # show the derived skill -> verb map
+  tests/verification/skill-exit-codes.sh   # runs this as its condition check
+"""
+
+import json
+import os
+import re
+import sys
+
+PROG = "check-skill-contract"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SKILLS_DIR = os.path.join(REPO_ROOT, ".claude", "skills")
+MANIFEST = os.path.join(REPO_ROOT, "docs", "cli-surface.json")
+ERRORS_PY = os.path.join(REPO_ROOT, "lib", "errors.py")
+
+# A fenced block opens/closes on a ``` line; we only read invocations from
+# inside them, so prose like "the issue file" is never mistaken for a call.
+_FENCE_RE = re.compile(r"^\s*```")
+# `issue <verb>` / `issue <group> <subverb>` anywhere in a fenced line --
+# a real invocation is often wrapped (`X=$(issue transition ...)`), so
+# anchoring at line start silently misses it and under-reports the verbs a
+# skill drives.
+_INVOKE_RE = re.compile(
+    r"\bissue\s+(admin\s+|history\s+)?([a-z][a-z-]*)"
+)
+# Flags passed on a fenced invocation line, checked against that line's verb.
+_LINE_FLAG_RE = re.compile(r"(--[a-z][a-z0-9-]*)")
+# Prose declaring that a following flag table is forwarded to a CLI verb,
+# e.g. "Optional flags forwarded to `issue create`:". Distinguishes CLI
+# flags from the SKILL's own argument surface under `## Parameters`, which
+# the skill composes into a call rather than passing through.
+_FORWARD_RE = re.compile(
+    r"(?:forwarded|passed|pass(?:ed)? through|flags?) +to +`issue ([a-z][a-z- ]*?)`"
+)
+_HEADING_RE = re.compile(r"^#{2,}\s")
+# An exit-code table row: "- `N` -- description".
+_EXIT_ROW_RE = re.compile(r"^-\s+`(\d+)`\s*--\s*(.*)$")
+# A flag-table row: "- `--flag ...` -- description".
+_FLAG_ROW_RE = re.compile(r"^-\s+`(--[a-z][a-z0-9-]*)")
+
+# Phrases that identify a row as describing the ZERO-RESULT / NOT-FOUND
+# condition rather than a precondition failure. Matched case-insensitively
+# against the row's description text.
+_ZERO_RESULT_PHRASES = (
+    "zero match",
+    "zero matches",
+    "no matches",
+    "zero-activity",
+    "zero activity",
+    "no activity",
+    "zero result",
+    "zero-result",
+    "zero rows",
+    "no rows",
+    "empty result",
+    "not found",
+)
+
+# What each read class returns when it has nothing to report
+# (docs/requirements.md output.exit-codes). Mutating and scaffolding verbs
+# have no zero-result condition, so a skill wrapping one is not checked.
+ZERO_RESULT_BY_CLASS = {
+    "enumeration-read": 1,
+    "point-read": 1,
+}
+
+
+def exit_constant(name):
+    """Read one EXIT_* value from lib/errors.py -- the contract's owner.
+
+    Parsed rather than imported so this script stays runnable with no
+    import path setup, and derived rather than restated so a renumber moves
+    the check with it (the IM-228 fix's model).
+    """
+    pattern = re.compile(r"^%s\s*=\s*(\d+)" % re.escape(name), re.M)
+    try:
+        with open(ERRORS_PY, "r") as fh:
+            m = pattern.search(fh.read())
+    except (IOError, OSError) as e:
+        die("cannot read the exit-code contract %s: %s" % (ERRORS_PY, e))
+    if not m:
+        die("%s is not defined in %s -- the exit-code contract moved and "
+            "this check must be updated with it" % (name, ERRORS_PY))
+    return int(m.group(1))
+
+
+def die(msg, code=2):
+    sys.stderr.write("%s: %s\n" % (PROG, msg))
+    raise SystemExit(code)
+
+
+def load_manifest():
+    try:
+        with open(MANIFEST, "r") as fh:
+            return json.load(fh)
+    except (IOError, OSError) as e:
+        die("cannot read the surface manifest %s: %s" % (MANIFEST, e))
+    except ValueError as e:
+        die("surface manifest %s is not valid JSON: %s" % (MANIFEST, e))
+
+
+def index_verbs(manifest):
+    """Map a verb's invocation path ("history search") to its manifest entry.
+
+    Keyed on the path rather than the bare verb name because `search` and
+    `show` each exist twice -- once at tier 1 and once under `history`.
+    """
+    by_path = {}
+    for entry in manifest["verbs"]:
+        path = entry["path"]
+        if path.startswith("issue "):
+            path = path[len("issue "):]
+        by_path[path] = entry
+    return by_path
+
+
+def flags_of(entry):
+    """Every accepted spelling of every flag registered on a verb."""
+    names = set()
+    for flag in entry["flags"]:
+        for key in ("name", "names", "synonyms", "option_strings"):
+            value = flag.get(key)
+            if isinstance(value, str):
+                names.add(value)
+            elif isinstance(value, (list, tuple)):
+                names.update(v for v in value if isinstance(v, str))
+    return set(n for n in names if n.startswith("--"))
+
+
+def skill_files():
+    try:
+        entries = sorted(os.listdir(SKILLS_DIR))
+    except (IOError, OSError) as e:
+        die("cannot list %s: %s" % (SKILLS_DIR, e))
+    out = []
+    for name in entries:
+        if not name.endswith("-dev"):
+            continue
+        path = os.path.join(SKILLS_DIR, name, "SKILL.md")
+        if os.path.isfile(path):
+            out.append((name[: -len("-dev")], path))
+    if not out:
+        die("no skills found under %s -- refusing to report an empty set"
+            % SKILLS_DIR)
+    return out
+
+
+def parse_skill(path, known_paths):
+    """Extract what a skill asserts about the CLI, with each flag attributed.
+
+    Returns (invoked, exit_rows, cli_flags) where `cli_flags` is a list of
+    (flag, [candidate verb paths], context) for flags the skill tells the
+    agent to pass to the CLI -- either written on a fenced invocation line,
+    or listed in a table the prose declares forwarded to a named verb.
+
+    Flags under a bare `## Parameters` heading are the SKILL's own argument
+    surface (`/issue-block-dev --unblock --to open` composes an
+    `issue transition` call), so they are deliberately NOT attributed to a
+    verb; linting them against the CLI would report every composing skill.
+    """
+    invoked, exit_rows, cli_flags = set(), [], []
+    in_fence = False
+    forward_target = None
+    with open(path, "r") as fh:
+        for lineno, line in enumerate(fh, 1):
+            if _FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                m = _INVOKE_RE.search(line)
+                if not m:
+                    continue
+                group = (m.group(1) or "").strip()
+                verb = m.group(2)
+                path_guess = ("%s %s" % (group, verb)).strip()
+                if path_guess not in known_paths:
+                    continue
+                invoked.add(path_guess)
+                for flag in _LINE_FLAG_RE.findall(line):
+                    cli_flags.append(
+                        (flag, [path_guess], "%s:%d invocation" % (path, lineno))
+                    )
+                continue
+            if _HEADING_RE.match(line):
+                forward_target = None
+            m = _FORWARD_RE.search(line)
+            if m:
+                candidate = " ".join(m.group(1).split())
+                if candidate.startswith("issue "):
+                    candidate = candidate[len("issue "):]
+                forward_target = candidate if candidate in known_paths else None
+                continue
+            m = _EXIT_ROW_RE.match(line)
+            if m:
+                exit_rows.append((lineno, int(m.group(1)), m.group(2)))
+                continue
+            m = _FLAG_ROW_RE.match(line)
+            if m and forward_target:
+                cli_flags.append(
+                    (m.group(1), [forward_target],
+                     "%s:%d declared forwarded to `issue %s`"
+                     % (path, lineno, forward_target))
+                )
+    return invoked, exit_rows, cli_flags
+
+
+def primary_verb(skill_name, invoked, known_paths):
+    """The verb a skill documents exit codes FOR.
+
+    `dist.skills-one-per-cli` makes the mapping 1:1 and the skill's NAME
+    carries it, so resolution scores every known verb path by, in order:
+    how many of the skill name's tokens the path uses, whether the skill
+    actually invokes it, and path specificity.
+
+    Name overlap has to lead, because a wrapper skill often never names its
+    own verb in a fenced block -- `/issue-start` composes `issue transition
+    --claim` plus `issue edit` -- while invoked-ness has to break ties,
+    because `issue-history` matches `history show`, `history search`, and
+    `history at` equally on name alone and only invokes the first.
+    """
+    best, best_score = None, (-1, -1, -1)
+    tokens = skill_name.replace("issue-", "", 1).split("-")
+    for path in sorted(known_paths):
+        words = path.split()
+        score = (
+            sum(1 for w in words if w in tokens),
+            1 if path in invoked else 0,
+            len(words),
+        )
+        if score > best_score:
+            best, best_score = path, score
+    # A skill whose name matches nothing falls back to what it invokes.
+    if best_score[0] == 0 and invoked:
+        return sorted(invoked)[0]
+    return best
+
+
+def check(verbose=False):
+    manifest = load_manifest()
+    by_path = index_verbs(manifest)
+    concurrent_edit = exit_constant("EXIT_CONCURRENT_EDIT")
+    problems = []
+    rows = []
+
+    for skill_name, path in skill_files():
+        invoked, exit_rows, cli_flags = parse_skill(path, by_path)
+        rel = os.path.relpath(path, REPO_ROOT)
+        if not invoked:
+            problems.append(
+                "%s: no `issue <verb>` invocation found in any fenced block, "
+                "so neither its exit codes nor its flags can be checked "
+                "against the CLI" % rel
+            )
+            continue
+        target = primary_verb(skill_name, invoked, by_path)
+        entry = by_path[target]
+        verb_class = entry["verb_class"]
+        rows.append((skill_name, target, verb_class, sorted(invoked)))
+
+        # [zero-result] the documented code for an empty result must equal
+        # the one this verb's class fixes.
+        expected = ZERO_RESULT_BY_CLASS.get(verb_class)
+        if expected is not None:
+            for lineno, code, text in exit_rows:
+                low = text.lower()
+                if not any(p in low for p in _ZERO_RESULT_PHRASES):
+                    continue
+                if code != expected:
+                    problems.append(
+                        "%s:%d: documents exit %d for a zero-result/not-found "
+                        "condition, but `issue %s` is an %s and returns %d "
+                        "(output.exit-codes). An agent reading this treats a "
+                        "normal empty result as a precondition failure.\n"
+                        "      row: - `%d` -- %s"
+                        % (rel, lineno, code, target, verb_class, expected,
+                           code, text.strip())
+                    )
+
+        # [flags] a flag the skill tells the agent to PASS to the CLI must be
+        # accepted by the verb it is passed to. Flags describing the skill's
+        # own argument surface are not attributed to a verb and so are not
+        # checked here -- see parse_skill.
+        for flag, candidates, context in cli_flags:
+            accepted = set()
+            for cand in candidates:
+                accepted |= flags_of(by_path[cand])
+            if flag in accepted:
+                continue
+            # Both attribution paths name an exact verb -- the one on the
+            # invocation line, or the one the prose declares the table is
+            # forwarded to -- so there is no wider set to fall back on.
+            # Widening to "any verb this skill invokes" would have excused
+            # `issue create --prefix` because the same skill also mentions
+            # `issue search`, which does accept it.
+            problems.append(
+                "%s: documents `%s` as passed to `issue %s`, which does not "
+                "accept it (%s). An agent forwarding it gets exit 2 "
+                "`unrecognized arguments`; this skill's own error table reads "
+                "exit 2 as a bad argument VALUE, so the agent likely retries "
+                "identically."
+                % (rel, flag, ", ".join(candidates),
+                   context.rsplit("/", 1)[-1])
+            )
+
+        # [membership] a MUTATING verb can always lose a write race, so a
+        # mutating skill that never names `concurrent-edit` has no retry to
+        # fire -- exactly the IM-228 defect, where eight skills named the
+        # retired 17 and the agent's retry silently never ran. The code is
+        # read from the contract, not written here, so a renumber moves this
+        # check instead of stranding it.
+        if verb_class == "mutating":
+            named = set(code for _, code, _ in exit_rows)
+            if concurrent_edit not in named:
+                problems.append(
+                    "%s: wraps the mutating verb `issue %s` but never names "
+                    "exit %d (`concurrent-edit`), which every mutating verb "
+                    "can return under lock contention. The skill has no "
+                    "retry path to fire; it names %s."
+                    % (rel, target, concurrent_edit,
+                       sorted(named) or "no codes at all")
+                )
+
+    if verbose:
+        print("%-22s %-18s %-18s %s"
+              % ("skill", "primary verb", "class", "invokes"))
+        for skill_name, target, verb_class, invoked in rows:
+            print("%-22s %-18s %-18s %s"
+                  % (skill_name, target, verb_class, ", ".join(invoked)))
+        print()
+
+    return problems, rows
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    verbose = bool(args and args[0] == "--list")
+    if args and not verbose:
+        die("unknown argument %r (try --help)" % args[0])
+
+    problems, rows = check(verbose=verbose)
+    if problems:
+        sys.stderr.write(
+            "%s: %d shipped skill(s) disagree with the CLI they drive:\n\n"
+            % (PROG, len(problems))
+        )
+        for p in problems:
+            sys.stderr.write("  - %s\n" % p)
+        sys.stderr.write(
+            "\n  Skills are the program the model runs, so each of these is "
+            "a behavior bug, not a stale comment.\n"
+        )
+        return 1
+    print("%s: %d shipped skills agree with the CLI (exit codes by verb "
+          "class, documented flags accepted)." % (PROG, len(rows)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

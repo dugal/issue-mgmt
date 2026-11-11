@@ -26,7 +26,7 @@ mk_repo() {
     local path="$WORKDIR/$name"
     mkdir -p "$path"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     echo "$path"
 }
@@ -39,7 +39,7 @@ mk_store() {
     local path="$1"
     mkdir -p "$path"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     git -C "$path" commit -q --allow-empty -m "init store"
 }
@@ -224,8 +224,10 @@ home_e=$(mk_home_override test10-nostore)
 out=$( cd "$REPO_E" && unset ISSUE_STORE_ROOT && \
        HOME="$home_e" "$SCRIPT" --prefix NS --non-interactive 2>&1 )
 rc=$?
-[[ $rc -ne 0 ]] && [[ "$out" == *"no store root resolved"* ]] \
-    && pass "no store + non-interactive fails with documented diagnostic" \
+# COVERS: surface.structured-errors
+[[ $rc -ne 0 ]] && [[ "$out" == *"error=precondition-failed"* ]] \
+    && [[ "$out" == *"reason=store-unresolvable"* ]] \
+    && pass "no store + non-interactive fails with a branchable payload" \
     || fail "no store + non-interactive (rc=$rc out=$out)"
 
 # --- Test 11: --repo NAME override ---
@@ -307,10 +309,13 @@ else
     fail "interactive store-root prompt (rc=$rc out=$out config=$(cat "$config_file" 2>&1))"
 fi
 
-# --- Test 17: interactive store-root prompt accepts empty (default) ---
-# Empty stdin -> answer is taken from the suggestion ($HOME/issues-store).
-# Pre-create that store under the HOME-override so the registration
-# succeeds, then assert the registry landed under it.
+# --- Test 17: interactive store-root prompt refuses an empty answer ---
+# IM-252: empty/EOF stdin used to fall through to a synthesized
+# $HOME/issues-store and PERSIST it to the config file. That is the
+# built-in default path substrate.store-root-resolution says is never
+# shipped, and `issue admin init-project </dev/null` reached it by EOF.
+# The store is pre-created so the ONLY thing under test is the refusal --
+# if the default were still synthesized, registration would succeed.
 REPO_INT2="$(mk_repo intprompt2)"
 home2=$(mk_home_override test17-default)
 DEFAULT_STORE="$home2/issues-store"
@@ -320,10 +325,12 @@ out=$( cd "$REPO_INT2" && unset ISSUE_STORE_ROOT && \
        printf '\n' | \
        HOME="$home2" "$SCRIPT" --prefix IP2 --repo intprompt2 2>&1 )
 rc=$?
-if [[ $rc -eq 0 ]] \
-   && grep -qx 'intprompt2:IP2' "$DEFAULT_STORE/.repos" \
-   && grep -qx "store_root = $DEFAULT_STORE" "$home2/.config/issue-mgmt/config"; then
-    pass "interactive store-root prompt: empty input takes \$HOME/issues-store default"
+if [[ $rc -eq 1 ]] \
+   && [[ "$out" == *"error=precondition-failed"* ]] \
+   && [[ "$out" == *"reason=store-unresolvable"* ]] \
+   && ! grep -qs 'intprompt2:IP2' "$DEFAULT_STORE/.repos" \
+   && [[ ! -f "$home2/.config/issue-mgmt/config" ]]; then
+    pass "interactive store-root prompt: empty input refuses, synthesizes no default"
 else
     fail "interactive store-root prompt empty (rc=$rc out=$out)"
 fi
@@ -434,6 +441,29 @@ fi
 # (covered by Test 21). When a future binary calls
 # write_config_store_root() with a pre-existing store_root key the
 # branch will become reachable; revisit then.
+
+# --- Test 22: a resolved-but-absent store root refuses, never tracebacks ---
+# IM-252: the verb resolved a store root, then lazy-seeded ISSUE-TEMPLATE.md
+# into it without checking the directory existed, so shutil.copyfile raised
+# and the process exited through an unhandled FileNotFoundError -- a Python
+# stack trace where an agent expects a branchable payload.
+REPO_MISSING="$(mk_repo missingstore)"
+home_missing=$(mk_home_override test22-missing)
+MISSING_STORE="$WORKDIR/no-such-store-dir"
+# COVERS: surface.structured-errors
+out=$( cd "$REPO_MISSING" && \
+       ISSUE_STORE_ROOT="$MISSING_STORE" HOME="$home_missing" \
+       "$SCRIPT" --prefix MS --non-interactive 2>&1 )
+rc=$?
+if [[ $rc -eq 1 ]] \
+   && [[ "$out" == *"error=precondition-failed"* ]] \
+   && [[ "$out" == *"reason=store-unresolvable"* ]] \
+   && [[ "$out" == *"store=$MISSING_STORE"* ]] \
+   && [[ "$out" != *"Traceback"* ]]; then
+    pass "absent store root refuses with a branchable payload, no traceback"
+else
+    fail "absent store root (rc=$rc out=$out)"
+fi
 
 # --- Summary ---
 echo "---"

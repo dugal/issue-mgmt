@@ -39,10 +39,27 @@ import reindex as _reindex  # noqa: E402
 
 from . import common
 
+# The one place this verb names itself; every diagnostic formats through
+# it, so the surface manifest sees one name per verb and
+# `surface.self-naming` is checkable (IM-239).
+PROG = "issue edit"
+
 VERB = "edit"
 TIER = "tier1"
 SUMMARY = "edit an issue's frontmatter fields or level-2 sections"
 ORDER = 40
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-245: locally declared retired spelling (IM-241 synonym window).
+# `--kind` and `--dep-type` do NOT share a dest (`dep_kind` vs `dep_type`),
+# which is why the extractor cannot infer this pair and the module declares it.
+SURFACE_SYNONYMS = {"--kind": ("--dep-type",)}
 
 _DESCRIPTION = """\
 Edit an issue non-interactively. Dominant paths:
@@ -63,7 +80,7 @@ Structural section ops:
                                   |--to-position N]
   --move-section NAME (--after NAME|--before NAME|--to-position N)
 
-Extended flags (retained, see the design doc / edit-issue reference):
+Extended flags (retained, see the design doc / `issue edit` reference):
   --prepend TEXT   --prepend-file PATH   --rename-section OLD NEW
   --remove-section NAME   --if-unchanged-since SHA   --claim-generation N
 
@@ -135,7 +152,12 @@ def register(subparsers):
     # Dep-edge ops
     _ordered(p, "--add-dep", metavar="KIND:TARGET", dest="add_dep")
     _ordered(p, "--remove-dep", metavar="TARGET", dest="remove_dep")
-    _ordered(p, "--dep-type", metavar="KIND", dest="dep_type")
+    # IM-241: `--kind` is the canonical dependency-kind spelling on both
+    # `edit` and `dep`; `--dep-type` is accepted for one release and
+    # hidden from help (surface.self-naming).
+    _ordered(p, "--kind", metavar="KIND", dest="dep_kind")
+    _ordered(p, "--dep-type", metavar="KIND", dest="dep_type",
+             help=argparse.SUPPRESS)
     _ordered(p, "--dep-note", metavar="TEXT", dest="dep_note")
 
     p.add_argument("--replace-body-file", default=None, metavar="PATH",
@@ -146,8 +168,7 @@ def register(subparsers):
                    dest="claim_generation", help=argparse.SUPPRESS)
     common.add_json_flag(p)
     p.add_argument("--no-reindex", action="store_true")
-    p.add_argument("--lock-timeout", type=float,
-                   default=concurrency.DEFAULT_LOCK_TIMEOUT, metavar="SECONDS")
+    common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
     common.add_store_flag(p)
     common.add_version_flag(p)
     p.set_defaults(_run=run)
@@ -175,7 +196,7 @@ def _resolve_paths(issue_id, cli_store, *, emit_note=None):
 
 def run(args) -> int:
     if not args.issue_id:
-        print("issue edit: missing issue ID (use -h)", file=sys.stderr)
+        print(f"{PROG}: missing issue ID (use -h)", file=sys.stderr)
         return 2
 
     try:
@@ -185,10 +206,10 @@ def run(args) -> int:
             ordered_flags
         )
     except _ei.OperandInputError as e:
-        print(f"issue edit: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
     except ValueError as e:
-        print(f"issue edit: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 2
 
     # Whole-body replace: exclusive with section ops (the two
@@ -200,7 +221,7 @@ def run(args) -> int:
     if args.replace_body_file is not None:
         if section_actions:
             print(
-                "issue edit: --replace-body-file is exclusive with "
+                f"{PROG}: --replace-body-file is exclusive with "
                 "section ops (--section/--add-section/--rename-section/"
                 "--remove-section/--move-section); --set and dep ops "
                 "compose",
@@ -210,13 +231,13 @@ def run(args) -> int:
         try:
             replace_body = _ei._read_op_file(args.replace_body_file)
         except _ei.OperandInputError as e:
-            print(f"issue edit: {e}", file=sys.stderr)
+            print(f"{PROG}: {e}", file=sys.stderr)
             return 1
 
     if (not sets and not section_actions and not dep_actions
             and replace_body is None):
         print(
-            "issue edit: nothing to do (specify --set, a section op, "
+            f"{PROG}: nothing to do (specify --set, a section op, "
             "a dep op, or --replace-body-file)",
             file=sys.stderr,
         )
@@ -224,7 +245,7 @@ def run(args) -> int:
 
     if args.claim_generation is not None and args.claim_generation < 0:
         print(
-            "issue edit: --claim-generation must be a non-negative integer",
+            f"{PROG}: --claim-generation must be a non-negative integer",
             file=sys.stderr,
         )
         return 2
@@ -237,7 +258,7 @@ def run(args) -> int:
             or section_actions[0][2] != "replace"
         ):
             print(
-                "issue edit: --if-unchanged-since requires --section NAME "
+                f"{PROG}: --if-unchanged-since requires --section NAME "
                 "--replace TEXT (and no other section ops in the same "
                 "invocation) or --replace-body-file PATH",
                 file=sys.stderr,
@@ -246,15 +267,15 @@ def run(args) -> int:
         if_unchanged_since_section = section_actions[0][1]
 
     def _note(before, after):
-        print(f"issue edit: resolved {before} -> {after}", file=sys.stderr)
+        print(f"{PROG}: resolved {before} -> {after}", file=sys.stderr)
 
     try:
         _rr = _resolve_paths(args.issue_id, args.store, emit_note=_note)
     except ValueError as e:
-        print(f"issue edit: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 2
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr("issue edit", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     issue_file = _rr.issue_file
@@ -265,14 +286,14 @@ def run(args) -> int:
 
     if args.if_unchanged_since is not None and store_root is None:
         print(
-            "issue edit: --if-unchanged-since requires store mode "
+            f"{PROG}: --if-unchanged-since requires store mode "
             "(no store repo to resolve SHA against)",
             file=sys.stderr,
         )
         return 2
 
     if not issue_file.exists():
-        print(f"issue edit: issue file not found: {issue_file}",
+        print(f"{PROG}: issue file not found: {issue_file}",
               file=sys.stderr)
         return 1
 
@@ -321,26 +342,26 @@ def run(args) -> int:
             replace_body=replace_body,
         )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr("issue edit"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr("issue edit", json_mode=args.json_mode),
+        print(e.format_stderr(PROG, json_mode=args.json_mode),
               file=sys.stderr)
         return e.exit_code
     except _ei.GuardedFieldError as e:
-        print(f"issue edit: cannot set '{e.field}' -- {e.reason}",
+        print(f"{PROG}: cannot set '{e.field}' -- {e.reason}",
               file=sys.stderr)
         return 2
     except FileNotFoundError as e:
-        print(f"issue edit: file disappeared between resolve and read: {e}",
+        print(f"{PROG}: file disappeared between resolve and read: {e}",
               file=sys.stderr)
         return 1
     except ValueError as e:
         msg = str(e)
         if msg.startswith("--if-unchanged-since:"):
-            print(f"issue edit: {msg}", file=sys.stderr)
+            print(f"{PROG}: {msg}", file=sys.stderr)
             return 2
-        print(f"issue edit: {msg}", file=sys.stderr)
+        print(f"{PROG}: {msg}", file=sys.stderr)
         return 1
 
     if args.json_mode:

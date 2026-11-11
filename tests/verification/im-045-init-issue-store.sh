@@ -30,7 +30,7 @@ mk_repo() {
     local path="$WORKDIR/$name"
     mkdir -p "$path"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     echo "$path"
 }
@@ -125,7 +125,7 @@ mkdir -p "$EMPTY"
 PREGIT="$WORKDIR/pregit"
 mkdir -p "$PREGIT"
 git -C "$PREGIT" init -q -b main
-git -C "$PREGIT" config user.email test@example.com
+git -C "$PREGIT" config user.email "$FIXTURE_EMAIL"
 git -C "$PREGIT" config user.name test
 echo "preexisting" > "$PREGIT/something.txt"
 git -C "$PREGIT" add something.txt
@@ -146,7 +146,7 @@ E2E_REPO=$(mk_repo e2e-repo)
 # subsequent auto-commits (init-issue-project, new-issue) need one.
 # Set it repo-locally so the test is hermetic on a box with no global git
 # identity (matches mk_repo / Test 13).
-git -C "$E2E_STORE" config user.email test@example.com
+git -C "$E2E_STORE" config user.email "$FIXTURE_EMAIL"
 git -C "$E2E_STORE" config user.name test
 ( cd "$E2E_REPO" && ISSUE_STORE_ROOT="$E2E_STORE" \
     "$INIT_PROJECT" --repo e2e-repo --prefix E2E --non-interactive ) >/dev/null 2>&1
@@ -170,7 +170,7 @@ mkdir -p "$LAZY_STORE"  # bare dir, no ISSUE-TEMPLATE.md
 (
     cd "$LAZY_STORE"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     git commit -q --allow-empty -m "init store"
 )
@@ -215,7 +215,7 @@ unset ISSUE_STORE_ROOT
 # --- Test 15: re-run on a populated live store exits 0 unmodified ---
 LIVE="$WORKDIR/live-store"
 "$INIT_STORE" "$LIVE" >/dev/null 2>&1
-git -C "$LIVE" config user.email test@example.com
+git -C "$LIVE" config user.email "$FIXTURE_EMAIL"
 git -C "$LIVE" config user.name test
 mkdir -p "$LIVE/LV"
 cat > "$LIVE/LV/LV-001.md" <<'EOF'

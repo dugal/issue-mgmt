@@ -30,6 +30,14 @@ TIER = "tier1"
 SUMMARY = "print an issue's current contents (whole file, section, or frontmatter)"
 ORDER = 60
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "point-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
 # Top-level keys of each per-id --json object; the field-selection set for
 # `--json <fields>`. The shape is conditional: `sections_requested`
 # / `sections` appear only under --section, `error` only on a failed id, and

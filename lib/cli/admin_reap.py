@@ -36,6 +36,16 @@ TIER = "admin"
 SUMMARY = "clear expired TTL leases across the store (manual override)"
 ORDER = 40
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+# IM-251: resolves via the precedence chain with no operand naming it, so
+# the absent `--store` is a real gap -- IM-251 follow-up work.
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
 NOTES_SECTION = "Implementation Notes"
 
 PREFIX_DIR_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
@@ -61,7 +71,7 @@ Exit codes:
 Examples:
   issue admin reap
   issue admin reap --dry-run
-  issue admin reap --repo IM --json
+  issue admin reap --prefix IM --json
 """
 
 
@@ -79,15 +89,13 @@ def register(subparsers):
         dest="dry_run",
         help="Print what would be reaped without writing.",
     )
-    p.add_argument("--repo", default=None, metavar="PFX",
-                   help="Restrict the walk to one prefix directory.")
+    common.add_prefix_scope_flag(
+        p, multi=False,
+        help="Restrict the walk to one prefix directory.",
+    )
     common.add_json_flag(p)
-    p.add_argument(
-        "--lock-timeout",
-        type=float,
-        default=concurrency.DEFAULT_LOCK_TIMEOUT,
-        metavar="SECONDS",
-        help="Per-issue lock wait (default 5s).",
+    common.add_lock_timeout_flag(
+        p, default=concurrency.DEFAULT_LOCK_TIMEOUT
     )
     common.add_version_flag(p)
     p.set_defaults(_run=run)
@@ -230,9 +238,9 @@ def _reap_one(store_root, prefix, issue_file, issue_id, lock_timeout, now):
 
 
 def run(args) -> int:
-    if args.repo is not None and not PREFIX_DIR_RE.match(args.repo):
+    if args.prefix is not None and not PREFIX_DIR_RE.match(args.prefix):
         print(
-            f"issue admin reap: invalid prefix {args.repo!r} "
+            f"issue admin reap: invalid prefix {args.prefix!r} "
             f"(must match {PREFIX_DIR_RE.pattern})",
             file=sys.stderr,
         )
@@ -243,7 +251,7 @@ def run(args) -> int:
         print(
             "issue admin reap: store mode required -- set ISSUE_STORE_ROOT "
             "or run inside a project with a .issues/.migrated-to-store "
-            "sentinel (see migrate-to-store)",
+            "sentinel (see `issue admin migrate`)",
             file=sys.stderr,
         )
         return 1
@@ -255,8 +263,17 @@ def run(args) -> int:
         )
         return 1
 
+    # IM-238: an absent --prefix scope is an argument error (exit 2), the
+    # same rule every verb taking --prefix holds.
+    rc = common.enforce_prefix_scope(
+        [args.prefix] if args.prefix else None, store_root, None,
+        prog="issue admin reap", json_mode=bool(getattr(args, "json_mode", False)),
+    )
+    if rc is not None:
+        return rc
+
     now = lease.now_utc()
-    candidates = _scan_expired(store_root, args.repo, now)
+    candidates = _scan_expired(store_root, args.prefix, now)
 
     reaped = []
     if args.dry_run:

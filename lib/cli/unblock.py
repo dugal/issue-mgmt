@@ -23,6 +23,14 @@ TIER = "tier1"
 SUMMARY = "return a blocked issue to an active state (default in-progress)"
 ORDER = 55
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
 _DESCRIPTION = """\
 Transition an issue out of blocked into an active state -- in-progress by
 default, or open via --to open. The transition matrix applies (only

@@ -8,7 +8,9 @@ and asks the matcher for body matches.
 Public surface:
 
     class BodyMatch           -- {line, text}
-    class IssueMatch          -- {id, file, title, status, priority, type, body_matches}
+    class IssueMatch          -- one result row; `to_dict()` is the
+                                 authoritative --json shape and
+                                 `json_fields()` its key tuple
     class FrontmatterFilter   -- prefix / status / type allowlists; AND across fields
     class SubstringMatcher    -- case-insensitive (default) literal substring
     class RegexMatcher        -- Python re; --syntax regex
@@ -80,6 +82,22 @@ class IssueMatch:
             "title_match": self.title_match,
             "body_matches": [bm.to_dict() for bm in self.body_matches],
         }
+
+    @classmethod
+    def json_fields(cls) -> tuple:
+        """Top-level keys of ``to_dict()``, in emission order.
+
+        The `--json <fields>` selection set for every verb that renders
+        rows through this class (`issue list`, `issue search`). Derived
+        from a probe row rather than restated, so a key added to
+        ``to_dict`` becomes selectable by construction -- IM-263 shipped
+        for two releases because two copies of this list were maintained
+        by hand and IM-232 updated only one.
+        """
+        probe = cls(
+            id="", file=Path(""), title="", status="", priority="", type="",
+        )
+        return tuple(probe.to_dict().keys())
 
 
 class NoBodyFilter:
@@ -187,16 +205,28 @@ class FrontmatterFilter:
         return True
 
 
-def parse_csv_set(value: Optional[str]) -> Optional[Set[str]]:
-    """Parse a comma-separated CLI value into a set, or None when unset.
+def parse_csv_set(value) -> Optional[Set[str]]:
+    """Parse a filter flag's value into a set, or None when unset.
 
-    Empty / whitespace-only input becomes None (accept-all), matching
-    the behavior of an absent flag. Whitespace around individual items
-    is trimmed.
+    Accepts either a single comma-separated string or the list an
+    `action="append"` flag produces, so a filter registered as repeatable
+    flattens the repeated AND the comma form through one path (IM-269).
+    Mixing them in one invocation is therefore supported by construction:
+    `--status open --status done,cancelled` yields all three.
+
+    Empty / whitespace-only input becomes None (accept-all), matching the
+    behavior of an absent flag. Whitespace around individual items is
+    trimmed.
     """
     if value is None:
         return None
-    parts = {p.strip() for p in value.split(",") if p.strip()}
+    chunks = [value] if isinstance(value, str) else value
+    parts = {
+        item.strip()
+        for chunk in chunks
+        for item in chunk.split(",")
+        if item.strip()
+    }
     return parts or None
 
 

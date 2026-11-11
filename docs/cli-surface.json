@@ -1,0 +1,5570 @@
+{
+  "cli": {
+    "prog": "issue",
+    "tiers": [
+      "tier1",
+      "history",
+      "admin"
+    ]
+  },
+  "generated_by": "scripts/cli-surface",
+  "schema": 2,
+  "totals": {
+    "flag_names": 64,
+    "flag_registrations": 230,
+    "verbs": 28
+  },
+  "verbs": [
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "non_interactive",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--non-interactive",
+          "names": [
+            "--non-interactive"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PREFIX",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "repo",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_init_project",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": false,
+        "internal_prog": "issue admin init-project",
+        "kind": "argparse-internal",
+        "passthrough": true
+      },
+      "path": "issue admin init-project",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin init-project"
+        ],
+        "dispatcher": "issue admin init-project",
+        "message_prefixes": [
+          "concurrent-edit"
+        ],
+        "usage_names": [
+          "issue admin init-project"
+        ]
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "init-project",
+      "verb_class": "scaffolding"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "dry_run",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--dry-run",
+          "names": [
+            "--dry-run"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "non_interactive",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--non-interactive",
+          "names": [
+            "--non-interactive"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_init_store",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": false,
+        "internal_prog": "issue admin init-store",
+        "kind": "argparse-internal",
+        "passthrough": true
+      },
+      "path": "issue admin init-store",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "path",
+          "metavar": null,
+          "name": "path",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue admin init-store"
+        ],
+        "dispatcher": "issue admin init-store",
+        "message_prefixes": [],
+        "usage_names": [
+          "issue admin init-store"
+        ]
+      },
+      "record_fields": [],
+      "store": "positional",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "init-store",
+      "verb_class": "scaffolding"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": null,
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": null,
+          "source": "manual-declaration",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": null,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": null,
+          "source": "manual-declaration",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": null,
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": null,
+          "source": "manual-declaration",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_install_skills",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": false,
+        "kind": "manual",
+        "passthrough": true
+      },
+      "path": "issue admin install-skills",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin install-skills"
+        ],
+        "dispatcher": "issue admin install-skills",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "none",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "install-skills",
+      "verb_class": "scaffolding"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "dry_run",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--dry-run",
+          "names": [
+            "--dry-run"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 5.0,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "message",
+          "hidden": false,
+          "metavar": "MSG",
+          "mutex_group": null,
+          "name": "--message",
+          "names": [
+            "--message"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PREFIX",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "project",
+          "hidden": false,
+          "metavar": "PATH",
+          "mutex_group": null,
+          "name": "--project",
+          "names": [
+            "--project"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "repo",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_migrate",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": false,
+        "internal_prog": "issue admin migrate",
+        "kind": "argparse-internal",
+        "passthrough": true
+      },
+      "path": "issue admin migrate",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin migrate"
+        ],
+        "dispatcher": "issue admin migrate",
+        "message_prefixes": [],
+        "usage_names": [
+          "issue admin migrate"
+        ]
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "migrate",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "dry_run",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--dry-run",
+          "names": [
+            "--dry-run"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 5.0,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_reap",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue admin reap",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin reap"
+        ],
+        "dispatcher": "issue admin reap",
+        "message_prefixes": [
+          "issue admin reap"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "reap",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "do_all",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--all",
+          "names": [
+            "--all"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_reindex",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue admin reindex",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issues_dir",
+          "metavar": "issues-dir",
+          "name": "issues_dir",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [],
+        "dispatcher": "issue admin reindex",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "reindex",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": null,
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": null,
+          "source": "manual-declaration",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": null,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": null,
+          "source": "manual-declaration",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": null,
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": null,
+          "source": "manual-declaration",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_selftest",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": false,
+        "kind": "manual",
+        "passthrough": true
+      },
+      "path": "issue admin selftest",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin selftest"
+        ],
+        "dispatcher": "issue admin selftest",
+        "message_prefixes": [
+          "issue admin init-project",
+          "issue admin init-store",
+          "issue create",
+          "issue dep add",
+          "issue dep list",
+          "issue note",
+          "issue ready",
+          "issue search",
+          "issue transition"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "pinned",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "selftest",
+      "verb_class": "scaffolding"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 5.0,
+          "default_suppressed": false,
+          "dest": "commit_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--commit-timeout",
+          "names": [
+            "--commit-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_commit_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "commit_timeout",
+          "hidden": true,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--timeout",
+          "names": [
+            "--timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_commit_timeout_flag",
+          "synonym_of": "--commit-timeout",
+          "type": "float"
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_snapshot",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue admin snapshot",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin snapshot"
+        ],
+        "dispatcher": "issue admin snapshot",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "snapshot",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_validate",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue admin validate",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "files",
+          "metavar": "FILE",
+          "name": "files",
+          "nargs": "*",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue admin validate"
+        ],
+        "dispatcher": "issue admin validate",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "none",
+      "structured_errors": "unconverted",
+      "tier": "admin",
+      "verb": "validate",
+      "verb_class": "point-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "reason",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--reason",
+          "names": [
+            "--reason"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.block",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue block",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue block"
+        ],
+        "dispatcher": "issue block",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "block",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "reason",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--reason",
+          "names": [
+            "--reason"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.cancel",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue cancel",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue cancel"
+        ],
+        "dispatcher": "issue cancel",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "cancel",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "reason",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--summary",
+          "names": [
+            "--summary",
+            "--reason",
+            "--note"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.complete",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue complete",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue complete"
+        ],
+        "dispatcher": "issue complete",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "complete",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": "",
+          "default_suppressed": false,
+          "dest": "from_file",
+          "hidden": false,
+          "metavar": "PATH",
+          "mutex_group": null,
+          "name": "--from-file",
+          "names": [
+            "--from-file"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": "",
+          "default_suppressed": false,
+          "dest": "repo",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "append",
+          "choices": null,
+          "const": null,
+          "default": [],
+          "default_suppressed": false,
+          "dest": "sections",
+          "hidden": false,
+          "metavar": "NAME=TEXT",
+          "mutex_group": null,
+          "name": "--section",
+          "names": [
+            "--section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.create",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue create",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "words",
+          "metavar": "TITLE TYPE PRIORITY",
+          "name": "words",
+          "nargs": "*",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue create"
+        ],
+        "dispatcher": "issue create",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [
+        "created"
+      ],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "create",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "note",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--dep-note",
+          "names": [
+            "--dep-note"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "dep_type",
+          "hidden": false,
+          "metavar": "KIND",
+          "mutex_group": null,
+          "name": "--kind",
+          "names": [
+            "--kind"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 5.0,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "note",
+          "hidden": true,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--note",
+          "names": [
+            "--note"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": "--dep-note",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "dep_type",
+          "hidden": true,
+          "metavar": "KIND",
+          "mutex_group": null,
+          "name": "--type",
+          "names": [
+            "--type"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": "--kind",
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.dep",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue dep",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "command",
+          "metavar": "COMMAND",
+          "name": "command",
+          "nargs": "?",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "operand",
+          "metavar": "OPERAND",
+          "name": "operand",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue dep"
+        ],
+        "dispatcher": "issue dep",
+        "message_prefixes": [
+          "issue dep add",
+          "issue dep remove"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "dep",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "add_dep",
+          "hidden": false,
+          "metavar": "KIND:TARGET",
+          "mutex_group": null,
+          "name": "--add-dep",
+          "names": [
+            "--add-dep"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "add_section",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--add-section",
+          "names": [
+            "--add-section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "after",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--after",
+          "names": [
+            "--after"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "append",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--append",
+          "names": [
+            "--append"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "append_file",
+          "hidden": false,
+          "metavar": "PATH",
+          "mutex_group": null,
+          "name": "--append-file",
+          "names": [
+            "--append-file"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "at_end",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--at-end",
+          "names": [
+            "--at-end"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "before",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--before",
+          "names": [
+            "--before"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "body",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--body",
+          "names": [
+            "--body"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": true,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "dep_note",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--dep-note",
+          "names": [
+            "--dep-note"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "dep_type",
+          "hidden": true,
+          "metavar": "KIND",
+          "mutex_group": null,
+          "name": "--dep-type",
+          "names": [
+            "--dep-type"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": "--kind",
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "if_unchanged_since",
+          "hidden": true,
+          "metavar": "SHA",
+          "mutex_group": null,
+          "name": "--if-unchanged-since",
+          "names": [
+            "--if-unchanged-since"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "dep_kind",
+          "hidden": false,
+          "metavar": "KIND",
+          "mutex_group": null,
+          "name": "--kind",
+          "names": [
+            "--kind"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 5.0,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "move_section",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--move-section",
+          "names": [
+            "--move-section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prepend",
+          "hidden": true,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--prepend",
+          "names": [
+            "--prepend"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prepend_file",
+          "hidden": true,
+          "metavar": "PATH",
+          "mutex_group": null,
+          "name": "--prepend-file",
+          "names": [
+            "--prepend-file"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "remove_dep",
+          "hidden": false,
+          "metavar": "TARGET",
+          "mutex_group": null,
+          "name": "--remove-dep",
+          "names": [
+            "--remove-dep"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "remove_section",
+          "hidden": true,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--remove-section",
+          "names": [
+            "--remove-section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "rename_section",
+          "hidden": true,
+          "metavar": [
+            "OLD",
+            "NEW"
+          ],
+          "mutex_group": null,
+          "name": "--rename-section",
+          "names": [
+            "--rename-section"
+          ],
+          "nargs": 2,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "replace",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--replace",
+          "names": [
+            "--replace"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "replace_body_file",
+          "hidden": true,
+          "metavar": "PATH",
+          "mutex_group": null,
+          "name": "--replace-body-file",
+          "names": [
+            "--replace-body-file"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "replace_file",
+          "hidden": false,
+          "metavar": "PATH",
+          "mutex_group": null,
+          "name": "--replace-file",
+          "names": [
+            "--replace-file"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "section",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--section",
+          "names": [
+            "--section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "append",
+          "choices": null,
+          "const": null,
+          "default": [],
+          "default_suppressed": false,
+          "dest": "sets",
+          "hidden": false,
+          "metavar": "FIELD=VALUE",
+          "mutex_group": null,
+          "name": "--set",
+          "names": [
+            "--set"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "OrderedFlagAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "to_position",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--to-position",
+          "names": [
+            "--to-position"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.edit",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue edit",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue edit"
+        ],
+        "dispatcher": "issue edit",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "edit",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "limit",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--limit",
+          "names": [
+            "--limit"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "since",
+          "hidden": false,
+          "metavar": "DATE",
+          "mutex_group": null,
+          "name": "--since",
+          "names": [
+            "--since"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [
+        "since"
+      ],
+      "module": "cli.history_activity",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue history activity",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue history activity"
+        ],
+        "dispatcher": "issue history activity",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "history",
+      "verb": "activity",
+      "verb_class": "enumeration-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "at",
+          "hidden": false,
+          "metavar": "REF",
+          "mutex_group": null,
+          "name": "--at",
+          "names": [
+            "--at"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.history_at",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue history at",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "id",
+          "metavar": "ID",
+          "name": "id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue history at"
+        ],
+        "dispatcher": "issue history at",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "history",
+      "verb": "at",
+      "verb_class": "point-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "since",
+          "hidden": false,
+          "metavar": "DATE",
+          "mutex_group": null,
+          "name": "--since",
+          "names": [
+            "--since"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.history_search",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue history search",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "term",
+          "metavar": "TERM",
+          "name": "term",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue history search"
+        ],
+        "dispatcher": "issue history search",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "history",
+      "verb": "search",
+      "verb_class": "enumeration-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "limit",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--limit",
+          "names": [
+            "--limit"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.history_show",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue history show",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "id",
+          "metavar": "ID",
+          "name": "id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue history show"
+        ],
+        "dispatcher": "issue history show",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "history",
+      "verb": "show",
+      "verb_class": "point-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 20,
+          "default_suppressed": false,
+          "dest": "limit",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--limit",
+          "names": [
+            "--limit"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "append",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "status",
+          "hidden": false,
+          "metavar": "STATUS[,STATUS...]",
+          "mutex_group": null,
+          "name": "--status",
+          "names": [
+            "--status"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [
+        "generated_at"
+      ],
+      "module": "cli.index",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue index",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue index"
+        ],
+        "dispatcher": "issue index",
+        "message_prefixes": [
+          "issue index"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "index",
+      "verb_class": "enumeration-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "append",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "status",
+          "hidden": false,
+          "metavar": "STATUS[,STATUS...]",
+          "mutex_group": null,
+          "name": "--status",
+          "names": [
+            "--status"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "type",
+          "hidden": false,
+          "metavar": "TYPE[,TYPE...]",
+          "mutex_group": null,
+          "name": "--type",
+          "names": [
+            "--type"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.list",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue list",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue list"
+        ],
+        "dispatcher": "issue list",
+        "message_prefixes": [
+          "issue list"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "list",
+      "verb_class": "enumeration-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "date",
+          "hidden": false,
+          "metavar": "YYYY-MM-DD",
+          "mutex_group": null,
+          "name": "--date",
+          "names": [
+            "--date"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 5.0,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": "Implementation Notes",
+          "default_suppressed": false,
+          "dest": "section",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--section",
+          "names": [
+            "--section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.note",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue note",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "text",
+          "metavar": "TEXT",
+          "name": "text",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue note"
+        ],
+        "dispatcher": "issue note",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [
+        "date",
+        "note"
+      ],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "note",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "actor",
+          "hidden": false,
+          "metavar": "ACTOR",
+          "mutex_group": null,
+          "name": "--actor",
+          "names": [
+            "--actor"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": [
+            "none",
+            "all"
+          ],
+          "const": null,
+          "default": "none",
+          "default_suppressed": false,
+          "dest": "filtered",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--filtered",
+          "names": [
+            "--filtered"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": 0,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": 0,
+          "default_suppressed": false,
+          "dest": "limit",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--limit",
+          "names": [
+            "--limit"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "text_mode",
+          "hidden": true,
+          "metavar": null,
+          "mutex_group": 0,
+          "name": "--text",
+          "names": [
+            "--text"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.ready",
+      "mutually_exclusive_groups": [
+        [
+          "--json",
+          "--text"
+        ]
+      ],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue ready",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue ready"
+        ],
+        "dispatcher": "issue ready",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "ready",
+      "verb_class": "enumeration-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "case_sensitive",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--case-sensitive",
+          "names": [
+            "--case-sensitive"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "prefix",
+          "hidden": false,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--prefix",
+          "names": [
+            "--prefix"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "prefix",
+          "hidden": true,
+          "metavar": "PFX[,PFX...]",
+          "mutex_group": null,
+          "name": "--repo",
+          "names": [
+            "--repo"
+          ],
+          "nargs": null,
+          "source": "common.add_prefix_scope_flag",
+          "synonym_of": "--prefix",
+          "type": null
+        },
+        {
+          "action": "append",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "status",
+          "hidden": false,
+          "metavar": "STATUS[,STATUS...]",
+          "mutex_group": null,
+          "name": "--status",
+          "names": [
+            "--status"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": [
+            "substring",
+            "regex"
+          ],
+          "const": null,
+          "default": "substring",
+          "default_suppressed": false,
+          "dest": "syntax",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--syntax",
+          "names": [
+            "--syntax"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "type",
+          "hidden": false,
+          "metavar": "TYPE[,TYPE...]",
+          "mutex_group": null,
+          "name": "--type",
+          "names": [
+            "--type"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.search",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue search",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "query",
+          "metavar": "QUERY",
+          "name": "query",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue search"
+        ],
+        "dispatcher": "issue search",
+        "message_prefixes": [
+          "issue search"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "search",
+      "verb_class": "enumeration-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "want_frontmatter",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--frontmatter",
+          "names": [
+            "--frontmatter"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": true,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": "FIELDS",
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": "?",
+          "source": "common.add_json_field_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_body",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-body",
+          "names": [
+            "--no-body"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "append",
+          "choices": null,
+          "const": null,
+          "default": [],
+          "default_suppressed": false,
+          "dest": "sections",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--section",
+          "names": [
+            "--section"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.show",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue show",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "ids",
+          "metavar": "ID",
+          "name": "ids",
+          "nargs": "*",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue show"
+        ],
+        "dispatcher": "issue show",
+        "message_prefixes": [
+          "issue show"
+        ],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "show",
+      "verb_class": "point-read"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "branch",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--branch",
+          "names": [
+            "--branch"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claimant",
+          "hidden": false,
+          "metavar": "CLAIMANT",
+          "mutex_group": null,
+          "name": "--claim",
+          "names": [
+            "--claim",
+            "--actor"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lease_ttl",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lease-ttl",
+          "names": [
+            "--lease-ttl"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.start",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue start",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue start"
+        ],
+        "dispatcher": "issue start",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [
+        "claim.claimed_at",
+        "claim.lease_until"
+      ],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "start",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "branch",
+          "hidden": false,
+          "metavar": "NAME",
+          "mutex_group": null,
+          "name": "--branch",
+          "names": [
+            "--branch"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim",
+          "hidden": false,
+          "metavar": "CLAIMANT",
+          "mutex_group": null,
+          "name": "--claim",
+          "names": [
+            "--claim"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lease_ttl",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lease-ttl",
+          "names": [
+            "--lease-ttl"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "reason",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--reason",
+          "names": [
+            "--reason",
+            "--summary",
+            "--note"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "release",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--release",
+          "names": [
+            "--release"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "renew",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--renew",
+          "names": [
+            "--renew"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.transition",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue transition",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "new_state",
+          "metavar": "STATE",
+          "name": "new_state",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue transition"
+        ],
+        "dispatcher": "issue transition",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [
+        "claim.claimed_at",
+        "claim.lease_until"
+      ],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "transition",
+      "verb_class": "mutating"
+    },
+    {
+      "flags": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "claim_generation",
+          "hidden": false,
+          "metavar": "N",
+          "mutex_group": null,
+          "name": "--claim-generation",
+          "names": [
+            "--claim-generation"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": "int"
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "lock_timeout",
+          "hidden": false,
+          "metavar": "SECONDS",
+          "mutex_group": null,
+          "name": "--lock-timeout",
+          "names": [
+            "--lock-timeout"
+          ],
+          "nargs": null,
+          "source": "common.add_lock_timeout_flag",
+          "synonym_of": null,
+          "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "reason",
+          "hidden": false,
+          "metavar": "TEXT",
+          "mutex_group": null,
+          "name": "--reason",
+          "names": [
+            "--reason"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store",
+          "choices": [
+            "open",
+            "in-progress"
+          ],
+          "const": null,
+          "default": "in-progress",
+          "default_suppressed": false,
+          "dest": "to_state",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--to",
+          "names": [
+            "--to"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.unblock",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue unblock",
+      "positionals": [
+        {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "issue_id",
+          "metavar": "ID",
+          "name": "issue_id",
+          "nargs": "?",
+          "type": null
+        }
+      ],
+      "prog": {
+        "declared": [
+          "issue unblock"
+        ],
+        "dispatcher": "issue unblock",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "flag",
+      "structured_errors": "unconverted",
+      "tier": "tier1",
+      "verb": "unblock",
+      "verb_class": "mutating"
+    }
+  ],
+  "vocabulary": {
+    "store_kinds": [
+      "flag",
+      "positional",
+      "pinned",
+      "none"
+    ],
+    "structured_error_states": [
+      "converted",
+      "unconverted"
+    ],
+    "verb_classes": [
+      "enumeration-read",
+      "point-read",
+      "mutating",
+      "scaffolding"
+    ]
+  }
+}

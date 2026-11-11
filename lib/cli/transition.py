@@ -42,8 +42,26 @@ from . import common
 
 VERB = "transition"
 TIER = "tier1"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue transition"
 SUMMARY = "change an issue's status through the legal state machine (primitive)"
 ORDER = 30
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-250 / IM-262: the lease stamps a `--claim` / `--renew` writes into the
+# issue's frontmatter and echoes back. Record content: they describe the
+# claim, not this invocation's rendering.
+SURFACE_RECORD_FIELDS = ("claim.claimed_at", "claim.lease_until")
 
 CANONICAL_STATES = ("open", "in-progress", "blocked", "done", "cancelled")
 TERMINAL_STATES = frozenset({"done", "cancelled"})
@@ -832,7 +850,7 @@ def _execute_lease(issue_id, op, *, claimant=None, lease_ttl=None,
 
 
 def run(args):
-    prog = "transition-issue"
+    prog = PROG
 
     if not args.issue_id:
         print(f"{prog}: missing issue ID (use -h for usage)", file=sys.stderr)

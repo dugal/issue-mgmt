@@ -27,6 +27,9 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from fixture_identity import FIXTURE_EMAIL  # noqa: E402
 
 import concurrency  # noqa: E402
 import errors  # noqa: E402  -- path set above
@@ -354,7 +357,7 @@ class GitStoreTest(TempDirTest):
         self.store = self.tmp / "store"
         self.store.mkdir()
         _git(self.store, "init", "-q")
-        _git(self.store, "config", "user.email", "test@example.invalid")
+        _git(self.store, "config", "user.email", FIXTURE_EMAIL)
         _git(self.store, "config", "user.name", "Test")
         (self.store / "INDEX.md").write_text("# index\n")
         _git(self.store, "add", "INDEX.md")
@@ -614,6 +617,34 @@ class TestGitStatusPendingTrackedPaths(GitStoreTest):
         plain.mkdir()
         with self.assertRaises(concurrency.StoreCommitError) as cm:
             concurrency._git_status_pending_tracked_paths(plain)
+        self.assertFalse(cm.exception.write_attempted)
+
+
+class TestPendingTrackedPaths(GitStoreTest):
+    """The public read `issue admin snapshot --json` reports from (IM-240).
+
+    The sweep itself returns only a commit sha, so `paths` in the snapshot
+    document comes from reading the pending set just before the sweep.
+    """
+
+    def test_clean_store_returns_empty(self):
+        self.assertEqual(concurrency.pending_tracked_paths(self.store), [])
+
+    def test_matches_the_set_the_sweep_claims(self):
+        self.write_issue("IM/IM-001.md")
+        (self.store / "INDEX.md").write_text("# changed\n")
+        reported = sorted(concurrency.pending_tracked_paths(self.store))
+        self.assertEqual(reported, ["IM/IM-001.md", "INDEX.md"])
+        self.assertIsNotNone(concurrency.catchup_sweep(self.store))
+        # Post-sweep the set is empty, so the pre-sweep read is the only
+        # moment the swept paths are observable.
+        self.assertEqual(concurrency.pending_tracked_paths(self.store), [])
+
+    def test_non_repo_raises_pre_write_store_commit_error(self):
+        plain = self.tmp / "not-a-repo-public"
+        plain.mkdir()
+        with self.assertRaises(concurrency.StoreCommitError) as cm:
+            concurrency.pending_tracked_paths(plain)
         self.assertFalse(cm.exception.write_attempted)
 
 

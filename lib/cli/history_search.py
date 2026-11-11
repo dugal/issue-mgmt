@@ -25,8 +25,22 @@ from . import common
 
 VERB = "search"
 TIER = "history"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue history search"
 SUMMARY = "pickaxe search over store history (git log -S)"
 ORDER = 20
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "enumeration-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
 
 # Top-level keys of each per-commit object under `commits`; the
 # field-selection set for `--json <fields>`. Projection applies to
@@ -56,6 +70,10 @@ per-commit object to those top-level fields; bare --json emits the full
 shape and an unknown field name is a usage error (exit 2)."""
 
 _EPILOG = """\
+Exit codes: 0 at least one row emitted; 1 zero rows (grep convention,
+uniform across every enumeration read); 2 argument/usage error, including
+a --prefix the store does not have (error=unknown-prefix).
+
 Examples:
   issue history search "concurrent-edit"
   issue history search "lock" --prefix ABC,XYZ --json
@@ -74,10 +92,8 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("term", nargs="?", default=None, metavar="TERM")
-    p.add_argument(
-        "--prefix",
-        default=None,
-        metavar="PFX[,PFX...]",
+    common.add_prefix_scope_flag(
+        p,
         help="Comma-separated prefix dirs to scope the scan to (e.g. ABC,XYZ).",
     )
     p.add_argument(
@@ -95,7 +111,7 @@ def register(subparsers):
 
 def legacy_mode_error(term: str) -> str:
     return (
-        "search-history: store mode not active "
+        f"{PROG}: store mode not active "
         "(ISSUE_STORE_ROOT unset and no .issues/.migrated-to-store sentinel). "
         "This subcommand operates only on the issue store. "
         f"For pre-migration history, run the following inside the "
@@ -121,7 +137,7 @@ def emit_json(payload, out):
 def run(args) -> int:
     if args.term is None:
         print(
-            "search-history: missing TERM (use --help for usage)",
+            f"{PROG}: missing TERM (use --help for usage)",
             file=sys.stderr,
         )
         return 2
@@ -131,7 +147,7 @@ def run(args) -> int:
         prefixes = parse_prefix_list(args.prefix)
         if not prefixes:
             print(
-                f"search-history: --prefix is empty after parsing '{args.prefix}'",
+                f"{PROG}: --prefix is empty after parsing '{args.prefix}'",
                 file=sys.stderr,
             )
             return 2
@@ -139,14 +155,14 @@ def run(args) -> int:
             try:
                 history.validate_prefix(pfx.upper())
             except history.HistoryError as e:
-                print(f"search-history: {e}", file=sys.stderr)
+                print(f"{PROG}: {e}", file=sys.stderr)
                 return 2
 
     json_fields = None
     if jsonfields.json_enabled(args.json_mode):
         try:
             json_fields = jsonfields.parse_fields(
-                args.json_mode, VALID_JSON_FIELDS, prog="search-history"
+                args.json_mode, VALID_JSON_FIELDS, prog=PROG
             )
         except jsonfields.FieldSelectionError as e:
             print(e.message, file=sys.stderr)
@@ -161,7 +177,7 @@ def run(args) -> int:
     store_root = store_root.expanduser().resolve()
     if not store_root.is_dir():
         print(
-            f"search-history: store root does not exist: {store_root}",
+            f"{PROG}: store root does not exist: {store_root}",
             file=sys.stderr,
         )
         return 1
@@ -173,18 +189,19 @@ def run(args) -> int:
         for pfx in prefixes:
             resolved = idresolve.resolve_prefix(pfx, known) or pfx.upper()
             if resolved != pfx:
-                print(f"search-history: resolved {pfx} -> {resolved}",
+                print(f"{PROG}: resolved {pfx} -> {resolved}",
                       file=sys.stderr)
             canon.append(resolved)
         prefixes = canon
-        for pfx in prefixes:
-            if not (store_root / pfx).is_dir():
-                print(
-                    f"search-history: prefix directory does not exist: "
-                    f"{store_root / pfx}",
-                    file=sys.stderr,
-                )
-                return 1
+        # IM-238: an absent prefix is an argument error (exit 2), the
+        # same rule every verb taking --prefix holds; it was exit 1 here
+        # through v3.3.x.
+        rc = common.enforce_prefix_scope(
+            prefixes, store_root, anchor, prog=PROG,
+            json_mode=jsonfields.json_enabled(args.json_mode),
+        )
+        if rc is not None:
+            return rc
 
     try:
         commits = history.git_pickaxe(
@@ -194,12 +211,12 @@ def run(args) -> int:
             since=args.since,
         )
     except history.HistoryError as e:
-        print(f"search-history: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "").strip().splitlines()[-1:] or [""]
         print(
-            f"search-history: git log failed ({e.returncode}): {stderr_tail[0]}",
+            f"{PROG}: git log failed ({e.returncode}): {stderr_tail[0]}",
             file=sys.stderr,
         )
         return 1
@@ -218,10 +235,11 @@ def run(args) -> int:
     else:
         if not commits:
             print(
-                f'search-history: no matches for "{args.term}" in {store_root}',
+                f'{PROG}: no matches for "{args.term}" in {store_root}',
                 file=sys.stderr,
             )
         else:
             emit_tsv(commits, sys.stdout)
 
-    return 0
+    # IM-238: grep convention, uniform across every enumeration read.
+    return 0 if commits else 1

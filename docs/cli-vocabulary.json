@@ -1,0 +1,1044 @@
+{
+  "class_contract": {
+    "all": [
+      "--help",
+      "--version",
+      "--json"
+    ],
+    "by_class": {
+      "mutating": [
+        "--lock-timeout",
+        "--no-reindex"
+      ]
+    },
+    "exemptions": [
+      {
+        "flag": "--no-reindex",
+        "reason": "This verb IS the index regenerator; a flag suppressing its own work would name nothing.",
+        "verb": "issue admin reindex"
+      },
+      {
+        "flag": "--lock-timeout",
+        "reason": "Takes the INDEX lock, not a per-issue write lock, so it has no per-issue acquisition to bound. Under IM-242 ('the name follows the lock') a bound here would be a third concept, which nothing has asked for.",
+        "verb": "issue admin reindex"
+      },
+      {
+        "flag": "--lock-timeout",
+        "reason": "The catchup sweep takes only the store-wide commit lock, bounded by --commit-timeout.",
+        "verb": "issue admin snapshot"
+      },
+      {
+        "flag": "--no-reindex",
+        "reason": "The sweep commits pending store state and runs no index regeneration of its own.",
+        "verb": "issue admin snapshot"
+      },
+      {
+        "flag": "--no-reindex",
+        "reason": "Migration's index write is part of its two-commit contract (IM-054), not an optional post-step.",
+        "verb": "issue admin migrate"
+      }
+    ],
+    "note": "The `--store` column of surface.verb-class-contract is checked against the four-valued `store` declaration by IM-245 in tests/test_cli_surface.py, not here -- one authority per rule."
+  },
+  "concepts": {
+    "add-dep": {
+      "canonical": "--add-dep",
+      "dests": [
+        "add_dep"
+      ],
+      "meaning": "Author a dependency edge as KIND:TARGET.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "add-section": {
+      "canonical": "--add-section",
+      "dests": [
+        "add_section"
+      ],
+      "meaning": "Add a new level-2 section.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "all-projects": {
+      "canonical": "--all",
+      "dests": [
+        "do_all"
+      ],
+      "meaning": "Walk every project rather than the one resolved from cwd.",
+      "value_space": "none"
+    },
+    "body-append": {
+      "canonical": "--append",
+      "dests": [
+        "append"
+      ],
+      "meaning": "Append text to the anchored section.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "body-append-file": {
+      "canonical": "--append-file",
+      "dests": [
+        "append_file"
+      ],
+      "meaning": "Append body text read from a file or stdin.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "body-prepend": {
+      "canonical": "--prepend",
+      "dests": [
+        "prepend"
+      ],
+      "meaning": "Prepend text to the anchored section.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "body-prepend-file": {
+      "canonical": "--prepend-file",
+      "dests": [
+        "prepend_file"
+      ],
+      "meaning": "Prepend body text read from a file or stdin.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "body-replace": {
+      "canonical": "--replace",
+      "dests": [
+        "replace"
+      ],
+      "meaning": "Replace the anchored section's body.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "body-replace-file": {
+      "canonical": "--replace-file",
+      "dests": [
+        "replace_file"
+      ],
+      "meaning": "Replace body text from a file or stdin.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "body-seed-file": {
+      "canonical": "--from-file",
+      "dests": [
+        "from_file"
+      ],
+      "meaning": "Use a file or stdin verbatim as the new issue body.",
+      "value_space": "one/single/scalar"
+    },
+    "body-suppress": {
+      "canonical": "--no-body",
+      "dests": [
+        "no_body"
+      ],
+      "meaning": "Omit the body from the rendering.",
+      "value_space": "none"
+    },
+    "case-sensitive-match": {
+      "canonical": "--case-sensitive",
+      "dests": [
+        "case_sensitive"
+      ],
+      "meaning": "Match the query case-sensitively.",
+      "value_space": "none"
+    },
+    "claim-generation": {
+      "canonical": "--claim-generation",
+      "dests": [
+        "claim_generation"
+      ],
+      "meaning": "The fencing counter the caller read, guarding against a reap-and-reclaim cycle.",
+      "value_space": "one/single/scalar"
+    },
+    "claimant": {
+      "canonical": "--claim",
+      "dests": [
+        "actor",
+        "claim",
+        "claimant"
+      ],
+      "meaning": "The actor identity a TTL lease is held by.",
+      "value_space": "one/single/scalar"
+    },
+    "closing-note": {
+      "canonical": "--reason",
+      "dests": [
+        "reason"
+      ],
+      "meaning": "The note recorded on the transition -- a completion summary or a reason, depending on the state being entered.",
+      "value_space": "one/single/scalar"
+    },
+    "commit-message": {
+      "canonical": "--message",
+      "dests": [
+        "message"
+      ],
+      "meaning": "Override the commit message for this mutation.",
+      "value_space": "one/single/scalar"
+    },
+    "commit-timeout": {
+      "canonical": "--commit-timeout",
+      "dests": [
+        "commit_timeout"
+      ],
+      "meaning": "Acquisition timeout in seconds for the store-wide commit lock. A distinct concept from the per-issue lock bound: IM-242 decided the name follows the lock.",
+      "value_space": "one/single/scalar"
+    },
+    "dep-kind": {
+      "canonical": "--kind",
+      "dests": [
+        "dep_kind",
+        "dep_type"
+      ],
+      "deviations": [
+        {
+          "licensed_by": "cli.dep-authoring",
+          "note": "The edit surface composes several dep ops in one invocation under a single lock, so its operands are argv-ordered and repeatable; `dep` authors one edge per call.",
+          "value_space": "one/repeatable/scalar",
+          "verbs": [
+            "issue edit"
+          ]
+        }
+      ],
+      "meaning": "The kind of dependency edge being authored.",
+      "value_space": "one/single/scalar"
+    },
+    "dep-note": {
+      "canonical": "--dep-note",
+      "dests": [
+        "dep_note",
+        "note"
+      ],
+      "deviations": [
+        {
+          "licensed_by": "cli.dep-authoring",
+          "note": "Same composition licence as the dependency kind.",
+          "value_space": "one/repeatable/scalar",
+          "verbs": [
+            "issue edit"
+          ]
+        }
+      ],
+      "meaning": "A note recorded on the dependency edge.",
+      "value_space": "one/single/scalar"
+    },
+    "dry-run": {
+      "canonical": "--dry-run",
+      "dests": [
+        "dry_run"
+      ],
+      "meaning": "Report what the invocation would do and make no change.",
+      "value_space": "none"
+    },
+    "etag-guard": {
+      "canonical": "--if-unchanged-since",
+      "dests": [
+        "if_unchanged_since"
+      ],
+      "meaning": "The git SHA the caller read from, so a drifted section refuses rather than being overwritten.",
+      "value_space": "one/single/scalar"
+    },
+    "filtered-explanation": {
+      "canonical": "--filtered",
+      "dests": [
+        "filtered"
+      ],
+      "meaning": "Whether to render the explanatory non-ready candidate section.",
+      "value_space": "one/single/scalar"
+    },
+    "frontmatter-only": {
+      "canonical": "--frontmatter",
+      "dests": [
+        "want_frontmatter"
+      ],
+      "meaning": "Render the frontmatter only.",
+      "value_space": "none"
+    },
+    "frontmatter-set": {
+      "canonical": "--set",
+      "dests": [
+        "sets"
+      ],
+      "meaning": "Set a frontmatter field, as FIELD=VALUE.",
+      "value_space": "one/repeatable/pair"
+    },
+    "help-output": {
+      "canonical": "--help",
+      "dests": [
+        "None",
+        "help"
+      ],
+      "meaning": "Print the verb's usage and flag reference, then exit 0.",
+      "value_space": "none"
+    },
+    "history-revision": {
+      "canonical": "--at",
+      "dests": [
+        "at"
+      ],
+      "meaning": "The commit, tag, branch, or date to read at.",
+      "value_space": "one/single/scalar"
+    },
+    "issue-type": {
+      "canonical": "--type",
+      "dests": [
+        "type"
+      ],
+      "meaning": "Restrict the result to these issue types.",
+      "value_space": "one/single/list"
+    },
+    "json-output": {
+      "canonical": "--json",
+      "dests": [
+        "json_mode"
+      ],
+      "deviations": [
+        {
+          "licensed_by": "output.json-field-selection",
+          "note": "The read verbs enumerated by the licensing requirement take an optional gh-style field list; everywhere else --json is valueless. This is the documented per-class capability the clause names, and the only value-space split on the surface that has one.",
+          "value_space": "optional/single/scalar",
+          "verbs": [
+            "issue history activity",
+            "issue history at",
+            "issue history search",
+            "issue history show",
+            "issue index",
+            "issue list",
+            "issue ready",
+            "issue search",
+            "issue show"
+          ]
+        }
+      ],
+      "meaning": "Emit the verb's result as one machine-readable JSON document on stdout, with informational notices on stderr.",
+      "value_space": "none"
+    },
+    "lease-release": {
+      "canonical": "--release",
+      "dests": [
+        "release"
+      ],
+      "meaning": "Clear the claim, preserving the fencing counter.",
+      "value_space": "none"
+    },
+    "lease-renew": {
+      "canonical": "--renew",
+      "dests": [
+        "renew"
+      ],
+      "meaning": "Extend the existing lease.",
+      "value_space": "none"
+    },
+    "lease-ttl": {
+      "canonical": "--lease-ttl",
+      "dests": [
+        "lease_ttl"
+      ],
+      "meaning": "Lease lifetime in seconds for this claim.",
+      "value_space": "one/single/scalar"
+    },
+    "lock-timeout": {
+      "canonical": "--lock-timeout",
+      "dests": [
+        "lock_timeout"
+      ],
+      "meaning": "Acquisition timeout in seconds for the per-issue advisory write lock.",
+      "value_space": "one/single/scalar"
+    },
+    "move-section": {
+      "canonical": "--move-section",
+      "dests": [
+        "move_section"
+      ],
+      "meaning": "Move a level-2 section.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "non-interactive": {
+      "canonical": "--non-interactive",
+      "dests": [
+        "non_interactive"
+      ],
+      "meaning": "Refuse to prompt; take every value from argv or fail.",
+      "value_space": "none"
+    },
+    "note-date": {
+      "canonical": "--date",
+      "dests": [
+        "date"
+      ],
+      "meaning": "Override the date stamped on the appended note.",
+      "value_space": "one/single/scalar"
+    },
+    "position-after": {
+      "canonical": "--after",
+      "dests": [
+        "after"
+      ],
+      "meaning": "Position the section after this one.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "position-at-end": {
+      "canonical": "--at-end",
+      "dests": [
+        "at_end"
+      ],
+      "meaning": "Position the section last.",
+      "value_space": "none"
+    },
+    "position-before": {
+      "canonical": "--before",
+      "dests": [
+        "before"
+      ],
+      "meaning": "Position the section before this one.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "position-index": {
+      "canonical": "--to-position",
+      "dests": [
+        "to_position"
+      ],
+      "meaning": "Position the section at this 1-based index.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "prefix-operand": {
+      "canonical": "--prefix",
+      "dests": [
+        "prefix"
+      ],
+      "meaning": "The project prefix to register or migrate under -- an operand the verb writes, not a filter it reads.",
+      "value_space": "one/single/scalar"
+    },
+    "prefix-scope": {
+      "canonical": "--prefix",
+      "dests": [
+        "prefix"
+      ],
+      "meaning": "Scope the result to one or more project prefixes.",
+      "value_space": "one/single/list"
+    },
+    "project-path": {
+      "canonical": "--project",
+      "dests": [
+        "project"
+      ],
+      "meaning": "The project tree to migrate.",
+      "value_space": "one/single/scalar"
+    },
+    "query-syntax": {
+      "canonical": "--syntax",
+      "dests": [
+        "syntax"
+      ],
+      "meaning": "Which matcher interprets the free-text query.",
+      "value_space": "one/single/scalar"
+    },
+    "reindex-suppression": {
+      "canonical": "--no-reindex",
+      "dests": [
+        "no_reindex"
+      ],
+      "meaning": "Skip the automatic INDEX.md regeneration this mutation would run.",
+      "value_space": "none"
+    },
+    "remove-dep": {
+      "canonical": "--remove-dep",
+      "dests": [
+        "remove_dep"
+      ],
+      "meaning": "Retract every dependency edge to a target.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "remove-section": {
+      "canonical": "--remove-section",
+      "dests": [
+        "remove_section"
+      ],
+      "meaning": "Remove a level-2 section.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "rename-section": {
+      "canonical": "--rename-section",
+      "dests": [
+        "rename_section"
+      ],
+      "meaning": "Rename a level-2 section.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "repo-identity": {
+      "canonical": "--repo",
+      "dests": [
+        "repo"
+      ],
+      "meaning": "The repo basename used for the <store>/.repos registry lookup.",
+      "value_space": "one/single/scalar"
+    },
+    "result-limit": {
+      "canonical": "--limit",
+      "dests": [
+        "limit"
+      ],
+      "meaning": "Cap the rows emitted; 0 means unlimited everywhere on the surface.",
+      "value_space": "one/single/scalar"
+    },
+    "section-body": {
+      "canonical": "--body",
+      "dests": [
+        "body"
+      ],
+      "meaning": "The body text for a section being added.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "section-seed": {
+      "canonical": "--section",
+      "dests": [
+        "sections"
+      ],
+      "meaning": "Seed a body section at creation time, as NAME=TEXT.",
+      "value_space": "one/repeatable/pair"
+    },
+    "section-selector": {
+      "canonical": "--section",
+      "dests": [
+        "section",
+        "sections"
+      ],
+      "meaning": "Name an existing level-2 section to act on.",
+      "value_space": "one/repeatable/scalar"
+    },
+    "since-window": {
+      "canonical": "--since",
+      "dests": [
+        "since"
+      ],
+      "meaning": "Restrict history to commits after this git-parseable revision date.",
+      "value_space": "one/single/scalar"
+    },
+    "status-filter": {
+      "canonical": "--status",
+      "dests": [
+        "status"
+      ],
+      "meaning": "Restrict the result to these workflow statuses.",
+      "value_space": "one/repeatable/list"
+    },
+    "store-root": {
+      "canonical": "--store",
+      "dests": [
+        "store"
+      ],
+      "meaning": "Override the store root, highest precedence in the resolution chain.",
+      "value_space": "one/single/scalar"
+    },
+    "target-state": {
+      "canonical": "--to",
+      "dests": [
+        "to_state"
+      ],
+      "meaning": "The state to transition into.",
+      "value_space": "one/single/scalar"
+    },
+    "text-output": {
+      "canonical": "--text",
+      "dests": [
+        "text_mode"
+      ],
+      "meaning": "Render human-readable text. The default since IM-241, so the flag only names it explicitly.",
+      "value_space": "none"
+    },
+    "version-output": {
+      "canonical": "--version",
+      "dests": [
+        "None",
+        "version"
+      ],
+      "meaning": "Print the installed issue-mgmt version, then exit 0.",
+      "value_space": "none"
+    },
+    "whole-body-replace": {
+      "canonical": "--replace-body-file",
+      "dests": [
+        "replace_body_file"
+      ],
+      "meaning": "Replace the entire body below the frontmatter fence.",
+      "value_space": "one/single/scalar"
+    },
+    "working-branch": {
+      "canonical": "--branch",
+      "dests": [
+        "branch"
+      ],
+      "meaning": "The working branch recorded on the issue.",
+      "value_space": "one/single/scalar"
+    }
+  },
+  "flags": {
+    "--actor": {
+      "concept": "claimant"
+    },
+    "--add-dep": {
+      "concept": "add-dep"
+    },
+    "--add-section": {
+      "concept": "add-section"
+    },
+    "--after": {
+      "concept": "position-after"
+    },
+    "--all": {
+      "concept": "all-projects"
+    },
+    "--append": {
+      "concept": "body-append"
+    },
+    "--append-file": {
+      "concept": "body-append-file"
+    },
+    "--at": {
+      "concept": "history-revision"
+    },
+    "--at-end": {
+      "concept": "position-at-end"
+    },
+    "--before": {
+      "concept": "position-before"
+    },
+    "--body": {
+      "concept": "section-body"
+    },
+    "--branch": {
+      "concept": "working-branch"
+    },
+    "--case-sensitive": {
+      "concept": "case-sensitive-match"
+    },
+    "--claim": {
+      "concept": "claimant"
+    },
+    "--claim-generation": {
+      "concept": "claim-generation"
+    },
+    "--commit-timeout": {
+      "concept": "commit-timeout"
+    },
+    "--date": {
+      "concept": "note-date"
+    },
+    "--dep-note": {
+      "concept": "dep-note"
+    },
+    "--dep-type": {
+      "concept": "dep-kind",
+      "transitional": {
+        "issue": "IM-270",
+        "since": "v3.4.0",
+        "superseded": "--kind"
+      }
+    },
+    "--dry-run": {
+      "concept": "dry-run"
+    },
+    "--filtered": {
+      "concept": "filtered-explanation"
+    },
+    "--from-file": {
+      "concept": "body-seed-file"
+    },
+    "--frontmatter": {
+      "concept": "frontmatter-only"
+    },
+    "--help": {
+      "concept": "help-output"
+    },
+    "--if-unchanged-since": {
+      "concept": "etag-guard"
+    },
+    "--json": {
+      "concept": "json-output"
+    },
+    "--kind": {
+      "concept": "dep-kind"
+    },
+    "--lease-ttl": {
+      "concept": "lease-ttl"
+    },
+    "--limit": {
+      "concept": "result-limit"
+    },
+    "--lock-timeout": {
+      "concept": "lock-timeout"
+    },
+    "--message": {
+      "concept": "commit-message"
+    },
+    "--move-section": {
+      "concept": "move-section"
+    },
+    "--no-body": {
+      "concept": "body-suppress"
+    },
+    "--no-reindex": {
+      "concept": "reindex-suppression"
+    },
+    "--non-interactive": {
+      "concept": "non-interactive"
+    },
+    "--note": {
+      "concept": "closing-note",
+      "overrides": [
+        {
+          "concept": "dep-note",
+          "issue": "IM-270",
+          "note": "The dependency note, superseded by --dep-note in v3.4.0 and retirable from v3.5.0.",
+          "transitional": {
+            "since": "v3.4.0",
+            "superseded": "--dep-note"
+          },
+          "verbs": [
+            "issue dep"
+          ]
+        }
+      ]
+    },
+    "--prefix": {
+      "concept": "prefix-scope",
+      "overrides": [
+        {
+          "concept": "prefix-operand",
+          "issue": "IM-236",
+          "note": "A write operand naming the prefix to register, not a filter. Invisible to the dest proxy -- both bind `prefix` -- so it is declared here rather than derived.",
+          "verbs": [
+            "issue admin init-project",
+            "issue admin migrate"
+          ]
+        }
+      ]
+    },
+    "--prepend": {
+      "concept": "body-prepend"
+    },
+    "--prepend-file": {
+      "concept": "body-prepend-file"
+    },
+    "--project": {
+      "concept": "project-path"
+    },
+    "--reason": {
+      "concept": "closing-note"
+    },
+    "--release": {
+      "concept": "lease-release"
+    },
+    "--remove-dep": {
+      "concept": "remove-dep"
+    },
+    "--remove-section": {
+      "concept": "remove-section"
+    },
+    "--rename-section": {
+      "concept": "rename-section"
+    },
+    "--renew": {
+      "concept": "lease-renew"
+    },
+    "--replace": {
+      "concept": "body-replace"
+    },
+    "--replace-body-file": {
+      "concept": "whole-body-replace"
+    },
+    "--replace-file": {
+      "concept": "body-replace-file"
+    },
+    "--repo": {
+      "concept": "prefix-scope",
+      "overrides": [
+        {
+          "concept": "repo-identity",
+          "issue": "IM-236",
+          "note": "The repo basename used for the registry lookup (dest `repo`), which the synonym retirement does NOT remove -- only the prefix-scoping spelling is transitional.",
+          "verbs": [
+            "issue create",
+            "issue admin init-project",
+            "issue admin migrate"
+          ]
+        }
+      ],
+      "transitional": {
+        "issue": "IM-270",
+        "since": "v3.4.0",
+        "superseded": "--prefix"
+      }
+    },
+    "--section": {
+      "concept": "section-selector",
+      "overrides": [
+        {
+          "concept": "section-seed",
+          "issue": "IM-257",
+          "note": "On create the flag is an operand carrying both a section name and its body (NAME=TEXT), not a selector naming an existing section.",
+          "verbs": [
+            "issue create"
+          ]
+        }
+      ]
+    },
+    "--set": {
+      "concept": "frontmatter-set"
+    },
+    "--since": {
+      "concept": "since-window"
+    },
+    "--status": {
+      "concept": "status-filter"
+    },
+    "--store": {
+      "concept": "store-root"
+    },
+    "--summary": {
+      "concept": "closing-note"
+    },
+    "--syntax": {
+      "concept": "query-syntax"
+    },
+    "--text": {
+      "concept": "text-output",
+      "transitional": {
+        "issue": "IM-270",
+        "since": "v3.4.0",
+        "superseded": "(the default)"
+      }
+    },
+    "--timeout": {
+      "concept": "commit-timeout",
+      "transitional": {
+        "issue": "IM-270",
+        "since": "v3.4.0",
+        "superseded": "--commit-timeout"
+      }
+    },
+    "--to": {
+      "concept": "target-state"
+    },
+    "--to-position": {
+      "concept": "position-index"
+    },
+    "--type": {
+      "concept": "issue-type",
+      "overrides": [
+        {
+          "concept": "dep-kind",
+          "issue": "IM-270",
+          "note": "The dependency kind, superseded by --kind in v3.4.0 and retirable from v3.5.0.",
+          "transitional": {
+            "since": "v3.4.0",
+            "superseded": "--kind"
+          },
+          "verbs": [
+            "issue dep"
+          ]
+        }
+      ]
+    },
+    "--version": {
+      "concept": "version-output"
+    },
+    "-h": {
+      "concept": "help-output"
+    }
+  },
+  "schema": 1,
+  "short_flags": [
+    "-h"
+  ],
+  "unenforced": [
+    {
+      "clause": "surface.self-naming",
+      "enforced_by": "SelfNamingTests in tests/test_cli_surface.py",
+      "note": "IM-239 keyed it on each verb's PROG declaration; a second implementation would be a second authority on one rule."
+    },
+    {
+      "clause": "surface.explicit-output-mode",
+      "enforced_by": "the manifest's generation_fields / record_fields plus tests/test_surface_ambient_fields.py",
+      "note": "IM-262 measures each declaration against the verb's real --json output."
+    },
+    {
+      "clause": "surface.stability",
+      "enforced_by": "the manifest diff test, plus this registry's transitional records",
+      "issues": [
+        "IM-247",
+        "IM-270"
+      ],
+      "note": "The synonym-window half is recorded here (every transitional spelling names its introducing release and owning issue); wiring the manifest-with-the-commit discipline is IM-247."
+    },
+    {
+      "clause": "surface.structured-errors",
+      "enforced_by": "the manifest's per-verb structured_errors ratchet (IM-245)",
+      "issues": [
+        "IM-260"
+      ],
+      "note": "A payload ratchet over error paths, not a vocabulary question; IM-254 rejected waiving it and IM-260 owns the conversion."
+    },
+    {
+      "clause": "surface.no-traceback",
+      "issues": [
+        "IM-248"
+      ],
+      "note": "Needs every failure path exercised, which no manifest shows. IM-248 is the known survivor (issue create on non-TTY stdin)."
+    },
+    {
+      "clause": "surface.non-interactive",
+      "issues": [
+        "IM-248",
+        "IM-252"
+      ],
+      "note": "Behavioral. IM-252 also left open whether the clause as written forbids a PIPED prompt answer, which two init-issue-project tests pin as a real capability."
+    },
+    {
+      "clause": "surface.preview-not-confirmation",
+      "issues": [
+        "IM-259"
+      ],
+      "note": "--dry-run presence is checkable from the manifest, but which verbs have a blast radius beyond one issue file is not; IM-259 owns the three gaps."
+    },
+    {
+      "clause": "surface.exit-code-space",
+      "enforced_by": "lib/errors.py EXIT_* constants, with tests/verification/skill-exit-codes.sh deriving the ceiling",
+      "note": "Measured satisfied on IM-254. Exit codes are not part of the argument surface, so the manifest cannot carry them."
+    },
+    {
+      "clause": "surface.verb-class-contract",
+      "enforced_by": "this lint, except the --store column (IM-245 checks that against the store declaration)",
+      "partial": true
+    }
+  ],
+  "waivers": [
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "meaning-collision:--prefix:prefix-operand",
+      "note": "--prefix is a write operand on admin init-project / admin migrate."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "meaning-collision:--repo:repo-identity",
+      "note": "--repo names the repo basename on create / init-project / migrate."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "value-space:--prefix@issue admin reap",
+      "note": "Single-prefix where the other scoping verbs take a list."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "value-space:--prefix@issue index",
+      "note": "Single-prefix where the other scoping verbs take a list."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "value-space:--prefix@issue ready",
+      "note": "Single-prefix where the other scoping verbs take a list."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "value-space:--repo@issue admin reap",
+      "note": "Single-prefix where the other scoping verbs take a list."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "value-space:--repo@issue index",
+      "note": "Single-prefix where the other scoping verbs take a list."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-236",
+      "key": "value-space:--repo@issue ready",
+      "note": "Single-prefix where the other scoping verbs take a list."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-257",
+      "key": "meaning-collision:--section:section-seed",
+      "note": "NAME=TEXT operand on create versus a selector everywhere else."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-257",
+      "key": "value-space:--section@issue note",
+      "note": "Single on note where edit and show take repeated anchors; a second --section is silently ignored."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-270",
+      "key": "meaning-collision:--type:dep-kind",
+      "note": "--type is the issue type on list / search and the dependency kind on dep; retirable from v3.5.0."
+    },
+    {
+      "clause": "surface.one-meaning-per-flag",
+      "issue": "IM-270",
+      "key": "meaning-collision:--note:dep-note",
+      "note": "--note is the closing note on complete / transition and the dependency note on dep; retirable from v3.5.0."
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-270",
+      "key": "synonym-gap:dep-kind@issue dep:--dep-type",
+      "note": "Uniformity would mean adding a spelling that is already retirable; the convergence is removal, not addition."
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-258",
+      "key": "synonym-gap:closing-note@issue block:--note",
+      "note": ""
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-258",
+      "key": "synonym-gap:closing-note@issue block:--summary",
+      "note": ""
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-258",
+      "key": "synonym-gap:closing-note@issue cancel:--note",
+      "note": ""
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-258",
+      "key": "synonym-gap:closing-note@issue cancel:--summary",
+      "note": ""
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-258",
+      "key": "synonym-gap:closing-note@issue unblock:--note",
+      "note": ""
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-258",
+      "key": "synonym-gap:closing-note@issue unblock:--summary",
+      "note": ""
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-243",
+      "key": "synonym-gap:claimant@issue transition:--actor",
+      "note": "transition accepts --claim only."
+    },
+    {
+      "clause": "surface.vocabulary-registry",
+      "issue": "IM-243",
+      "key": "synonym-gap:claimant@issue ready:--claim",
+      "note": "ready accepts --actor only."
+    },
+    {
+      "clause": "surface.verb-class-contract",
+      "issue": "IM-271",
+      "key": "class-contract:issue admin reap:--no-reindex",
+      "note": "No reindex to suppress because reap does not reindex at all, which is the cli.auto-reindex defect IM-271 fixes."
+    }
+  ]
+}

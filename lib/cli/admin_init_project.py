@@ -1,14 +1,14 @@
 """
-init-issue-project -- register a project into the issue store
+issue admin init-project -- register a project into the issue store
 
 Synopsis:
-  init-issue-project [--repo NAME] [--prefix PREFIX]
-                     [--store ROOT] [--non-interactive]
-                     [-h | --help] [--version]
+  issue admin init-project [--repo NAME] [--prefix PREFIX]
+                           [--store ROOT] [--non-interactive] [--json]
+                           [-h | --help] [--version]
 
 Registers the current git repository into the issue store's project
 registry (`<store>/.repos`) under a short uppercase prefix. After
-registration, `new-issue` and `reindex-issues` in store mode resolve
+registration, `issue create` and `issue admin reindex` in store mode resolve
 the project's prefix via the registry rather than walking up to a
 project-local `.issues/.prefix` file.
 
@@ -45,20 +45,43 @@ Sentinel writing:
   sentinel; refuses to overwrite a divergent one. Uses the symlink-preserving
   rule (`expanduser().absolute()`, NOT `.resolve()`).
 
+JSON mode (--json): exactly one object on stdout, shape
+
+  {
+    "repo": NAME,                  # registry key (the main checkout's basename)
+    "prefix": PREFIX,
+    "store": PATH,
+    "registry": PATH,              # <store>/.repos
+    "already_registered": BOOL,    # true on the idempotent re-run path
+    "template_seeded": BOOL,       # <store>/ISSUE-TEMPLATE.md was lazy-seeded
+    "prefix_file": PATH,           # <anchor>/.issues/.prefix
+    "prefix_file_written": BOOL,
+    "sentinel": PATH,              # <anchor>/.issues/.migrated-to-store
+    "sentinel_written": BOOL
+  }
+
+Every key is present on both the first registration and the idempotent
+re-run, so output shape is a function of argv alone. The `*_written`
+booleans are false when the routing primitive already carried the
+expected content. Notices (template-seed, saved store_root) stay on
+stderr.
+
 Exit codes:
   0  success (including idempotent "already registered" re-run)
   1  configuration / validation error (see stderr message)
   3  lock acquisition timeout (`concurrent-edit`; was 17 through v2.4.1)
 
 Examples:
-  ISSUE_STORE_ROOT=/path/to/store init-issue-project --prefix IM
-  init-issue-project --repo my-project --prefix MP --non-interactive
+  ISSUE_STORE_ROOT=/path/to/store issue admin init-project --prefix IM
+  issue admin init-project --repo my-project --prefix MP --non-interactive
+  issue admin init-project --prefix MP --non-interactive --json
 """
 
 import argparse
 import errno
 import fcntl
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -71,7 +94,9 @@ import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 import repo as repo_lib  # noqa: E402
 
-VERSION = "v3.3.1"
+from . import common
+
+VERSION = "v3.4.0"
 
 PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
 RESERVED_PREFIXES = {"ISSUE"}
@@ -83,14 +108,39 @@ LOCK_POLL_INTERVAL = 0.05
 CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
 
 
+PROG = "issue admin init-project"
+
+
 def die(msg, code=1):
-    print(f"init-issue-project: {msg}", file=sys.stderr)
+    print(f"{PROG}: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
-def parse_args(argv):
+def die_store(store_root, detail):
+    """Refuse an unusable store through the shared branchable contract.
+
+    IM-252: this verb used to reach `shutil.copyfile` with an unchecked
+    store root and exit through a FileNotFoundError traceback, where a
+    caller expects a payload it can branch on. Same `reason=` the read
+    verbs emit (IM-253), so one rule covers the whole surface.
+    """
+    err = errors.PreconditionError(detail, reason="store-unresolvable",
+                                   store=store_root)
+    print(err.format_stderr(PROG), file=sys.stderr)
+    sys.exit(errors.EXIT_PRECONDITION)
+
+
+def build_parser():
+    """The verb's real argparse parser.
+
+    Split out of `parse_args` for the surface manifest (IM-245): the
+    dispatcher subparser for this verb is a `prefix_chars="\\x00"`
+    passthrough, so an argparse walk over it sees none of these flags.
+    `SURFACE_PARSER` below points the extractor here instead of letting it
+    emit a false-CLEAN empty flag set.
+    """
     p = argparse.ArgumentParser(
-        prog="init-issue-project",
+        prog=PROG,
         description="Register a project into the issue store registry.",
         add_help=False,
     )
@@ -102,9 +152,14 @@ def parse_args(argv):
                    help="Override store-root resolution.")
     p.add_argument("--non-interactive", action="store_true",
                    help="Fail rather than prompt.")
+    common.add_json_flag(p)
     p.add_argument("-h", "--help", action="store_true")
     p.add_argument("--version", action="store_true")
-    return p.parse_args(argv)
+    return p
+
+
+def parse_args(argv):
+    return build_parser().parse_args(argv)
 
 
 def show_help():
@@ -195,18 +250,26 @@ def resolve_store_root(cli_store, anchor, non_interactive):
     if cfg:
         return cfg
     if non_interactive:
-        die("no store root resolved; set ISSUE_STORE_ROOT, pass --store, "
-            "or run interactively to configure ~/.config/issue-mgmt/config")
-    suggestion = str(Path.home() / "issues-store")
+        die_store(None,
+                  "no issue store configured (pass --store ROOT, set "
+                  "ISSUE_STORE_ROOT, or set store_root in "
+                  f"{CONFIG_PATH})")
     sys.stderr.write(
         "No issue store configured. Enter the path to use as the store root.\n"
-        f"  (suggestion: {suggestion})\n"
         "Store root: "
     )
     sys.stderr.flush()
+    # IM-252: EOF or an empty line used to fall through to a synthesized
+    # `$HOME/issues-store`, which was then PERSISTED to the config file --
+    # a built-in default path, which substrate.store-root-resolution says
+    # is never shipped, reached by exactly the `</dev/null` EOF that
+    # surface.non-interactive forbids blocking or guessing on. A piped
+    # answer is still a real answer, so only the empty read refuses.
     answer = sys.stdin.readline().strip()
     if not answer:
-        answer = suggestion
+        die_store(None,
+                  "no issue store configured (no store root given; pass "
+                  "--store ROOT or set ISSUE_STORE_ROOT)")
     write_config_store_root(answer)
     print(f"Saved store_root = {answer} to {CONFIG_PATH}", file=sys.stderr)
     return answer
@@ -320,7 +383,7 @@ class RegistryLock:
                     msg = "concurrent-edit: registry lock timeout"
                     if holder:
                         msg += f" (held by pid {holder})"
-                    print(f"init-issue-project: {msg}", file=sys.stderr)
+                    print(f"{PROG}: {msg}", file=sys.stderr)
                     sys.exit(CONCURRENT_EDIT_EXIT)
                 time.sleep(LOCK_POLL_INTERVAL)
 
@@ -349,18 +412,22 @@ def resolve_issue_template():
 def ensure_store_template(store_root):
     """Lazy-seed `<store>/ISSUE-TEMPLATE.md` from the Homebrew generic when
     absent. Prints a one-line notice on seed; silent when already present.
-    No-op when no source template can be located (no shipped install)."""
+    No-op when no source template can be located (no shipped install).
+
+    Returns True when this call seeded the template (reported as
+    ``template_seeded`` under --json), False otherwise."""
     dest = Path(store_root) / "ISSUE-TEMPLATE.md"
     if dest.exists():
-        return
+        return False
     src = resolve_issue_template()
     if src is None:
-        return
+        return False
     shutil.copyfile(src, dest)
     print(
         f"seeded {dest} from {src}",
         file=sys.stderr,
     )
+    return True
 
 
 def ensure_local_prefix_file(anchor, prefix):
@@ -420,10 +487,10 @@ def _autocommit_registration(store_root, repo_name, prefix, already):
             concurrency.catchup_sweep(store_root, exclude=paths)
             concurrency.commit_after_write(store_root, paths, message)
     except errors.ContractError as e:
-        print(e.format_stderr("init-issue-project"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         sys.exit(e.exit_code)
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr("init-issue-project"), file=sys.stderr)
+        print(e.format_stderr(PROG), file=sys.stderr)
         sys.exit(errors.EXIT_PRECONDITION)
 
 
@@ -453,18 +520,23 @@ def main(argv=None):
     prefix = derive_prefix(args.prefix, anchor, args.non_interactive)
 
     store_path = Path(store_root)
+    if not store_path.is_dir():
+        die_store(str(store_path),
+                  "issue store root does not exist or is not a directory "
+                  "(create it with `issue admin init-store`)")
     registry_path = store_path / ".repos"
 
-    ensure_store_template(store_root)
+    template_seeded = ensure_store_template(store_root)
 
     already_registered = False
+    prefix_file_written = False
     with RegistryLock(store_root):
         entries = parse_registry(registry_path)
         by_name = {n: p for n, p in entries}
         by_prefix = {p: n for n, p in entries}
 
         if repo_name in by_name and by_name[repo_name] == prefix:
-            ensure_local_prefix_file(anchor, prefix)
+            _, prefix_file_written = ensure_local_prefix_file(anchor, prefix)
             already_registered = True
         elif repo_name in by_name:
             die(
@@ -481,10 +553,36 @@ def main(argv=None):
             entries.append((repo_name, prefix))
             write_registry_atomic(registry_path, entries)
 
-    prefix_file, _ = ensure_local_prefix_file(anchor, prefix)
-    sentinel_path, _ = ensure_local_sentinel_file(anchor, store_root)
+    prefix_file, written_now = ensure_local_prefix_file(anchor, prefix)
+    prefix_file_written = prefix_file_written or written_now
+    sentinel_path, sentinel_written = ensure_local_sentinel_file(
+        anchor, store_root
+    )
 
     _autocommit_registration(store_root, repo_name, prefix, already_registered)
+
+    if getattr(args, "json_mode", False):
+        # One JSON document on stdout; the human block is replaced, never
+        # duplicated, and the seed/config notices stay on stderr (IM-144).
+        json.dump(
+            {
+                "repo": repo_name,
+                "prefix": prefix,
+                "store": str(store_path),
+                "registry": str(registry_path),
+                "already_registered": already_registered,
+                "template_seeded": template_seeded,
+                "prefix_file": str(prefix_file),
+                "prefix_file_written": prefix_file_written,
+                "sentinel": str(sentinel_path),
+                "sentinel_written": sentinel_written,
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=False,
+        )
+        sys.stdout.write("\n")
+        return
 
     if already_registered:
         print(
@@ -516,6 +614,17 @@ VERB = "init-project"
 TIER = "admin"
 SUMMARY = "register a project into the issue store registry"
 ORDER = 20
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "scaffolding"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-245: this verb's dispatcher subparser is a prefix_chars="\x00"
+# passthrough, so point the extractor at the real parser.
+SURFACE_PARSER = build_parser
 
 
 def register(subparsers):

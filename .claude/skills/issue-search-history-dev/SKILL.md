@@ -37,8 +37,13 @@ Default output is TSV: `<full-sha>\t<author-date-iso8601>\t<author>\t<subject>` 
 
 ## Error semantics (exit codes)
 
-- `0` -- success, including zero matches (writes a `no matches for "<term>" in <store>` note to stderr but exits 0).
-- `1` -- precondition failed: legacy mode active (store-only, see fallback below), store root not a git repo, prefix directory missing.
+- `0` -- success: at least one matching commit was emitted.
+- `1` -- EITHER zero matches (the grep convention every enumeration read
+  follows) OR a precondition failure: legacy mode active (store-only, see
+  fallback below), store root not a git repo, prefix directory missing.
+  Distinguish them by the stderr line, not by the code: a zero-result run
+  writes `no matches for "<term>" in <store>` and is a NORMAL outcome --
+  do not report it to the user as a broken store.
 - `2` -- argument/usage error: missing term, invalid `--prefix` shape, empty `--prefix` after parsing.
 
 This skill is read-only; exit code 3 (`concurrent-edit`) is not produced.

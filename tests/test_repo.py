@@ -28,6 +28,9 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from fixture_identity import FIXTURE_EMAIL  # noqa: E402
 
 import repo  # noqa: E402
 
@@ -38,7 +41,7 @@ def _git(*args, cwd):
 
 def _init_repo_with_commit(path):
     _git("init", "-b", "main", cwd=path)
-    _git("config", "user.email", "test@example.invalid", cwd=path)
+    _git("config", "user.email", FIXTURE_EMAIL, cwd=path)
     _git("config", "user.name", "Test", cwd=path)
     _git("commit", "--allow-empty", "-m", "initial", cwd=path)
 

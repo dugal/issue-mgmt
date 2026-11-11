@@ -13,8 +13,8 @@ Wraps the CLI subcommand that will be exposed as MCP tool `issue.dep` in Phase 2
 ## Invocation
 
 ```
-/issue-dep-dev add    <id> KIND:TARGET [--note TEXT] [--json] [--no-reindex] [--lock-timeout <seconds>]
-/issue-dep-dev remove <id> TARGET [--type KIND] [--json] [--no-reindex] [--lock-timeout <seconds>]
+/issue-dep-dev add    <id> KIND:TARGET [--dep-note TEXT] [--json] [--no-reindex] [--lock-timeout <seconds>]
+/issue-dep-dev remove <id> TARGET [--kind KIND] [--json] [--no-reindex] [--lock-timeout <seconds>]
 /issue-dep-dev list   <id> [--json]
 ```
 
@@ -23,8 +23,8 @@ Wraps the CLI subcommand that will be exposed as MCP tool `issue.dep` in Phase 2
 - `<id>` (required) -- the issue that carries the edge, e.g. `XYZ-064`, `ABC-102`.
 - `KIND:TARGET` (add, required) -- `KIND` is one of `blocks`, `parent-child`, `related`, `discovered-from` (the four dependency kinds). `TARGET` is a `PREFIX-NNN` issue id. Splits on the first colon only (so `parent-child:ABC-101` parses correctly). Cross-prefix targets are accepted write-now / resolve-later -- no store lookup.
 - `TARGET` (remove, required) -- the id whose edge(s) to drop.
-- `--note TEXT` (add, optional) -- a note recorded on the new edge.
-- `--type KIND` (remove, optional) -- only remove the edge to `TARGET` of this kind (otherwise all edges to `TARGET` are removed).
+- `--dep-note TEXT` (add, optional) -- a note recorded on the new edge.
+- `--kind KIND` (remove, optional) -- only remove the edge to `TARGET` of this kind (otherwise all edges to `TARGET` are removed).
 - `--json` (optional) -- emit a one-shot summary object on stdout.
 - `--no-reindex` (optional, add/remove) -- skip the post-write auto-reindex.
 - `--lock-timeout <seconds>` (optional, add/remove, default 5) -- per-issue advisory-lock timeout.
@@ -33,7 +33,7 @@ Wraps the CLI subcommand that will be exposed as MCP tool `issue.dep` in Phase 2
 
 ```bash
 issue dep add <id> KIND:TARGET [flags...]
-issue dep remove <id> TARGET [--type KIND] [flags...]
+issue dep remove <id> TARGET [--kind KIND] [flags...]
 issue dep list <id> [--json]
 ```
 
@@ -62,12 +62,12 @@ Add a cross-prefix blocks edge (the motivating XYZ-064 -> QRS-107 case):
 
 Add a parent-child edge with a note (note the hyphen in the kind):
 ```
-/issue-dep-dev add ABC-102 parent-child:ABC-101 --note "spun out of parent"
+/issue-dep-dev add ABC-102 parent-child:ABC-101 --dep-note "spun out of parent"
 ```
 
 Remove a specific edge kind:
 ```
-/issue-dep-dev remove XYZ-064 QRS-107 --type blocks
+/issue-dep-dev remove XYZ-064 QRS-107 --kind blocks
 ```
 
 List an issue's edges:

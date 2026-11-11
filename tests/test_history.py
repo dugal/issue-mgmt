@@ -32,6 +32,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from fixture_identity import FIXTURE_EMAIL  # noqa: E402
 
 import history  # noqa: E402  -- path set above
 
@@ -41,9 +44,9 @@ def _git(cwd: Path, *args: str, env_extra=None) -> None:
     env.update(
         {
             "GIT_AUTHOR_NAME": "Test Author",
-            "GIT_AUTHOR_EMAIL": "author@example.com",
+            "GIT_AUTHOR_EMAIL": FIXTURE_EMAIL,
             "GIT_COMMITTER_NAME": "Test Committer",
-            "GIT_COMMITTER_EMAIL": "committer@example.com",
+            "GIT_COMMITTER_EMAIL": FIXTURE_EMAIL,
         }
     )
     if env_extra:
@@ -59,7 +62,7 @@ def _git(cwd: Path, *args: str, env_extra=None) -> None:
 
 def _init_store(root: Path) -> None:
     _git(root, "init", "--quiet", "--initial-branch=main")
-    _git(root, "config", "user.email", "test@example.com")
+    _git(root, "config", "user.email", FIXTURE_EMAIL)
     _git(root, "config", "user.name", "Test User")
     _git(root, "config", "commit.gpgsign", "false")
 

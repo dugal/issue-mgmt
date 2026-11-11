@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""
+check-tarball-sources -- assert every declared source reaches the tarball
+
+Usage: check-tarball-sources <tarball> <source-path>...
+
+Compares the Makefile's SOURCES list against the built distribution
+tarball and fails when a declared source's content is absent from it.
+
+Matching is by sha256 of file CONTENT, not by path. The tarball
+restructures what it stages (scripts/issue -> issue,
+.claude/skills/<n>-dev/SKILL.md -> skills/<n>.md,
+share/issue-mgmt/CHEATSHEET.md -> CHEATSHEET.md), so a path comparison
+would need a second copy of the staging rules -- itself a hand-maintained
+declaration of the kind this check exists to make unnecessary.
+
+Why this exists (IM-264, IM-145): the staging `cp` block and the `tar`
+include list were separate hand-maintained lists, so a file could be
+declared in SOURCES and never ship. It happened twice -- `issue-ready`
+(IM-145, caught in post-publish verification) and `LICENSE` (added in
+v3.1.0, never shipped at all, while the formula declared `license "MIT"`).
+
+Exit 0 when every source is present, 1 naming each absent one, 2 on a
+usage or I/O error.
+
+Examples:
+  check-tarball-sources dist/issue-mgmt-v3.4.0.tar.gz scripts/issue LICENSE
+  make dist            # runs it over $(SOURCES) automatically
+"""
+
+import hashlib
+import os
+import sys
+import tarfile
+
+PROG = "check-tarball-sources"
+
+
+def sha256_of_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def tarball_digests(tarball):
+    """sha256 -> first member name, for every regular file in the tarball."""
+    digests = {}
+    with tarfile.open(tarball, "r:*") as tf:
+        for member in tf:
+            if not member.isfile():
+                continue
+            fh = tf.extractfile(member)
+            if fh is None:
+                continue
+            h = hashlib.sha256()
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+            digests.setdefault(h.hexdigest(), member.name)
+    return digests
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    if len(args) < 2:
+        print(f"{PROG}: usage: {PROG} <tarball> <source-path>...", file=sys.stderr)
+        return 2
+
+    tarball, sources = args[0], args[1:]
+    if not os.path.isfile(tarball):
+        print(f"{PROG}: tarball not found: {tarball}", file=sys.stderr)
+        return 2
+
+    try:
+        shipped = tarball_digests(tarball)
+    except (tarfile.TarError, OSError) as exc:
+        print(f"{PROG}: cannot read {tarball}: {exc}", file=sys.stderr)
+        return 2
+
+    missing = []
+    for src in sources:
+        if not os.path.isfile(src):
+            print(f"{PROG}: declared source does not exist: {src}", file=sys.stderr)
+            return 2
+        if sha256_of_file(src) not in shipped:
+            missing.append(src)
+
+    if missing:
+        print(
+            f"{PROG}: {len(missing)} declared source(s) are NOT in {tarball}:",
+            file=sys.stderr,
+        )
+        for src in missing:
+            print(f"  {src}", file=sys.stderr)
+        print(
+            "hint: the file is in the Makefile SOURCES list but never reaches the\n"
+            "      staging tree -- add it to the $(TARBALL) recipe's staging step.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"{PROG}: all {len(sources)} declared sources present in {tarball}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

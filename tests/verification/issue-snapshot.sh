@@ -42,7 +42,7 @@ mk_store() {
     local path="$1"
     mkdir -p "$path"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     git -C "$path" commit -q --allow-empty -m "init store"
 }
@@ -183,7 +183,7 @@ fi
 
 # --- Test 9: ConcurrentEdit exception path -> exit 3 ---
 # Force store-commit-lock contention: hold the lock with flock-run, then
-# invoke issue-snapshot with a tight --timeout. The internal retry-once
+# invoke issue-snapshot with a tight --commit-timeout. The internal retry-once
 # in store_commit_lock (concurrency.py) cannot acquire either; the binary
 # surfaces ConcurrentEdit on stderr and exits 3.
 STORE_LK="$WORKDIR/store-lock"
@@ -194,7 +194,7 @@ python3 "$CONCURRENCY_PY" flock-run "$LK_PATH" --timeout 10 -- sleep 60 &
 HOLDER_PID=$!
 # Give the holder time to acquire.
 sleep 0.4
-err=$( "$SCRIPT" --store "$STORE_LK" --timeout 0.3 2>&1 >/dev/null )
+err=$( "$SCRIPT" --store "$STORE_LK" --commit-timeout 0.3 2>&1 >/dev/null )
 rc=$?
 kill -9 $HOLDER_PID 2>/dev/null
 wait $HOLDER_PID 2>/dev/null
@@ -274,6 +274,34 @@ if [[ $rc -eq 0 ]] \
     pass "post-catchup re-run: 'store is clean', HEAD unchanged"
 else
     fail "post-catchup re-run (rc=$rc out=$out sha_after=$sha_after sha_after2=$sha_after2)"
+fi
+
+# --- Test 12: IM-242 lock-timeout vocabulary (name follows the lock) ---
+# `admin snapshot` takes only the store-wide commit lock, so it spells the
+# flag --commit-timeout. The retired --timeout spelling keeps working for one
+# release but must not appear in --help as a current form
+# (surface.self-naming).
+help_out=$( "$SCRIPT" --help 2>&1 )
+# COVERS: surface.vocabulary-registry
+if [[ "$help_out" == *"--commit-timeout"* ]] \
+   && [[ "$help_out" != *"--timeout SECONDS"* ]] \
+   && [[ "$help_out" != *"--commit-timeout, --timeout"* ]]; then
+    pass "--help presents --commit-timeout and not the retired --timeout"
+else
+    fail "help vocabulary (out=$help_out)"
+fi
+
+STORE_VOCAB="$WORKDIR/store-vocab"
+mk_store "$STORE_VOCAB"
+"$SCRIPT" --store "$STORE_VOCAB" --commit-timeout 5 >/dev/null 2>&1
+rc_new=$?
+"$SCRIPT" --store "$STORE_VOCAB" --timeout 5 >/dev/null 2>&1
+rc_old=$?
+# COVERS: surface.stability
+if [[ $rc_new -eq 0 ]] && [[ $rc_old -eq 0 ]]; then
+    pass "--commit-timeout works; retired --timeout still accepted (synonym window)"
+else
+    fail "synonym window (rc_new=$rc_new rc_old=$rc_old)"
 fi
 
 # --- Summary ---

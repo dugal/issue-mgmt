@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""
+check-cheatsheet -- assert the shipped cheat sheet describes the real CLI
+
+Usage: check-cheatsheet [--list]
+
+`share/issue-mgmt/CHEATSHEET.md` ships in the formula and `issue admin
+install-skills` copies it next to the installed skills, so it is the sheet a
+session finds on disk when it wants to know what the CLI offers
+(`dist.cheatsheet`). That clause promises the sheet "maps every `issue` verb
+to its purpose, the direct-filesystem anti-pattern it obviates, one example,
+and its `/issue-*` skill" -- and nothing checked it. Every test touching the
+file asserted only that it gets INSTALLED: that the formula carries the
+install line, that a sentinel string reaches `~/.claude/skills/`, and that
+`--json` reports the path. Not one read its text.
+
+Its inventories were in fact correct when IM-267 was filed -- all verbs
+present, no phantom verbs or skills -- but correct by luck rather than by
+construction, which is the whole of the IM-261 finding. Its one statement
+about argument POSITION was wrong for four of the five flags it named.
+
+This checker closes the inventory half against ground truth:
+
+  [verbs]   every verb in docs/cli-surface.json appears in the sheet, and
+            every `issue <verb>` the sheet names resolves in the manifest.
+  [skills]  every `/issue-*` name the sheet gives resolves to a shipped
+            skill under .claude/skills/<name>-dev/, and every shipped skill
+            is named by the sheet.
+  [exits]   the read-verb exit-code guidance names each class rule plus the
+            two non-empty cases a caller must not read as a zero result.
+
+The flag-POSITION claim cannot honestly be checked by reading text, so it is
+asserted by EXECUTION in tests/verification/cheatsheet.sh, which runs each
+claimed placement against the real dispatcher.
+
+Exit 0 when the sheet matches the CLI, 1 naming each divergence, 2 on a
+usage or I/O error.
+
+Examples:
+  check-cheatsheet                      # check the shipped sheet
+  check-cheatsheet --list               # show what was parsed out of it
+  tests/verification/cheatsheet.sh      # runs this plus the execution checks
+"""
+
+import json
+import os
+import re
+import sys
+
+PROG = "check-cheatsheet"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SHEET = os.path.join(REPO_ROOT, "share", "issue-mgmt", "CHEATSHEET.md")
+MANIFEST = os.path.join(REPO_ROOT, "docs", "cli-surface.json")
+SKILLS_DIR = os.path.join(REPO_ROOT, ".claude", "skills")
+
+# `issue <verb>` / `issue admin <sub>` / `issue history <sub>`, matched only
+# inside code -- an inline `code span` or a fenced block. Prose mentions
+# ("the per-issue lock", "an open issue passes through in-progress") are not
+# invocations, and a deny-list of prose words to skip would itself be the
+# hand-maintained declaration this check exists to make unnecessary. What the
+# sheet presents as copyable it presents as code.
+#
+# The accepted limit: a phantom verb named ONLY in un-backticked prose is not
+# flagged. That is the cheaper blind spot -- a deny list filters on the word
+# with no notion of position, so it would suppress the token inside a code
+# fence too, which is the one place a phantom actually hurts. Full tradeoff,
+# with both directions measured, is recorded on IM-267.
+_VERB_RE = re.compile(r"\bissue\s+(admin\s+|history\s+)?([a-z][a-z-]*)")
+_SECTION_HEAD_RE = re.compile(r"^###\s+([a-z][a-z-]*)\s+--")
+_SKILL_RE = re.compile(r"/(issue-[a-z-]+)")
+_FENCE_RE = re.compile(r"^\s*```")
+_CODE_SPAN_RE = re.compile(r"`([^`]+)`")
+
+# Phrases the read-verb exit-code guidance must carry. Each names a rule a
+# caller branches on; the sheet shipped with only the first.
+_REQUIRED_EXIT_GUIDANCE = (
+    ("the grep convention for enumeration reads", ("enumeration", "grep")),
+    ("the point-read found/not-found rule", ("point read", "point-read")),
+    ("absent-prefix as an argument error", ("unknown-prefix",)),
+    ("an unusable store as a precondition failure",
+     ("store-unresolvable",)),
+)
+
+
+def die(msg, code=2):
+    sys.stderr.write("%s: %s\n" % (PROG, msg))
+    raise SystemExit(code)
+
+
+def read_text(path, what):
+    try:
+        with open(path, "r") as fh:
+            return fh.read()
+    except (IOError, OSError) as e:
+        die("cannot read %s (%s): %s" % (what, path, e))
+
+
+def manifest_verb_paths():
+    raw = read_text(MANIFEST, "the surface manifest")
+    try:
+        data = json.loads(raw)
+    except ValueError as e:
+        die("surface manifest is not valid JSON: %s" % e)
+    paths = set()
+    for entry in data["verbs"]:
+        path = entry["path"]
+        if path.startswith("issue "):
+            path = path[len("issue "):]
+        paths.add(path)
+    if not paths:
+        die("the surface manifest lists no verbs -- refusing to report clean")
+    return paths
+
+
+def group_prefixes(paths):
+    """The dispatcher's group names, derived from the manifest's own paths.
+
+    `issue admin <sub>` and `issue history <sub>` are real surface -- the
+    tier overview writes them with a placeholder -- so a bare group name is
+    a valid token rather than a phantom verb. Derived from the two-word
+    paths so adding a third tier needs no edit here.
+    """
+    return set(p.split()[0] for p in paths if len(p.split()) > 1)
+
+
+def shipped_skills():
+    try:
+        names = set(
+            d[: -len("-dev")] for d in os.listdir(SKILLS_DIR)
+            if d.endswith("-dev")
+            and os.path.isfile(os.path.join(SKILLS_DIR, d, "SKILL.md"))
+        )
+    except (IOError, OSError) as e:
+        die("cannot list %s: %s" % (SKILLS_DIR, e))
+    if not names:
+        die("no skills found under %s -- refusing to report an empty set"
+            % SKILLS_DIR)
+    return names
+
+
+def parse_sheet(text, known_paths, groups=frozenset()):
+    """Pull the verb and skill tokens the sheet presents as invocations.
+
+    A `### <verb> -- ...` section head counts as naming that verb even when
+    the body spells the example differently, because the head is the sheet's
+    own index of the verb.
+    """
+    verbs, unknown, skills = set(), [], set()
+    in_fence = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        skills.update(_SKILL_RE.findall(line))
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        m = _SECTION_HEAD_RE.match(line)
+        if m and m.group(1) in known_paths:
+            verbs.add(m.group(1))
+        # Inside a fence the whole line is code; outside, only code spans.
+        fragments = [line] if in_fence else _CODE_SPAN_RE.findall(line)
+        for fragment in fragments:
+            for m in _VERB_RE.finditer(fragment):
+                group = (m.group(1) or "").strip()
+                word = m.group(2)
+                path = ("%s %s" % (group, word)).strip()
+                if path in known_paths:
+                    verbs.add(path)
+                elif path in groups:
+                    # A bare group name (`issue admin <sub>`) -- real
+                    # surface, not a verb and not a phantom.
+                    continue
+                else:
+                    unknown.append((lineno, path))
+    return verbs, unknown, skills
+
+
+def check(verbose=False):
+    text = read_text(SHEET, "the shipped cheat sheet")
+    known_paths = manifest_verb_paths()
+    skills = shipped_skills()
+    named_verbs, unknown_verbs, named_skills = parse_sheet(
+        text, known_paths, group_prefixes(known_paths)
+    )
+    problems = []
+
+    missing = sorted(known_paths - named_verbs)
+    if missing:
+        problems.append(
+            "the sheet does not name %d of %d CLI verbs: %s. "
+            "`dist.cheatsheet` promises it maps EVERY verb, and a verb absent "
+            "from the sheet is a verb a session will not find on disk."
+            % (len(missing), len(known_paths), ", ".join(missing))
+        )
+    for lineno, path in unknown_verbs:
+        problems.append(
+            "CHEATSHEET.md:%d names `issue %s`, which is not a verb in the "
+            "surface manifest. A session copying it gets exit 2."
+            % (lineno, path)
+        )
+
+    phantom = sorted(named_skills - skills)
+    if phantom:
+        problems.append(
+            "the sheet names %s, which is not a shipped skill (shipped: %d "
+            "under .claude/skills/*-dev). The sheet is where a session learns "
+            "which skills exist."
+            % (", ".join("/" + p for p in phantom), len(skills))
+        )
+    unnamed = sorted(skills - named_skills)
+    if unnamed:
+        problems.append(
+            "the sheet does not name shipped skill(s) %s, so a session "
+            "reading it will not know they exist."
+            % ", ".join("/" + p for p in unnamed)
+        )
+
+    low = text.lower()
+    for label, needles in _REQUIRED_EXIT_GUIDANCE:
+        if not any(n in low for n in needles):
+            problems.append(
+                "the read-verb exit-code guidance does not cover %s. "
+                "`output.exit-codes` fixes one rule per read class plus two "
+                "non-empty cases; a sheet that states only the grep "
+                "convention leaves a caller mis-reading the others." % label
+            )
+
+    if verbose:
+        print("manifest verbs : %d" % len(known_paths))
+        print("named in sheet : %d" % len(named_verbs))
+        print("shipped skills : %d" % len(skills))
+        print("named skills   : %d" % len(named_skills))
+        print("unresolved verb tokens: %d" % len(unknown_verbs))
+        print()
+
+    return problems, known_paths, skills
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    verbose = bool(args and args[0] == "--list")
+    if args and not verbose:
+        die("unknown argument %r (try --help)" % args[0])
+
+    problems, verbs, skills = check(verbose=verbose)
+    if problems:
+        sys.stderr.write(
+            "%s: the shipped cheat sheet disagrees with the CLI:\n\n" % PROG
+        )
+        for p in problems:
+            sys.stderr.write("  - %s\n" % p)
+        sys.stderr.write(
+            "\n  The sheet ships in the formula and installs next to the "
+            "skills, so it is read as current fact.\n"
+        )
+        return 1
+    print("%s: the cheat sheet matches the CLI (%d verbs, %d skills, "
+          "read-verb exit guidance complete)." % (PROG, len(verbs),
+                                                  len(skills)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

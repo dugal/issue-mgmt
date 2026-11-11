@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""
+check-fixture-emails -- one fixture git identity, enforced against the tree
+
+Usage: check-fixture-emails [--list]
+
+Every test that commits needs a git identity. The address is never asserted
+on -- it exists only so `git commit` does not refuse -- yet each script used
+to invent its own, named after whichever issue needed it: nine distinct
+addresses across nine files.
+
+That mattered because the publish gate reports every email in the public view
+and `.publish.yaml` `leaks.allow` had to enumerate them. Suppression is by
+FULL-SPAN containment, so a domain-level token suppresses nothing and only the
+complete address works -- which made each new fixture a hand-written allowlist
+entry that three of four authors forgot. Twice inside the phase whose thesis
+is that declarations get re-validated automatically (IM-240 and IM-263 each
+shipped an unlisted address), and both times the feedback arrived only at the
+publish gate, where it blocked a release.
+
+So this checker enforces the property that removes the need for those entries:
+
+  [identity]  every email-shaped literal in the public view is either the
+              shared fixture identity from tests/fixture_identity.py or an
+              explicit `leaks.allow` entry.
+  [allowlist] the shared identity is itself allowed, so the publish gate
+              cannot go red on the very address this file points authors at.
+  [shrink]    no allowlisted address is unused -- a retired fixture cannot
+              leave its entry behind to be inherited as precedent.
+  [override]  no `leaks.allow` entry spans a `leaks.deny` token. An allow
+              entry suppresses a deny hit inside its span, so every entry is
+              an unreviewed override of the deny list; that is the shape the
+              IM-218 bare-username leak took, and the reason the list must
+              shrink rather than grow.
+
+The public view is derived the same way the publish gate derives it: tracked
+files, minus `private_paths`, minus the publish-config floor. Reading a
+literal list of files to scan would be the declaration this check exists to
+make unnecessary.
+
+Deliberately NOT enforced: the git user NAME. Names are not email-shaped, so
+the email detector never sees one, and a personal name is already caught by
+the `deny` tokens. Widening scope here would buy a second rule to remember.
+
+Exit 0 when the tree carries one fixture identity, 1 naming each divergence,
+2 on a usage or I/O error.
+
+Examples:
+  check-fixture-emails                      # check the tree
+  check-fixture-emails --list               # show what was scanned
+  tests/verification/im-230-leak-gate.sh    # the publish-time gate this
+                                            # moves feedback ahead of
+"""
+
+import fnmatch
+import os
+import re
+import subprocess
+import sys
+
+PROG = "check-fixture-emails"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Where the one fixture address is defined. Parsed, not imported: the same
+# assignment is parsed by tests/verification/lib.sh for the shell suite, and
+# a checker that imported it would not notice the file shape the shell half
+# depends on changing.
+IDENTITY_FILE = os.path.join("tests", "fixture_identity.py")
+IDENTITY_RE = re.compile(r'^FIXTURE_EMAIL = "([^"]+)"', re.M)
+
+# Structural email shape, matching what the publish detector reports.
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+# Always stripped from the public mirror on top of private_paths (the
+# publish-config floor), so findings here are not public.
+CONFIG_FLOOR = (".publish.yaml", ".publish/")
+
+
+def die(msg, code=2):
+    sys.stderr.write("%s: %s\n" % (PROG, msg))
+    raise SystemExit(code)
+
+
+def read_text(path, what):
+    try:
+        with open(path, "r") as fh:
+            return fh.read()
+    except (IOError, OSError) as e:
+        die("cannot read %s (%s): %s" % (what, path, e))
+
+
+def fixture_email():
+    """The shared identity, from its single source of truth."""
+    path = os.path.join(REPO_ROOT, IDENTITY_FILE)
+    m = IDENTITY_RE.search(read_text(path, "the fixture identity"))
+    if not m:
+        die("no `FIXTURE_EMAIL = \"...\"` assignment in %s -- refusing to "
+            "report clean with no identity to check against (the shell suite "
+            "parses the same line, so it is already broken)" % path)
+    return m.group(1)
+
+
+def publish_config():
+    """`private_paths`, `leaks.allow` and `leaks.deny` out of .publish.yaml.
+
+    Mirrors the publish-source parser's one load-bearing quirk: FULL-LINE
+    comments are stripped, an inline `# ...` after a value is NOT -- it stays
+    part of the token. Reproducing that is the point; a tolerant parser here
+    would read a mis-authored entry as working when the gate reads it as
+    inert.
+    """
+    path = os.path.join(REPO_ROOT, ".publish.yaml")
+    private, allow, deny = [], [], []
+    section = None
+    for raw in read_text(path, "the publish config").splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if re.match(r"^[A-Za-z_]+:", raw):
+            section = raw.split(":", 1)[0]
+            continue
+        stripped = raw.strip()
+        if section == "private_paths" and stripped.startswith("- "):
+            private.append(stripped[2:].strip())
+        elif section.startswith("leaks") and stripped in ("deny:", "allow:"):
+            # A sibling nested key, reached either from `leaks:` itself or
+            # from the preceding nested key -- hence the prefix test rather
+            # than an equality one.
+            section = "leaks." + stripped[:-1]
+            continue
+        if section == "leaks.allow" and stripped.startswith("- "):
+            allow.append(stripped[2:].strip())
+        elif section == "leaks.deny" and stripped.startswith("- "):
+            deny.append(stripped[2:].strip())
+    if not deny:
+        die("parsed no `leaks.deny` tokens out of %s -- the parser no longer "
+            "matches the file, so every check below would read clean" % path)
+    return private, allow, deny
+
+
+def is_private(relpath, private):
+    for p in private:
+        if p.startswith("glob:"):
+            if fnmatch.fnmatch(relpath, p[len("glob:"):]):
+                return True
+        elif p.endswith("/"):
+            if relpath.startswith(p):
+                return True
+        elif relpath == p:
+            return True
+    for p in CONFIG_FLOOR:
+        if relpath == p or relpath.startswith(p):
+            return True
+    return False
+
+
+def public_files(private):
+    """Files that reach, or are about to reach, the public mirror.
+
+    Tracked files PLUS untracked-and-not-ignored ones. The mirror itself
+    ships only tracked files, so scanning the wider set is deliberate: a
+    just-written test is exactly when naming the address costs nothing to
+    fix, and a tracked-only scan would stay silent until the commit that
+    makes it a publish problem. `--exclude-standard` keeps gitignored build
+    output (htmlcov, dist, .venv-dev) out.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as e:
+        die("cannot list tracked files in %s: %s" % (REPO_ROOT, e))
+    files = [f for f in out.split("\0") if f and not is_private(f, private)]
+    if not files:
+        die("no public tracked files found under %s -- refusing to report "
+            "clean on an empty scan" % REPO_ROOT)
+    return files
+
+
+def scan(files):
+    """Every email-shaped literal in the public view: addr -> [locations]."""
+    found = {}
+    for relpath in files:
+        full = os.path.join(REPO_ROOT, relpath)
+        try:
+            with open(full, "r", errors="replace") as fh:
+                lines = fh.read().splitlines()
+        except (IOError, OSError):
+            continue  # a submodule or a vanished path; nothing to scan
+        for lineno, line in enumerate(lines, 1):
+            for addr in EMAIL_RE.findall(line):
+                found.setdefault(addr, []).append("%s:%d" % (relpath, lineno))
+    return found
+
+
+def check(verbose=False):
+    shared = fixture_email()
+    private, allow, deny = publish_config()
+    files = public_files(private)
+    found = scan(files)
+    allowed = set(allow)
+    problems = []
+
+    if shared not in allowed:
+        problems.append(
+            "the shared fixture identity (%s, from %s) is not in "
+            ".publish.yaml `leaks.allow`, so the publish gate reports every "
+            "use of the address this project tells authors to use."
+            % (shared, IDENTITY_FILE)
+        )
+
+    for addr in sorted(found):
+        if addr == shared or addr in allowed:
+            continue
+        where = found[addr]
+        problems.append(
+            "%s is neither the shared fixture identity nor a `leaks.allow` "
+            "entry, at %s%s. Use the shared identity instead: "
+            "`FIXTURE_EMAIL` from %s in a python test, `\"$FIXTURE_EMAIL\"` "
+            "after sourcing tests/verification/lib.sh in a shell script. An "
+            "invented address needs its own hand-written allowlist entry, "
+            "and the gate that notices a missing one runs only at publish "
+            "time." % (addr, ", ".join(where[:3]),
+                       "" if len(where) <= 3 else " (+%d more)"
+                       % (len(where) - 3),
+                       IDENTITY_FILE)
+        )
+
+    for entry in allow:
+        if not EMAIL_RE.fullmatch(entry):
+            continue  # a substring token for the path/deny categories
+        if entry == shared:
+            continue
+        if entry not in found:
+            problems.append(
+                "`leaks.allow` carries %s, which no public file uses. A "
+                "retired fixture address must leave with its entry -- a "
+                "stale one is read as precedent for adding the next."
+                % entry
+            )
+
+    for entry in allow:
+        for token in deny:
+            if re.search(r"\b%s\b" % re.escape(token), entry):
+                problems.append(
+                    "`leaks.allow` entry %r spans the `leaks.deny` token %r. "
+                    "An allow entry suppresses a deny hit inside its span, "
+                    "so this one silently disables the deny token wherever "
+                    "it appears -- the shape the IM-218 bare-username leak "
+                    "took." % (entry, token)
+                )
+
+    if verbose:
+        print("shared identity   : %s" % shared)
+        print("public files      : %d" % len(files))
+        print("distinct addresses: %d" % len(found))
+        for addr in sorted(found):
+            print("  %-32s %d use(s)  %s"
+                  % (addr, len(found[addr]), found[addr][0]))
+        print("allow entries     : %d (%d email-shaped)"
+              % (len(allow),
+                 len([a for a in allow if EMAIL_RE.fullmatch(a)])))
+        print()
+
+    return problems, shared, found
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    verbose = bool(args and args[0] == "--list")
+    if args and not verbose:
+        die("unknown argument %r (try --help)" % args[0])
+
+    problems, shared, found = check(verbose=verbose)
+    if problems:
+        sys.stderr.write(
+            "%s: the tree does not carry one fixture git identity:\n\n" % PROG
+        )
+        for p in problems:
+            sys.stderr.write("  - %s\n" % p)
+        sys.stderr.write(
+            "\n  Each distinct address needs its own `leaks.allow` entry, "
+            "and a missing one fails the publish.\n"
+        )
+        return 1
+    print("%s: one fixture identity (%s) across %d distinct public "
+          "address(es); allowlist carries no stale or deny-spanning entry."
+          % (PROG, shared, len(found)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

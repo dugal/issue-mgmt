@@ -22,6 +22,14 @@ TIER = "tier1"
 SUMMARY = "move an issue to blocked (reason required)"
 ORDER = 50
 
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "mutating"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
 _DESCRIPTION = """\
 Mark an issue blocked, recording the required reason in Implementation
 Notes. Use `issue unblock` to return it to an active state once the

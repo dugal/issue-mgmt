@@ -27,6 +27,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from fixture_identity import FIXTURE_EMAIL  # noqa: E402
 
 import reindex  # noqa: E402
 import reindex_core  # noqa: E402
@@ -71,7 +74,7 @@ def _make_store():
     _write_issue(store, "BB", 1, "open")
     _write_issue(store, "BB", 2, "cancelled")
     _git(store, "init", "-q")
-    _git(store, "config", "user.email", "test@example.invalid")
+    _git(store, "config", "user.email", FIXTURE_EMAIL)
     _git(store, "config", "user.name", "Test")
     _git(store, "add", "-A")
     _git(store, "commit", "-q", "-m", "seed issues")
@@ -180,7 +183,7 @@ class TestReindexCoreEdges(unittest.TestCase):
             (store / "AA" / "AA-TEMPLATE.md").write_text("---\nid: AA-TEMPLATE\n---\n")
             (store / "AA" / "malformed.md").write_text("no frontmatter\n")
             _git(store, "init", "-q")
-            _git(store, "config", "user.email", "t@e.invalid")
+            _git(store, "config", "user.email", FIXTURE_EMAIL)
             _git(store, "config", "user.name", "T")
             _git(store, "add", "-A")
             _git(store, "commit", "-q", "-m", "seed")
@@ -195,7 +198,7 @@ class TestReindexCoreEdges(unittest.TestCase):
         store = Path(tempfile.mkdtemp(prefix="im-empty-"))
         try:
             _git(store, "init", "-q")
-            _git(store, "config", "user.email", "t@e.invalid")
+            _git(store, "config", "user.email", FIXTURE_EMAIL)
             _git(store, "config", "user.name", "T")
             reindex_core.reindex_store(store, suppress_commit=True)
             self.assertIn("_(no prefix directories found)_",
@@ -215,6 +218,97 @@ class TestReindexCoreEdges(unittest.TestCase):
             self.assertIn("Changelog", idx)
         finally:
             subprocess.run(["rm", "-rf", str(d)], check=False)
+
+
+class TestDetailRecords(unittest.TestCase):
+    """The structured records `issue admin reindex --json` renders (IM-240).
+
+    The string-returning entry points are projections of these, so the
+    summary line and the JSON counts cannot drift.
+    """
+
+    def test_store_detail_counts_indexes_and_issues_per_prefix(self):
+        store = Path(tempfile.mkdtemp(prefix="im-detail-store-"))
+        try:
+            _write_issue(store, "AA", 1, "open")
+            _write_issue(store, "AA", 2, "done")
+            _write_issue(store, "BB", 1, "blocked")
+            result = reindex_core.reindex_store_detail(
+                store, suppress_commit=True
+            )
+            self.assertEqual(result["mode"], "store")
+            self.assertEqual(result["store"], str(store))
+            self.assertEqual(result["index"], str(store / "INDEX.md"))
+            self.assertEqual(
+                result["prefixes"],
+                [{"prefix": "AA", "issues": 2},
+                 {"prefix": "BB", "issues": 1}],
+            )
+            # One root INDEX.md plus one per prefix.
+            self.assertEqual(result["indexes_written"], 3)
+            self.assertEqual(result["issues"], 3)
+        finally:
+            subprocess.run(["rm", "-rf", str(store)], check=False)
+
+    def test_store_detail_summary_matches_string_entry_point(self):
+        store = Path(tempfile.mkdtemp(prefix="im-detail-parity-"))
+        try:
+            _write_issue(store, "AA", 1, "open")
+            detail = reindex_core.reindex_store_detail(
+                store, suppress_commit=True
+            )
+            summary = reindex_core.reindex_store(store, suppress_commit=True)
+            self.assertEqual(detail["summary"], summary)
+        finally:
+            subprocess.run(["rm", "-rf", str(store)], check=False)
+
+    def test_store_detail_empty_store_has_zero_counts_not_missing_keys(self):
+        store = Path(tempfile.mkdtemp(prefix="im-detail-empty-"))
+        try:
+            result = reindex_core.reindex_store_detail(
+                store, suppress_commit=True
+            )
+            self.assertEqual(result["prefixes"], [])
+            self.assertEqual(result["issues"], 0)
+            # The root INDEX.md is still written, so the count is 1.
+            self.assertEqual(result["indexes_written"], 1)
+        finally:
+            subprocess.run(["rm", "-rf", str(store)], check=False)
+
+    def test_legacy_detail_reports_dir_index_and_count(self):
+        d = Path(tempfile.mkdtemp(prefix="im-detail-legacy-"))
+        try:
+            (d / "IM-001.md").write_text(_ISSUE_TMPL.format(
+                id="IM-001", title="legacy one", type="bug",
+                status="open", priority="high",
+            ))
+            result = reindex_core.reindex_legacy_dir_detail(d)
+            self.assertEqual(result["mode"], "legacy")
+            self.assertEqual(result["issues_dir"], str(d))
+            self.assertEqual(result["index"], str(d / "INDEX.md"))
+            self.assertEqual(result["indexes_written"], 1)
+            self.assertEqual(result["issues"], 1)
+        finally:
+            subprocess.run(["rm", "-rf", str(d)], check=False)
+
+    def test_legacy_detail_summary_matches_string_entry_point(self):
+        d = Path(tempfile.mkdtemp(prefix="im-detail-legacy-parity-"))
+        try:
+            (d / "IM-001.md").write_text(_ISSUE_TMPL.format(
+                id="IM-001", title="legacy one", type="bug",
+                status="open", priority="high",
+            ))
+            detail = reindex_core.reindex_legacy_dir_detail(d)
+            summary = reindex_core.reindex_legacy_dir(d)
+            self.assertEqual(detail["summary"], summary)
+        finally:
+            subprocess.run(["rm", "-rf", str(d)], check=False)
+
+    def test_detail_entry_points_raise_on_missing_dir(self):
+        with self.assertRaises(FileNotFoundError):
+            reindex_core.reindex_store_detail(Path("/no/such/store"))
+        with self.assertRaises(FileNotFoundError):
+            reindex_core.reindex_legacy_dir_detail(Path("/no/such/dir"))
 
 
 if __name__ == "__main__":

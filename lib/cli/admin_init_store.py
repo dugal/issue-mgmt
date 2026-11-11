@@ -1,10 +1,10 @@
 """
-init-issue-store -- scaffold a new issues store / converge an existing one
+issue admin init-store -- scaffold a new issues store / converge an existing one
 
 Synopsis:
-  init-issue-store <path> [--non-interactive]
-                          [--dry-run]
-                          [-h | --help] [--version]
+  issue admin init-store <path> [--non-interactive]
+                         [--dry-run] [--json]
+                         [-h | --help] [--version]
 
 Creates a fresh issues store at <path>: makes the directory, initializes
 a git repo (`-b main`), and seeds the canonical README.md, LAYOUT.md,
@@ -26,6 +26,25 @@ Options:
   --non-interactive  Never prompt.
   --dry-run          Report every scaffold action that would run and
                      change nothing.
+  --json             Emit a single JSON object on stdout.
+
+JSON mode (--json): exactly one object on stdout, shape
+
+  {
+    "store": PATH,
+    "dry_run": BOOL,          # true when --dry-run was passed
+    "store_created": BOOL,    # the directory was (or would be) created
+    "git_initialized": BOOL,  # `git init -b main` ran (or would run)
+    "seeded": [NAME, ...],    # files written (or, under --dry-run, planned)
+    "present": [NAME, ...],   # files already there, never overwritten
+    "committed": BOOL         # a `chore: scaffold issue store` commit was
+                              # made (or, under --dry-run, would be)
+  }
+
+Every key is present in both the real and the preview run, so output
+shape is a function of argv alone and a caller branches on `dry_run`
+rather than on key presence. `dry_run` is the same preview marker
+`issue admin reap --json` uses.
 
 Resource resolution:
   Scaffold sources (README.md, LAYOUT.md) live under
@@ -33,7 +52,7 @@ Resource resolution:
     <PREFIX>/share/store-template/              (dev fallback)
   where PREFIX = dirname(dirname(realpath($0))).
 
-  ISSUE-TEMPLATE.md is resolved via the same precedence as `new-issue`:
+  ISSUE-TEMPLATE.md is resolved via the same precedence as `issue create`:
     <PREFIX>/share/issue-mgmt/ISSUE-TEMPLATE.md (Homebrew install)
     <PREFIX>/ISSUE-TEMPLATE.md                  (dev fallback)
 
@@ -44,19 +63,29 @@ Exit codes:
   2  argument/usage error (missing <path>)
 
 Examples:
-  init-issue-store ~/issues-store
-  init-issue-store /tmp/new-store --non-interactive
-  init-issue-store --dry-run ~/issues-store
+  issue admin init-store ~/issues-store
+  issue admin init-store /tmp/new-store --non-interactive
+  issue admin init-store --dry-run ~/issues-store
+  issue admin init-store --json ~/issues-store
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "v3.3.1"
+from . import common
+
+VERSION = "v3.4.0"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue admin init-store"
 
 GITIGNORE_BODY = ".locks/\n.DS_Store\n"
 INDEX_BODY = ""  # the reindex populates it on first run
@@ -65,13 +94,21 @@ SCAFFOLD_FILES = ("README.md", "LAYOUT.md")
 
 
 def die(msg, code=1):
-    print(f"init-issue-store: {msg}", file=sys.stderr)
+    print(f"{PROG}: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
-def parse_args(argv):
+def build_parser():
+    """The verb's real argparse parser.
+
+    Split out of `parse_args` for the surface manifest (IM-245): the
+    dispatcher subparser for this verb is a `prefix_chars="\\x00"`
+    passthrough, so an argparse walk over it sees none of these flags.
+    `SURFACE_PARSER` below points the extractor here instead of letting it
+    emit a false-CLEAN empty flag set.
+    """
     p = argparse.ArgumentParser(
-        prog="init-issue-store",
+        prog=PROG,
         description="Scaffold a new issues store / converge an existing one.",
         add_help=False,
     )
@@ -80,9 +117,14 @@ def parse_args(argv):
                    help="Never prompt.")
     p.add_argument("--dry-run", action="store_true",
                    help="Report planned actions; change nothing.")
+    common.add_json_flag(p)
     p.add_argument("-h", "--help", action="store_true")
     p.add_argument("--version", action="store_true")
-    return p.parse_args(argv)
+    return p
+
+
+def parse_args(argv):
+    return build_parser().parse_args(argv)
 
 
 def show_help():
@@ -216,38 +258,87 @@ def git_stage_all_and_commit(path, pathspecs, message):
 
 # --- Scaffold pass ------------------------------------------------------
 
-def scaffold_dry_run_report(store, template_dir, issue_template):
-    """Read-only convergence report for --dry-run: what would be
-    seeded vs what is already present. Changes nothing.
+def scaffold_dry_run_plan(store, template_dir, issue_template):
+    """Read-only convergence plan for --dry-run. Changes nothing.
+
+    Returns the same record shape the real pass returns (IM-240), with
+    ``dry_run`` true, so `--json` output is one shape across both runs
+    and the human emitter below is the only place the wording differs.
     """
-    print(f"store: {store}")
-    if not store.exists():
-        print(f"  would create: {store}")
-        print("  would run: git init -b main")
+    store_created = not store.exists()
+    git_initialized = False
+    if store_created:
+        git_initialized = True
     elif not is_git_repo(store):
         if not dir_is_empty(store):
             die(
                 f"{store} is not a git repo and is not empty; refusing to "
                 "scaffold over existing content"
             )
-        print("  would run: git init -b main")
+        git_initialized = True
     plan = [(name, template_dir / name) for name in SCAFFOLD_FILES]
     plan += [(".gitignore", None), ("INDEX.md", None),
              ("ISSUE-TEMPLATE.md", issue_template)]
-    would_seed = False
-    for name, _src in plan:
-        if (store / name).exists():
+    results = [
+        (name, "present" if (store / name).exists() else "seeded")
+        for name, _src in plan
+    ]
+    seeded = [n for n, a in results if a == "seeded"]
+    return {
+        "store": str(store),
+        "dry_run": True,
+        "store_created": store_created,
+        "git_initialized": git_initialized,
+        "seeded": seeded,
+        "present": [n for n, a in results if a == "present"],
+        "committed": bool(seeded),
+        "_results": results,
+    }
+
+
+def emit_dry_run_report(record):
+    """Print the --dry-run convergence report (human mode)."""
+    store = record["store"]
+    print(f"store: {store}")
+    if record["store_created"]:
+        print(f"  would create: {store}")
+    if record["git_initialized"]:
+        print("  would run: git init -b main")
+    for name, action in record["_results"]:
+        if action == "present":
             print(f"  present: {name}")
         else:
             print(f"  would seed: {name}")
-            would_seed = True
-    if would_seed:
+    if record["committed"]:
         print("  would commit: chore: scaffold issue store")
+
+
+def emit_scaffold_report(record):
+    """Print the real scaffold pass's report (human mode)."""
+    print(f"store: {record['store']}")
+    for name, action in record["_results"]:
+        print(f"  {action}: {name}")
+    if record["git_initialized"]:
+        print("  initialized: .git (branch main)")
+    if record["committed"]:
+        print("  committed: chore: scaffold issue store")
+
+
+def emit_json(record):
+    """One JSON document on stdout; no human lines ride along (IM-144)."""
+    json.dump(
+        {k: v for k, v in record.items() if not k.startswith("_")},
+        sys.stdout,
+        indent=2,
+        sort_keys=False,
+    )
+    sys.stdout.write("\n")
 
 
 def scaffold(store, template_dir, issue_template):
     """The scaffold/convergence pass. Never overwrites."""
     # --- Step 1: ensure target directory ---
+    store_created = False
     if store.exists():
         if not store.is_dir():
             die(f"{store} exists and is not a directory")
@@ -258,6 +349,7 @@ def scaffold(store, template_dir, issue_template):
             )
     else:
         store.mkdir(parents=True)
+        store_created = True
 
     # --- Step 2: git init if needed ---
     git_initialized = False
@@ -285,14 +377,17 @@ def scaffold(store, template_dir, issue_template):
             "chore: scaffold issue store",
         )
 
-    # --- Step 5: report ---
-    print(f"store: {store}")
-    for name, action in results:
-        print(f"  {action}: {name}")
-    if git_initialized:
-        print("  initialized: .git (branch main)")
-    if committed:
-        print("  committed: chore: scaffold issue store")
+    # --- Step 5: structured record (rendered by the caller) ---
+    return {
+        "store": str(store),
+        "dry_run": False,
+        "store_created": store_created,
+        "git_initialized": git_initialized,
+        "seeded": seeded_names,
+        "present": [n for n, a in results if a == "present"],
+        "committed": committed,
+        "_results": results,
+    }
 
 
 def main(argv=None):
@@ -315,9 +410,16 @@ def main(argv=None):
     issue_template = resolve_issue_template(prefix)
 
     if args.dry_run:
-        scaffold_dry_run_report(store, template_dir, issue_template)
+        record = scaffold_dry_run_plan(store, template_dir, issue_template)
+        emitter = emit_dry_run_report
     else:
-        scaffold(store, template_dir, issue_template)
+        record = scaffold(store, template_dir, issue_template)
+        emitter = emit_scaffold_report
+
+    if getattr(args, "json_mode", False):
+        emit_json(record)
+    else:
+        emitter(record)
 
 
 
@@ -334,6 +436,18 @@ VERB = "init-store"
 TIER = "admin"
 SUMMARY = "scaffold a new issue store / converge an existing one"
 ORDER = 10
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "scaffolding"
+# IM-251: the positional <path> IS the store root.
+SURFACE_STORE = "positional"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-245: this verb's dispatcher subparser is a prefix_chars="\x00"
+# passthrough, so point the extractor at the real parser.
+SURFACE_PARSER = build_parser
 
 
 def register(subparsers):

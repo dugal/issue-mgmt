@@ -121,21 +121,23 @@ issue admin selftest
 issue admin init-store ~/issues-store
 
 # 2. Point a project at it and give it an ID prefix. A project must be a git
-#    repository -- issue-mgmt keys the registry on git identity -- so cd into
-#    an existing repo, or start a new one with `git init`:
-cd ~/projects/myproject                 # an existing git repo, or:
-# mkdir ~/projects/myproject && cd ~/projects/myproject && git init
+#    repository -- issue-mgmt keys the registry on git identity. Starting from
+#    scratch (already have a repo? cd into it and skip this line):
+mkdir -p ~/projects/myproject && cd ~/projects/myproject && git init
+
 issue admin init-project --store ~/issues-store --prefix MYP
 
 # 3. File an issue (interactive, or non-interactive for agents).
 issue create "add --dry-run flag" feature medium
 
-# 4. Work the lifecycle.
+# 4. See what is claimable right now (ready = open, all blockers done).
+#    Run this BEFORE claiming: `ready` lists open work, so an issue you have
+#    already started or completed is correctly absent from it.
+issue ready --prefix MYP
+
+# 5. Work the lifecycle.
 issue start MYP-001 --branch issue-001-dry-run
 issue complete MYP-001 --summary "all acceptance checks passed"
-
-# 5. See what is claimable right now (ready = open, all blockers done).
-issue ready --repo MYP
 
 # 6. Read and search. Search matches the title and body (so this finds
 #    MYP-001 by its title even before you have written any body text).
@@ -143,9 +145,10 @@ issue show MYP-001
 issue search "dry-run"
 ```
 
-Every read verb takes `--json` (with gh-style `--json id,title,...` field
-selection) so agents parse structured output instead of scraping text. `issue
---help` prints the tiered verb map; `issue <verb> -h` prints a verb's flags.
+Every verb takes `--json`, and the read verbs additionally accept gh-style
+`--json id,title,...` field selection, so agents parse structured output instead
+of scraping text. `issue --help` prints the tiered verb map; `issue <verb> -h`
+prints a verb's flags.
 
 ### Claiming work across parallel sessions
 
@@ -162,7 +165,7 @@ issue start MYP-001 --claim session-a --lease-ttl 7200 --json
 issue start MYP-001 --claim session-b
 
 # What can I pick up? The ready set minus other actors' live leases.
-issue ready --repo MYP --actor session-a
+issue ready --prefix MYP --actor session-a
 
 # Reconcile leases abandoned by dead sessions (never touches a valid one).
 issue admin reap
@@ -265,8 +268,9 @@ still there, readable and diffable.
 
 A single `issue` dispatcher exposes a three-tier verb surface: routine verbs, an
 `issue history` read-only sub-namespace, and an `issue admin` sub-namespace for
-maintenance and scaffolding. Every mutating verb takes a per-issue lock, commits
-its own change to the store, and offers `--json`; every read verb is lock-free.
+maintenance and scaffolding. Every verb offers `--json`. Every mutating verb
+takes a per-issue lock and commits its own change to the store; every read verb
+is lock-free.
 
 **Routine verbs**
 
@@ -275,7 +279,7 @@ its own change to the store, and offers `--json`; every read verb is lock-free.
 | `issue create` | Create an issue (interactive or non-interactive); seeds body via `--section`/`--from-file` |
 | `issue show` | Read an issue end-to-end, or only frontmatter / named sections; multi-id batch |
 | `issue transition` | Drive the state machine; convenience verbs `start` / `complete` / `cancel` / `block` / `unblock`; lease flags `--claim` / `--renew` / `--release` |
-| `issue ready` | Readiness computed from frontmatter; `--actor` hides others' leases; `--limit` caps without silent truncation |
+| `issue ready` | Readiness computed from frontmatter; `--actor` hides others' leases; `--limit` caps the ready list without silent truncation; `--filtered all` explains what is not claimable |
 | `issue edit` | Frontmatter and section edits; multi-section atomic; whole-body `--replace-body-file`; refuses guarded fields |
 | `issue note` | Append a date-stamped line to `## Implementation Notes` (or any section) |
 | `issue dep` | Author `depends_on` edges (`add` / `remove` / `list`) |
@@ -306,6 +310,27 @@ its own change to the store, and offers `--json`; every read verb is lock-free.
 | `issue admin selftest` | End-to-end functional smoke against a throwaway temp store |
 | `issue admin install-skills` | Install the Claude Code skills into `~/.claude/skills/` |
 
+### Exit codes
+
+Reads report emptiness through the exit code -- one rule per class, so a script
+branches on the code rather than parsing the output:
+
+- **Enumeration reads** (`search`, `list`, `ready`, `index`, `history search`,
+  `history activity`) follow the grep convention: `0` when at least one row was
+  emitted, `1` when none was. The rows render either way; an empty board is
+  still meaningful output.
+- **Point reads** (`show`, `history show`, `history at`) exit `0` when the named
+  record was found and `1` when it was not.
+
+Two non-empty failures must not be read as a zero result: scoping to a
+`--prefix` the store does not have is an argument error (`2`,
+`error=unknown-prefix`, naming the known set), and a store that cannot be
+resolved is a precondition failure (`1`, `reason=store-unresolvable`). Mutating
+verbs add the loser-side contract for write-time races -- `3` concurrent-edit,
+`4` lost-race, `5` stale-local-view, `7` not-claimable -- each carrying a
+`key=value` stderr line that names the contended resource and the recovery
+parameters, and the same condition as one JSON object under `--json`.
+
 ### Projects are git repositories
 
 `issue admin init-project` registers a project under a prefix by deriving the
@@ -322,8 +347,12 @@ Store-aware tools resolve the store root in this order (highest precedence
 first): `--store ROOT` (where accepted), the `ISSUE_STORE_ROOT` env var, a
 `<project>/.issues/.migrated-to-store` sentinel, the
 `~/.config/issue-mgmt/config` `store_root` key, then an interactive prompt. No
-default path ships in the code; `issue admin init-project` writes the config and
-sentinel for you.
+default path ships in the code. `issue admin init-project` writes the project's
+routing files -- `.issues/.prefix` and the `.issues/.migrated-to-store`
+sentinel -- which is what makes the store resolvable from anywhere inside that
+project. It does not write `~/.config/issue-mgmt/config`; that key is for
+pointing at a store from OUTSIDE any registered project, and you create it
+yourself if you want it.
 
 ---
 

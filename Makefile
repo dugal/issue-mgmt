@@ -10,7 +10,7 @@
 #      (subdirectories, renamed files, skill staging, etc.).
 #   3. Write scripts/gen-formula to emit your Homebrew formula on stdout.
 
-# Makefile-template-schema: 18
+# Makefile-template-schema: 20
 
 # VERSION resolution: three-case ladder, picked in order.
 #   1. HEAD_TAG        -- HEAD is exactly on a tag (production build).
@@ -81,6 +81,16 @@ BREWTAP  :=
 # publish-github errors out in that case.
 GITHUB_REPO := $(shell git remote get-url github 2>/dev/null | sed -E 's|^[^@/]+@[^:]+:||; s|^https?://[^/]+/||; s|\.git$$||')
 
+# Public-target detection (schema 19, RM-148): PUBLIC_TARGET is non-empty iff
+# .publish.yaml declares a public GitHub target -- a `github:` block (detected
+# via github.publisher_tap), `backend: github`, or `promote.production: github`.
+# release-gitea keys its asset source on this: mirror-built when a public
+# target exists (so the RM-141 promote gate validates the same bytes production
+# ships), the internal $(TARBALL) otherwise. A function of declared publish
+# policy, never a hand-set flag (RM-147 no-opt-in, RM-148 carve-out).
+GITHUB_PUBLISHER_TAP := $(shell publish-config github.publisher_tap 2>/dev/null)
+PUBLIC_TARGET        := $(or $(GITHUB_PUBLISHER_TAP),$(filter github,$(BACKEND) $(PROMOTE_PRODUCTION)))
+
 # Source files staged into the tarball (renamed/restructured in the recipe).
 # `scripts/issue` is the single CLI dispatcher. Python helper modules under
 # lib/ (including the lib/cli/ verb package the dispatcher discovers) ship
@@ -92,7 +102,7 @@ SCRIPTS := \
 LIB_FILES := $(wildcard lib/*.py) $(wildcard lib/*.sh) $(wildcard lib/cli/*.py)
 SKILL_DEV_SOURCES := $(wildcard .claude/skills/*-dev/SKILL.md)
 STORE_TEMPLATE_FILES := $(wildcard share/store-template/*.md)
-SOURCES  := $(SCRIPTS) $(LIB_FILES) $(SKILL_DEV_SOURCES) $(STORE_TEMPLATE_FILES) ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md CHANGELOG.md README.md
+SOURCES  := $(SCRIPTS) $(LIB_FILES) $(SKILL_DEV_SOURCES) $(STORE_TEMPLATE_FILES) ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md LICENSE CHANGELOG.md README.md
 
 # Reproducible tarballs.
 #   - Release builds (VERSION starts with 'v'): HEAD commit time. This is
@@ -149,20 +159,22 @@ $(TARBALL): $(SOURCES) $(wildcard docs/release-notes/*.md) stamp
 	  canonical=$${name%-dev}; \
 	  cp $$src $(STAGE)/skills/$$canonical.md; \
 	done
-	cp ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md CHANGELOG.md README.md $(STAGE)/
+	cp ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md LICENSE CHANGELOG.md README.md $(STAGE)/
 	@cp docs/release-notes/*.md $(STAGE)/docs/release-notes/ 2>/dev/null || true
 	find $(STAGE) -exec touch -t $(MTIME) {} +
-	COPYFILE_DISABLE=1 tar -cf - -C $(STAGE) \
-	  issue \
-	  lib \
-	  skills \
-	  store-template \
-	  ISSUE-TEMPLATE.md \
-	  CHEATSHEET.md \
-	  CHANGELOG.md \
-	  README.md \
-	  docs/release-notes \
+	@# The tar include list is DERIVED from the staging tree's top-level
+	@# entries (sorted, so the archive stays reproducible) rather than
+	@# hand-maintained. Packaging ran on three independent hand lists
+	@# (SOURCES, the staging cp block, this tar list) and a file omitted
+	@# from any one of them never shipped: `issue-ready` in v2.5.0 (IM-145)
+	@# and `LICENSE`, which was in none of them from v3.1.0 onward while the
+	@# formula declared `license "MIT"` (IM-264). Staged-but-untarred is now
+	@# impossible by construction; the check below covers the other half.
+	COPYFILE_DISABLE=1 tar -cf - -C $(STAGE) $$(cd $(STAGE) && ls -A | LC_ALL=C sort) \
 	  | gzip -n > $(TARBALL)
+	@# The other half of the same gap: declared-in-SOURCES but never staged.
+	@# Compares every SOURCES path's content against the built tarball.
+	@scripts/check-tarball-sources $(TARBALL) $(SOURCES)
 	rm -rf $(STAGE)
 	@echo "Created $(TARBALL)"
 
@@ -232,6 +244,9 @@ sync-tap:
 #   - `github:\n  publisher_tap: <user>/<repo>` in .publish.yaml (publish-formula
 #     reads this)
 #   - `gh` CLI authenticated against the source repo
+# The formula push pins `--backend github` (schema 20, RM-146): on a dual-target
+# project whose .publish.yaml default backend is gitea, an unpinned push would
+# land the github-URL formula on the NAS/staging tap instead of publisher_tap.
 publish-github: $(FORMULAS)
 	@test -n "$(GITHUB_REPO)" || { \
 	  echo "error: no 'github' remote configured -- run: git remote add github <url> (or: publish-source --init)"; \
@@ -254,7 +269,7 @@ publish-github: $(FORMULAS)
 	      --url "https://github.com/$(GITHUB_REPO)/releases/download/$(VERSION)/$(notdir $(ASSET))" \
 	      > $$f; \
 	  fi; \
-	  publish-formula --formula $$f --version-string $(VERSION); \
+	  publish-formula --backend github --formula $$f --version-string $(VERSION); \
 	done
 
 # One-command full GitHub release: source mirror + tagged release + formula
@@ -307,13 +322,24 @@ publish-gitea: $(FORMULAS)
 	done
 
 # One-command full Gitea release: tagged release + tarball attach + formula
-# push to the Gitea tap. No source mirror (source already on the NAS Gitea).
-# Does not run `make install`.
+# push to the Gitea tap. Does not run `make install`. Asset source is
+# conditional (schema 19, RM-148): with a declared public target the asset is
+# built from the publish-source export mirror, so the gitea (staging) leg
+# validates the same bytes production ships (RM-141 gate). A gitea-only
+# project's release repo IS the internal origin -- no public repo exists for
+# the asset to match -- so it ships the internal $(TARBALL) directly and never
+# needs git-filter-repo. No source-mirror push on this path either way (source
+# already lives on the NAS Gitea as `origin`).
+ifneq ($(PUBLIC_TARGET),)
 release-gitea: stamp
 	rm -rf $(MIRRORDIR)
 	publish-source --export $(MIRRORDIR)
 	$(MAKE) -C $(MIRRORDIR) dist VERSION=$(VERSION)
 	$(MAKE) publish-gitea ASSET=$(MIRRORDIR)/$(TARBALL)
+else
+release-gitea: stamp dist
+	$(MAKE) publish-gitea ASSET=$(TARBALL)
+endif
 
 # --- Staged promotion (schema 16) ---
 #
@@ -434,6 +460,48 @@ release-prep:
 test:
 	python3 -m unittest discover tests/
 
+# --- CLI surface manifest (IM-245) ---
+
+# docs/cli-surface.json is a committed, deterministic record of the `issue`
+# CLI argument surface and IS the surface-change detector: a unit test in
+# tests/test_cli_surface.py regenerates it in-process and byte-compares, so
+# any flag / default / metavar / positional / verb change turns `make test`
+# red until the manifest is regenerated here.
+#
+# RULE: regenerate only TOGETHER WITH A LINT PASS, and review the diff. The
+# point of committing the manifest is that a surface change is a deliberate,
+# reviewed act; running this target purely to silence a red test defeats it.
+# Dev-tree tooling -- scripts/cli_surface.py and scripts/cli-surface are not
+# in SOURCES, so neither ships in the tarball.
+cli-surface:
+	scripts/cli-surface --write
+
+# Non-mutating check, for a pre-commit hook or a CI step that wants the
+# verdict without the rewrite. Same comparison the unit test makes.
+cli-surface-check:
+	scripts/cli-surface --check
+
+# --- CLI vocabulary registry + surface lint (IM-246, wired IM-247) ---
+
+# docs/cli-vocabulary.json declares what the surface is allowed to MEAN;
+# scripts/surface-lint checks the IM-245 manifest against it. Six checks, each
+# keyed to the surface.* clause it enforces. The manifest answers "what is the
+# surface"; the lint answers "is it allowed to be that" -- detect, then
+# validate. Read-only, so there is no mutating sibling: a finding is fixed in
+# the code or declared in the registry, never regenerated away.
+#
+# --check-issues additionally resolves each waiver's owning issue and fails on
+# one that is done or cancelled, which is what makes the baseline shrink-only.
+# It fails SOFT when no store resolves (stderr notice, exit unchanged), so in a
+# clone or a container that arm silently no-ops and only the finding checks run.
+surface-lint:
+	scripts/surface-lint --check-issues
+
+# The one-command surface verdict: the committed manifest is current AND the
+# surface it records is allowed. This is the gate the release ceremony names --
+# a prep commit whose diff changes the CLI surface must pass it.
+surface-check: cli-surface-check surface-lint
+
 # --- Coverage targets (thin delegators -- coverage-model CLI) ---
 coverage-spec:
 	@command -v coverage-model >/dev/null 2>&1 || \
@@ -451,4 +519,4 @@ coverage-unit:
 	@COVERAGE_VERSION=$(VERSION) coverage-model run unit
 
 
-.PHONY: all stamp dist formula publish-local release-check release-prep install sync-tap publish-github release-github publish-gitea release-gitea release verify-publish test coverage-unit coverage-black-box coverage-spec
+.PHONY: all stamp dist formula publish-local release-check release-prep install sync-tap publish-github release-github publish-gitea release-gitea release verify-publish test coverage-unit coverage-black-box coverage-spec cli-surface cli-surface-check surface-lint surface-check

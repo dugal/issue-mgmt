@@ -118,7 +118,7 @@ PY
 echo "== (a) /issue-start-dev documented claim sequence =="
 
 # Step 2 -- opportunistic reap (clean store: exit 0, nothing reaped).
-OUT=$("$REAP" --repo TS --json 2>/dev/null)
+OUT=$("$REAP" --prefix TS --json 2>/dev/null)
 RC=$?
 assert_eq 0 "$RC" "(a) opportunistic reap exits 0 on a clean prefix"
 assert_contains '"reaped": []' "$OUT" "(a) clean prefix reaps nothing"
@@ -219,7 +219,7 @@ echo "== (e) reaper invocation path (expired lease) =="
 "$TRANSITION" TS-003 --claim actor-sleepy --lease-ttl 1 --json --no-reindex >/dev/null 2>&1
 assert_eq 0 "$?" "(e) short-TTL claim acquired"
 sleep 2
-OUT=$("$REAP" --repo TS --json 2>/dev/null)
+OUT=$("$REAP" --prefix TS --json 2>/dev/null)
 RC=$?
 assert_eq 0 "$RC" "(e) reaper exits 0"
 assert_contains '"id": "TS-003"' "$OUT" "(e) expired TS-003 claim reaped"
@@ -232,11 +232,12 @@ echo "== (f) issue-ready suggestion path (frontmatter-native) =="
 # issue-ready computes readiness directly from markdown frontmatter,
 # so an open, unblocked issue file is all the fixture needs -- no bd.
 write_issue_file "$STORE/TS/TS-004.md" TS-004 open
-OUT=$("$READY" --repo TS 2>/dev/null)
+# IM-241: `ready` is text-by-default; the skills pass --json explicitly.
+OUT=$("$READY" --prefix TS --json 2>/dev/null)
 RC=$?
 assert_eq 0 "$RC" "(f) issue-ready exits 0 with a ready candidate"
 assert_contains '"id": "TS-004"' "$OUT" "(f) ready set contains the open candidate"
-OUT=$("$READY" --repo TS --actor "$ACTOR" 2>/dev/null)
+OUT=$("$READY" --prefix TS --actor "$ACTOR" 2>/dev/null)
 assert_eq 0 "$?" "(f) issue-ready --actor exits 0 (candidate unclaimed)"
 
 echo "== (g) generation-guard degradation (missing state file) =="

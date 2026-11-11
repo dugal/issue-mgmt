@@ -25,6 +25,7 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+. "$SCRIPT_DIR/lib.sh"
 IMAGE="${1:-docker-dev-env:brew-runtime}"
 CONTAINER="im164-verify-$$"
 
@@ -69,9 +70,21 @@ docker exec -u root "$CONTAINER" chmod 777 /mnt /mnt/dist
 docker cp "$TARBALL" "$CONTAINER:/mnt/dist/"
 docker cp "$PROJECT_ROOT/dist/issue-mgmt-im164-test.rb" "$CONTAINER:/mnt/dist/issue-mgmt.rb"
 
+# Close the skill chain end to end (IM-264). The host's
+# .claude/skills/*-dev is ground truth; everything downstream -- the
+# tarball's skills/, the formula's directory install, <pkgshare>/skills/,
+# and ~/.claude/skills/ -- must carry exactly that many. This is the only
+# non-tautological link in the chain: both sides of every in-repo check are
+# derived from the same source, whereas here the host count is compared
+# against what a real `brew install` actually materialized in the container.
+HOST_SKILL_COUNT=$(shipped_skill_count) || exit 1
+echo "== host ships $HOST_SKILL_COUNT skills; asserting the install carries all of them =="
+
 # -i is required: without it docker exec does not attach stdin and
-# `bash -s` runs an empty script, exiting 0 vacuously.
-docker exec -i "$CONTAINER" bash -s <<'INNER'
+# `bash -s` runs an empty script, exiting 0 vacuously. The heredoc stays
+# quoted (it is full of $-expressions meant for the container shell), so the
+# host expectation crosses the boundary as an env var, not by interpolation.
+docker exec -i -e HOST_SKILL_COUNT="$HOST_SKILL_COUNT" "$CONTAINER" bash -s <<'INNER'
 set -u
 pass=0; fail=0
 ok()  { echo "PASS: $1"; pass=$((pass+1)); }
@@ -105,6 +118,30 @@ command -v bd >/dev/null 2>&1 \
 brew deps local/imtest/issue-mgmt 2>/dev/null | grep -q '^beads$' \
     && bad "beads still resolves as a formula dependency" \
     || ok "beads is not a formula dependency"
+
+echo "== the skill chain reaches ~/.claude/skills (IM-264) =="
+PKGSHARE="$(brew --prefix issue-mgmt)/share/issue-mgmt/skills"
+PKGSHARE_COUNT=$(ls "$PKGSHARE"/*.md 2>/dev/null | wc -l | tr -d '[:space:]')
+[ "$PKGSHARE_COUNT" = "$HOST_SKILL_COUNT" ] \
+    && ok "pkgshare carries all $HOST_SKILL_COUNT shipped skills" \
+    || bad "pkgshare has $PKGSHARE_COUNT skills, host ships $HOST_SKILL_COUNT ($PKGSHARE)"
+# The formula declares license "MIT"; the text has to actually ship.
+[ -f "$(brew --prefix issue-mgmt)/share/doc/issue-mgmt/LICENSE" ] \
+    && ok "LICENSE ships with the installed formula" \
+    || bad "LICENSE absent from the install (formula declares license \"MIT\")"
+INSTALL_JSON=/tmp/install-skills.json
+if issue admin install-skills --json > "$INSTALL_JSON" 2>/tmp/install-skills.err; then
+    INSTALLED_COUNT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["count"])' "$INSTALL_JSON")
+    [ "$INSTALLED_COUNT" = "$HOST_SKILL_COUNT" ] \
+        && ok "install-skills installed all $HOST_SKILL_COUNT skills into ~/.claude/skills" \
+        || bad "install-skills reported $INSTALLED_COUNT, host ships $HOST_SKILL_COUNT"
+    HOME_COUNT=$(ls -d "$HOME"/.claude/skills/*/ 2>/dev/null | wc -l | tr -d '[:space:]')
+    [ "$HOME_COUNT" = "$HOST_SKILL_COUNT" ] \
+        && ok "~/.claude/skills carries $HOST_SKILL_COUNT skill directories" \
+        || bad "~/.claude/skills has $HOME_COUNT directories, host ships $HOST_SKILL_COUNT"
+else
+    bad "issue admin install-skills failed"; tail -10 /tmp/install-skills.err
+fi
 
 echo "== end-to-end mutation + ready set, entirely bd-less =="
 git config --global init.defaultBranch main

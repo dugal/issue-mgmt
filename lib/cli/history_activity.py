@@ -27,8 +27,26 @@ from . import common
 
 VERB = "activity"
 TIER = "history"
+
+# The one place this verb names itself. Every diagnostic, usage line,
+# and `prog=` keyword formats through it, so the surface manifest sees
+# exactly one name per verb and `surface.self-naming` is checkable
+# rather than a ~90-site grep (IM-239).
+PROG = "issue history activity"
 SUMMARY = "recent store commits grouped by issue (git log --name-only)"
 ORDER = 40
+
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "enumeration-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-250: the default `--since 7.days.ago` selects rows by wall clock, and
+# the resolved window is echoed back as `since` -- declared for the same
+# reason `index` declares `generated_at`.
+SURFACE_GENERATION_FIELDS = ("since",)
 
 # Top-level keys of each per-issue object under `issues`; the field-selection
 # set for `--json <fields>`. Projection applies to the per-issue
@@ -61,6 +79,10 @@ top-level fields; bare --json emits the full shape and an unknown field
 name is a usage error (exit 2)."""
 
 _EPILOG = """\
+Exit codes: 0 at least one row emitted; 1 zero rows (grep convention,
+uniform across every enumeration read); 2 argument/usage error, including
+a --prefix the store does not have (error=unknown-prefix).
+
 Examples:
   issue history activity
   issue history activity --since 2.weeks.ago --json
@@ -86,17 +108,15 @@ def register(subparsers):
         help="Pass-through to `git log --since` (default 7.days.ago; "
         "\"\" scans all history).",
     )
-    p.add_argument(
-        "--prefix",
-        default=None,
-        metavar="PFX[,PFX...]",
+    common.add_prefix_scope_flag(
+        p,
         help="Comma-separated prefix dirs to scope the scan to (e.g. ABC,XYZ).",
     )
     p.add_argument(
         "--limit",
         default=None,
         metavar="N",
-        help="Show at most N issues (positive integer).",
+        help="Show at most N issues; 0 = unlimited (the default).",
     )
     common.add_json_field_flag(p)
     common.add_store_flag(p)
@@ -108,7 +128,7 @@ def register(subparsers):
 def legacy_mode_error(since: str) -> str:
     fallback_since = since if since else "7.days.ago"
     return (
-        "activity-issues: store mode not active "
+        f"{PROG}: store mode not active "
         "(ISSUE_STORE_ROOT unset and no .issues/.migrated-to-store sentinel). "
         "This subcommand operates only on the issue store. "
         f"For pre-migration activity, run the following inside the "
@@ -150,25 +170,29 @@ def run(args) -> int:
             limit = int(args.limit)
         except ValueError:
             print(
-                f"activity-issues: --limit must be a positive integer, "
-                f"got '{args.limit}'",
+                f"{PROG}: --limit must be 0 (unlimited) or a positive "
+                f"integer, got '{args.limit}'",
                 file=sys.stderr,
             )
             return 2
-        if limit <= 0:
+        if limit < 0:
             print(
-                f"activity-issues: --limit must be a positive integer, "
-                f"got {limit}",
+                f"{PROG}: --limit must be 0 (unlimited) or a positive "
+                f"integer, got {limit}",
                 file=sys.stderr,
             )
             return 2
+        if limit == 0:
+            # IM-241: `--limit 0` means unlimited on every verb that takes
+            # --limit; here that is the same as not passing the flag.
+            limit = None
 
     prefixes = None
     if args.prefix is not None:
         prefixes = parse_prefix_list(args.prefix)
         if not prefixes:
             print(
-                f"activity-issues: --prefix is empty after parsing '{args.prefix}'",
+                f"{PROG}: --prefix is empty after parsing '{args.prefix}'",
                 file=sys.stderr,
             )
             return 2
@@ -176,14 +200,14 @@ def run(args) -> int:
             try:
                 history.validate_prefix(pfx.upper())
             except history.HistoryError as e:
-                print(f"activity-issues: {e}", file=sys.stderr)
+                print(f"{PROG}: {e}", file=sys.stderr)
                 return 2
 
     json_fields = None
     if jsonfields.json_enabled(args.json_mode):
         try:
             json_fields = jsonfields.parse_fields(
-                args.json_mode, VALID_JSON_FIELDS, prog="activity-issues"
+                args.json_mode, VALID_JSON_FIELDS, prog=PROG
             )
         except jsonfields.FieldSelectionError as e:
             print(e.message, file=sys.stderr)
@@ -198,7 +222,7 @@ def run(args) -> int:
     store_root = store_root.expanduser().resolve()
     if not store_root.is_dir():
         print(
-            f"activity-issues: store root does not exist: {store_root}",
+            f"{PROG}: store root does not exist: {store_root}",
             file=sys.stderr,
         )
         return 1
@@ -210,18 +234,19 @@ def run(args) -> int:
         for pfx in prefixes:
             resolved = idresolve.resolve_prefix(pfx, known) or pfx.upper()
             if resolved != pfx:
-                print(f"activity-issues: resolved {pfx} -> {resolved}",
+                print(f"{PROG}: resolved {pfx} -> {resolved}",
                       file=sys.stderr)
             canon.append(resolved)
         prefixes = canon
-        for pfx in prefixes:
-            if not (store_root / pfx).is_dir():
-                print(
-                    f"activity-issues: prefix directory does not exist: "
-                    f"{store_root / pfx}",
-                    file=sys.stderr,
-                )
-                return 1
+        # IM-238: an absent prefix is an argument error (exit 2), the
+        # same rule every verb taking --prefix holds; it was exit 1 here
+        # through v3.3.x.
+        rc = common.enforce_prefix_scope(
+            prefixes, store_root, anchor, prog=PROG,
+            json_mode=jsonfields.json_enabled(args.json_mode),
+        )
+        if rc is not None:
+            return rc
 
     try:
         activities = history.git_activity(
@@ -231,12 +256,12 @@ def run(args) -> int:
             limit=limit,
         )
     except history.HistoryError as e:
-        print(f"activity-issues: {e}", file=sys.stderr)
+        print(f"{PROG}: {e}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "").strip().splitlines()[-1:] or [""]
         print(
-            f"activity-issues: git log failed ({e.returncode}): {stderr_tail[0]}",
+            f"{PROG}: git log failed ({e.returncode}): {stderr_tail[0]}",
             file=sys.stderr,
         )
         return 1
@@ -256,10 +281,11 @@ def run(args) -> int:
         if not activities:
             window = since if since else "all history"
             print(
-                f"activity-issues: no activity in window ({window}) in {store_root}",
+                f"{PROG}: no activity in window ({window}) in {store_root}",
                 file=sys.stderr,
             )
         else:
             emit_tsv(activities, sys.stdout)
 
-    return 0
+    # IM-238: grep convention, uniform across every enumeration read.
+    return 0 if activities else 1

@@ -364,7 +364,7 @@ mkdir -p "$STORE/IM"
 (
     cd "$STORE"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     printf 'storeproj:IM\n' > .repos
     git add .repos

@@ -384,7 +384,7 @@ mkdir -p "$STORE/IM"
 (
     cd "$STORE"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     git commit -q --allow-empty -m "init store"
 )
@@ -479,7 +479,7 @@ mkdir -p "$STORE_AR/IM"
 (
     cd "$STORE_AR"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     printf 'autoreindex-proj:IM\n' > .repos
     git add .repos

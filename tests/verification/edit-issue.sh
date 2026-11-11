@@ -211,7 +211,11 @@ STDERR=$(
     "$EDIT_ISSUE" IM-001 --set status=done --no-reindex 2>&1 >/dev/null
 ) || RC=$?
 assert_eq "2" "$RC" "guarded field 'status' exits 2"
-assert_contains "transition-issue" "$STDERR" "stderr names owning command for status"
+# COVERS: surface.self-naming
+# The owning command must be named in its CURRENT form. This assertion pinned
+# the retired flat name `transition-issue` through v3.3.1, encoding a
+# surface.self-naming violation as intended behavior (IM-254 / IM-239).
+assert_contains "issue transition" "$STDERR" "stderr names owning command for status"
 
 # Guarded fields -- id
 RC=0
@@ -313,7 +317,7 @@ mkdir -p "$STORE/IM"
 (
     cd "$STORE"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     git commit -q --allow-empty -m "init store"
 )
@@ -409,7 +413,7 @@ mkdir -p "$STORE_AR/IM"
 (
     cd "$STORE_AR"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     printf 'autoreindex-proj:IM\n' > .repos
     git add .repos
@@ -460,7 +464,7 @@ mkdir -p "$STORE_NORX/IM"
 (
     cd "$STORE_NORX"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     printf 'noreindex-proj:IM\n' > .repos
     git add .repos

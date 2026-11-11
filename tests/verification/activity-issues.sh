@@ -72,7 +72,7 @@ mkdir -p "$STORE/IM" "$STORE/DOUG"
 (
     cd "$STORE"
     git init --quiet --initial-branch=main
-    git config user.email "verify@example.com"
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name "Verify User"
     git config commit.gpgsign false
 )
@@ -153,7 +153,11 @@ echo
 echo "[A] Help and version"
 
 HELP_OUTPUT=$("$ACTIVITY" --help 2>&1)
-assert_contains "activity-issues" "$HELP_OUTPUT" "--help prints tool banner"
+# COVERS: surface.self-naming
+# The retired flat name appears in the DESCRIPTION as a qualified
+# lineage note, which the clause permits, so matching on it proved
+# nothing about the banner. Assert the current form (IM-239).
+assert_contains "issue history activity" "$HELP_OUTPUT" "--help names the current verb"
 assert_contains "--since" "$HELP_OUTPUT" "--help documents --since flag"
 assert_contains "--prefix" "$HELP_OUTPUT" "--help documents --prefix flag"
 assert_contains "--limit" "$HELP_OUTPUT" "--help documents --limit flag"
@@ -324,14 +328,14 @@ assert_eq "1" "$IM001_REPS" \
     "duplicated --prefix does not duplicate per-issue rows"
 
 # --prefix that matches an existing-but-empty prefix directory ->
-# exit 0, no rows. Distinct from the missing-prefix-dir case above
-# (which is exit 1). This is the activity-equivalent of the
-# zero-activity case scoped to a real prefix.
+# exit 1, no rows (IM-238: zero rows is exit 1 on every enumeration read).
+# Distinct from the ABSENT-prefix case below, which is exit 2 because the
+# scope names nothing in the store.
 # COVERS: output.exit-codes
 mkdir -p "$STORE/EMPTY"
 "$ACTIVITY" --prefix EMPTY >"$TMPDIR_ROOT/empty.out" 2>"$TMPDIR_ROOT/empty.err"
 EMPTY_RC=$?
-assert_eq "0" "$EMPTY_RC" "--prefix EMPTY (no commits touch EMPTY/) -> exit 0"
+assert_eq "1" "$EMPTY_RC" "--prefix EMPTY (no commits touch EMPTY/) -> exit 1"
 EMPTY_STDOUT=$(cat "$TMPDIR_ROOT/empty.out")
 assert_eq "" "$EMPTY_STDOUT" \
     "--prefix EMPTY produces no TSV rows"
@@ -357,12 +361,16 @@ assert_eq "2" "$RC" "--prefix containing only separators -> exit 2"
 assert_contains "empty after parsing" "$OUT_ERR" \
     "empty-prefix error names 'empty after parsing'"
 
-# Missing prefix dir -> exit 1, distinct from "no activity"
+# Absent prefix -> exit 2 (argument error), distinct from "no activity"
+# (exit 1). IM-238: a scope naming nothing in the store is a bad argument,
+# not an empty result; it was exit 1 with a free-text message through
+# v3.3.x.
 OUT_ERR=$("$ACTIVITY" --prefix ZZZ 2>&1 >/dev/null)
 RC=$?
-assert_eq "1" "$RC" "missing prefix dir -> exit 1"
-assert_contains "prefix directory does not exist" "$OUT_ERR" \
-    "missing-prefix-dir error is explicit"
+# COVERS: output.exit-codes
+assert_eq "2" "$RC" "absent prefix -> exit 2"
+assert_contains "error=unknown-prefix" "$OUT_ERR" \
+    "absent-prefix error is structured and branchable"
 
 # ---------------------------------------------------------------------------
 # Section F: --limit
@@ -390,11 +398,19 @@ assert_eq "2" "$IM001_COUNT" "--limit caps issues after grouping (IM-001 keeps c
 OUT_ERR=$("$ACTIVITY" --limit abc 2>&1 >/dev/null)
 RC=$?
 assert_eq "2" "$RC" "non-integer --limit -> exit 2"
-assert_contains "positive integer" "$OUT_ERR" "bad-limit error names 'positive integer'"
+assert_contains "0 (unlimited) or a positive" "$OUT_ERR" \
+    "bad-limit error names the accepted range"
 
-OUT_ERR=$("$ACTIVITY" --limit 0 2>&1 >/dev/null)
+# IM-241: `--limit 0` means unlimited on every verb that takes --limit
+# (it was exit 2 here through v3.3.x, while index and ready already read
+# it as unlimited).
+OUT=$("$ACTIVITY" --limit 0 2>/dev/null)
 RC=$?
-assert_eq "2" "$RC" "--limit 0 -> exit 2"
+UNLIMITED_COUNT=$(echo "$OUT" | grep -c .)
+FULL_COUNT=$("$ACTIVITY" 2>/dev/null | grep -c .)
+# COVERS: surface.vocabulary-registry
+assert_eq "0" "$RC" "--limit 0 is unlimited, not a usage error"
+assert_eq "$FULL_COUNT" "$UNLIMITED_COUNT" "--limit 0 matches the unbounded default"
 
 OUT_ERR=$("$ACTIVITY" --limit -3 2>&1 >/dev/null)
 RC=$?
@@ -468,7 +484,7 @@ echo "[H] Zero-activity case"
 # `--since` in the future yields no matches deterministically.
 "$ACTIVITY" --since 2030-01-01 >"$TMPDIR_ROOT/zero.out" 2>"$TMPDIR_ROOT/zero.err"
 ZERO_RC=$?
-assert_eq "0" "$ZERO_RC" "zero-activity -> exit 0 (grep convention)"
+assert_eq "1" "$ZERO_RC" "zero-activity -> exit 1 (grep convention)"
 ZERO_STDOUT=$(cat "$TMPDIR_ROOT/zero.out")
 ZERO_STDERR=$(cat "$TMPDIR_ROOT/zero.err")
 assert_eq "" "$ZERO_STDOUT" "zero-activity stdout is empty"

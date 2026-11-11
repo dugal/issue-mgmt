@@ -34,7 +34,7 @@ mk_repo() {
     local path="$WORKDIR/$name"
     mkdir -p "$path/.issues"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     echo "$path"
 }
@@ -44,7 +44,7 @@ mk_store() {
     local path="$WORKDIR/$name"
     mkdir -p "$path"
     git -C "$path" init -q
-    git -C "$path" config user.email test@example.com
+    git -C "$path" config user.email "$FIXTURE_EMAIL"
     git -C "$path" config user.name test
     git -C "$path" commit -q --allow-empty -m "init store"
     echo "$path"
@@ -107,10 +107,10 @@ STORE3="$(mk_store store-empty)"
 REPO3="$(mk_repo unknown-proj)"
 out=$( cd "$REPO3" && ISSUE_STORE_ROOT="$STORE3" "$SCRIPT" "Should fail" chore low 2>&1 )
 rc=$?
-if [[ $rc -ne 0 ]] && [[ "$out" == *"init-issue-project"* ]] \
+if [[ $rc -ne 0 ]] && [[ "$out" == *"issue admin init-project"* ]] \
    && [[ ! -e "$STORE3/UNKNOWN" ]] && [[ -z "$(ls -A "$STORE3" 2>/dev/null | grep -vE '^(\.repos|\.git)$')" ]]; then
     # COVERS: registry.unregistered-fail
-    pass "store/env: unregistered repo fails pointing at init-issue-project"
+    pass "store/env: unregistered repo fails pointing at issue admin init-project"
 else
     fail "store/env: unregistered repo (rc=$rc out=$out store=$(ls -A "$STORE3" 2>/dev/null))"
 fi
@@ -156,11 +156,16 @@ fi
 # --- Test 7: --help documents new surface ----------------------------
 help_out=$("$SCRIPT" --help 2>&1)
 missing=()
-for term in ISSUE_STORE_ROOT ".repos" "--repo" "init-issue-project" "migrated-to-store"; do
+# COVERS: surface.self-naming
+# The registry pointer must name the CURRENT verb: this assertion pinned
+# `init-issue-project`, whose tombstone was deleted in v3.1.0, so the
+# help text it guarded was telling callers to run a command that no
+# longer exists (IM-239).
+for term in ISSUE_STORE_ROOT ".repos" "--repo" "issue admin init-project" "migrated-to-store"; do
     [[ "$help_out" == *"$term"* ]] || missing+=("$term")
 done
 if [[ ${#missing[@]} -eq 0 ]]; then
-    pass "--help documents env var, registry, --repo, init-issue-project, sentinel"
+    pass "--help documents env var, registry, --repo, issue admin init-project, sentinel"
 else
     fail "--help missing terms: ${missing[*]}"
 fi
@@ -328,7 +333,7 @@ mkdir -p "$STORE15/IM"
 (
     cd "$STORE15"
     git init -q
-    git config user.email test@example.com
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name test
     printf 'autoreindex-proj:IM\n' > .repos
     git add .repos

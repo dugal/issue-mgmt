@@ -25,8 +25,18 @@ issue history <sub>     read-only git archaeology over the store
 issue admin <sub>       maintenance, scaffolding, distribution
 ```
 
-Global flags accepted before the verb args: `--store ROOT`, `--json`,
-`--lock-timeout SECONDS`, `--no-reindex`, `--version`.
+Flags go AFTER the verb, not before it. `--store ROOT`, `--json`,
+`--lock-timeout SECONDS` and `--no-reindex` are defined once and attached by
+each verb that accepts them, so they are the verb's arguments:
+`issue show IM-001 --store ROOT`, never `issue --store ROOT show IM-001`
+(which exits 2, reading `ROOT` as the verb). `--version` and `--help` are the
+only flags the dispatcher itself takes, and `--help` works in both positions
+(`issue --help` for the tiered surface, `issue <verb> --help` for one verb).
+
+Which verbs accept which flag is per-verb and not uniform: `--lock-timeout`
+and `--no-reindex` exist only on the mutating verbs, and `--json` takes an
+optional field list on the read verbs but no value on the mutating ones. Use
+`issue <verb> --help` rather than assuming.
 
 ---
 
@@ -47,7 +57,7 @@ Two ergonomics landed alongside this sheet. Confirm the exact behavior with
   on stderr, so `--json` stdout stays one clean document.
   ```
   issue show im-7                 # resolves to IM-007
-  issue list --repo im            # resolves to IM
+  issue list --prefix im          # resolves to IM
   issue dep add IM-102 blocks:im-84   # writes to: IM-084
   ```
 
@@ -59,7 +69,7 @@ Two ergonomics landed alongside this sheet. Confirm the exact behavior with
   name is a usage error (exit 2). There is no `--jq` passthrough -- pipe to
   jq yourself when you need nested selection.
   ```
-  issue list --repo IM --json id,title,status
+  issue list --prefix IM --json id,title,status
   issue show IM-050 IM-051 --json id,file
   ```
 
@@ -118,7 +128,7 @@ its `/issue-*` Claude Code skill (or a note that it ships without one).
 
 ### dep -- author or read depends_on edges
 - Replaces: hand-editing the `depends_on:` YAML block (and risking a cycle).
-- Example: `issue dep add IM-102 parent-child:IM-101 --note "spun out"`
+- Example: `issue dep add IM-102 parent-child:IM-101 --dep-note "spun out"`
 - Example: `issue dep list IM-102`
 - Skill: `/issue-dep`
 
@@ -134,18 +144,20 @@ its `/issue-*` Claude Code skill (or a note that it ships without one).
 - Skill: `/issue-search`
 
 ### list -- filter-only enumeration (no text query)
-- Replaces: `ls` in the store dir, then eyeballing status; `--repo` aliases `--prefix`.
-- Example: `issue list --repo IM --status open --type bug`
+- Replaces: `ls` in the store dir, then eyeballing status.
+- Example: `issue list --prefix IM --status open --type bug`
 - Skill: `/issue-list`
 
 ### index -- grouped-by-status board
 - Replaces: hand-tallying open/in-progress counts from a directory listing.
-- Example: `issue index --repo IM --status open,in-progress`
+- Example: `issue index --prefix IM --status open,in-progress`
 - Skill: none (read-only board; use `issue list`/`issue search` skills for scripted reads).
 
 ### ready -- the ready-to-claim set
 - Replaces: manually checking which open issues have all their `blocks` deps done.
-- Example: `issue ready --repo IM --actor claude-w5`
+- Example: `issue ready --prefix IM --actor claude-w5`
+- Answers "what can I claim". For "why can I not claim X", add `--filtered all`
+  (off by default, and never bounded by `--limit`).
 - Skill: none directly -- `/issue-start` consumes it opportunistically.
 
 ---
@@ -217,7 +229,7 @@ Common multi-step flows, each replacing a handful of ad hoc commands.
 
 ### Find ready work, then claim it
 ```
-issue ready --repo IM --actor claude-w5 --json id,title
+issue ready --prefix IM --actor claude-w5 --json id,title
 issue start IM-024 --branch issue-024-foo --claim claude-w5
 ```
 
@@ -231,7 +243,7 @@ you can complete without a separate `start`.
 
 ### Add a dependency (blocks), safely
 ```
-issue dep add IM-102 blocks:IM-101 --note "needs the lib landed first"
+issue dep add IM-102 blocks:IM-101 --dep-note "needs the lib landed first"
 issue dep list IM-102
 ```
 A `blocks` edge that would close a cycle is refused (exit 1) before any write.
@@ -243,7 +255,7 @@ issue show IM-079 --section "Acceptance Criteria"
 
 ### Triage: what is open, and what changed recently
 ```
-issue index --repo IM --status open,in-progress
+issue index --prefix IM --status open,in-progress
 issue history activity --since 7.days.ago
 ```
 
@@ -262,5 +274,23 @@ issue unblock IM-024 --to in-progress --reason "RM-038 shipped"
 
 Every mutating verb honors the loser-side exit-code contract on a write-time
 loss: 3 concurrent-edit (retry once), 4 lost-race (pick another target),
-5 stale-local-view (refresh first), 7 not-claimable (escalate). Read verbs
-follow the grep convention: exit 0 with matches, exit 1 on an empty result.
+5 stale-local-view (refresh first), 7 not-claimable (escalate).
+
+Read verbs report emptiness through the exit code, one rule per class:
+
+- An ENUMERATION read (`search`, `list`, `ready`, `index`, `history search`,
+  `history activity`) follows the grep convention -- 0 when it emitted at
+  least one row, 1 when it emitted none. Zero-row output still renders; only
+  the code reports emptiness.
+- A POINT read (`show`, `history show`, `history at`) exits 0 when the named
+  record was found and 1 when it was not.
+
+Two non-empty cases a caller must not read as a zero result:
+
+- `--prefix` naming a prefix the store does not have is an ARGUMENT error
+  (exit 2, `error=unknown-prefix`, naming the unknown value and the known
+  set), so a typo is never indistinguishable from an empty scope.
+- A store that cannot be used -- none resolved, or a resolved root that is
+  absent -- is a precondition failure (exit 1) carrying
+  `error=precondition-failed reason=store-unresolvable`, not an empty result.
+  Branch on the stderr payload, not on the bare code.

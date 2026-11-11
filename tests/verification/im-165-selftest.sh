@@ -36,7 +36,7 @@ else
     fail "--help missing or does not document isolation"
 fi
 
-if "$SELFTEST" --version | grep -q "issue-mgmt-selftest"; then
+if "$SELFTEST" --version | grep -q "issue admin selftest"; then
     pass "--version prints the tool name"
 else
     fail "--version output wrong"
@@ -60,13 +60,13 @@ else
     fail "selftest exited non-zero:"
     sed 's/^/    /' "$FULL_OUT"
 fi
-if grep -q "^issue-mgmt-selftest: PASS" "$FULL_OUT"; then
+if grep -q "^issue admin selftest: PASS" "$FULL_OUT"; then
     pass "summary PASS line printed"
 else
     fail "no summary PASS line"
 fi
-if grep -q "issue-ready excludes blocked" "$FULL_OUT" \
-   && grep -q "issue-ready includes" "$FULL_OUT"; then
+if grep -q "issue ready excludes blocked" "$FULL_OUT" \
+   && grep -q "issue ready includes" "$FULL_OUT"; then
     pass "frontmatter-native ready-set transition asserted (before and after)"
 else
     fail "ready-set checks not asserted"
@@ -90,9 +90,9 @@ if grep -q "^skip:" "$SKIP_OUT"; then
 else
     pass "no skipped steps (every check is frontmatter-native)"
 fi
-if grep -q "issue-ready excludes blocked" "$SKIP_OUT" \
-   && grep -q "transition-issue walked" "$SKIP_OUT" \
-   && grep -q "search-issues found" "$SKIP_OUT"; then
+if grep -q "issue ready excludes blocked" "$SKIP_OUT" \
+   && grep -q "issue transition walked" "$SKIP_OUT" \
+   && grep -q "issue search found" "$SKIP_OUT"; then
     pass "ready-set and markdown-native checks all ran"
 else
     fail "expected checks missing from the run"
@@ -106,7 +106,7 @@ mkdir -p "$DECOY"
 git -C "$DECOY" init -q
 echo "operator data -- must survive untouched" > "$DECOY/marker.md"
 git -C "$DECOY" add -A
-git -C "$DECOY" -c user.name=decoy -c user.email=decoy@example.invalid \
+git -C "$DECOY" -c user.name=decoy -c user.email="$FIXTURE_EMAIL" \
     commit -qm "decoy baseline"
 HEAD_BEFORE=$(git -C "$DECOY" rev-parse HEAD)
 

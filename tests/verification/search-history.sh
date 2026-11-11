@@ -74,7 +74,7 @@ mkdir -p "$STORE/IM" "$STORE/DOUG"
 (
     cd "$STORE"
     git init --quiet --initial-branch=main
-    git config user.email "verify@example.com"
+    git config user.email "$FIXTURE_EMAIL"
     git config user.name "Verify User"
     git config commit.gpgsign false
 )
@@ -123,7 +123,11 @@ echo
 echo "[A] Help and version"
 
 HELP_OUTPUT=$("$SEARCH_HISTORY" --help 2>&1)
-assert_contains "search-history" "$HELP_OUTPUT" "--help prints tool banner"
+# COVERS: surface.self-naming
+# The retired flat name appears in the DESCRIPTION as a qualified
+# lineage note, which the clause permits, so matching on it proved
+# nothing about the banner. Assert the current form (IM-239).
+assert_contains "issue history search" "$HELP_OUTPUT" "--help names the current verb"
 assert_contains "--prefix" "$HELP_OUTPUT" "--help documents --prefix"
 assert_contains "--since" "$HELP_OUTPUT" "--help documents --since"
 assert_contains "--json" "$HELP_OUTPUT" "--help documents --json"
@@ -245,7 +249,8 @@ OUT=$("$SEARCH_HISTORY" "MAGIC_TOKEN" --since 1.minutes.ago 2>/dev/null)
 RC=$?
 LINE_COUNT=$(echo "$OUT" | grep -c .)
 assert_eq "0" "$LINE_COUNT" "--since 1.minutes.ago excludes the synthetic corpus (TSV empty)"
-assert_eq "0" "$RC" "--since 1.minutes.ago exit 0 even with no matches"
+# COVERS: output.exit-codes
+assert_eq "1" "$RC" "--since 1.minutes.ago exits 1 with no matches (grep convention)"
 
 # ---------------------------------------------------------------------------
 # Section E: --json shape
@@ -313,7 +318,8 @@ OUT_STDOUT=$("$SEARCH_HISTORY" "NEVER_APPEARS_ANYWHERE" 2>/dev/null)
 RC=$?
 OUT_STDERR=$("$SEARCH_HISTORY" "NEVER_APPEARS_ANYWHERE" 2>&1 >/dev/null)
 
-assert_eq "0" "$RC" "exit 0 on zero matches"
+# COVERS: output.exit-codes
+assert_eq "1" "$RC" "exit 1 on zero matches (grep convention)"
 assert_eq "" "$OUT_STDOUT" "stdout empty on zero matches"
 assert_contains "no matches" "$OUT_STDERR" "stderr carries 'no matches' message"
 assert_contains "NEVER_APPEARS_ANYWHERE" "$OUT_STDERR" "stderr names the term"
@@ -322,15 +328,18 @@ assert_contains "NEVER_APPEARS_ANYWHERE" "$OUT_STDERR" "stderr names the term"
 # Section G: Missing prefix directory and bad prefix shape
 # ---------------------------------------------------------------------------
 echo
-echo "[G] Missing prefix dir and bad prefix shape"
+echo "[G] Absent prefix and bad prefix shape"
 
-# Prefix dir does not exist
+# A prefix the store does not have is an ARGUMENT error (exit 2), not a
+# zero-result (exit 1) -- IM-238. It was exit 1 with free-text stderr
+# through v3.3.x.
 OUT_ERR=$("$SEARCH_HISTORY" "MAGIC_TOKEN" --prefix ZZZ 2>&1 >/dev/null)
 RC=$?
-assert_eq "1" "$RC" "--prefix ZZZ (missing dir) -> exit 1"
-assert_contains "prefix directory does not exist" "$OUT_ERR" \
-    "missing-prefix-dir error names the concept"
-assert_contains "ZZZ" "$OUT_ERR" "missing-prefix-dir error names the prefix"
+# COVERS: output.exit-codes
+assert_eq "2" "$RC" "--prefix ZZZ (absent) -> exit 2"
+assert_contains "error=unknown-prefix" "$OUT_ERR" \
+    "absent-prefix error is structured and branchable"
+assert_contains "ZZZ" "$OUT_ERR" "absent-prefix error names the prefix"
 
 # `--prefix im` (lowercase) now case-folds to IM; a shape that is
 # invalid even upper-cased (leading digit) still errors.

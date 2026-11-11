@@ -7,12 +7,12 @@
 # Exercises:
 #   - --help / --version
 #   - store mode: grouped board with workflow-ordered ## headers + counts
-#   - --repo scoping to one prefix
+#   - --prefix scoping to one prefix (--repo is the retired synonym)
 #   - --status restricts which groups render
 #   - bounded default: --limit caps each group and announces suppression
-#   - --json shape {store, repo, generated_at, groups[{status,count,issues}]}
-#   - legacy mode (no store) exits 1 with an actionable hint
-#   - usage errors exit 2 (bad --repo, bad --status, negative --limit)
+#   - --json shape {store, prefix, repo, generated_at, groups[{status,count,issues}]}
+#   - legacy mode (no store) exits 1 with a branchable payload (IM-253)
+#   - usage errors exit 2 (bad --prefix, bad --status, negative --limit)
 #
 # Run from the project root:
 #     tests/verification/issue-index.sh
@@ -91,7 +91,13 @@ echo "[A] Help and version"
 HELP_OUTPUT=$("$ISSUE" index --help 2>&1)
 # COVERS: cli.index
 assert_contains "index" "$HELP_OUTPUT" "--help prints the verb banner"
-assert_contains "--repo" "$HELP_OUTPUT" "--help documents --repo"
+# COVERS: surface.one-meaning-per-flag
+assert_contains "--prefix" "$HELP_OUTPUT" "--help documents --prefix"
+# The retired --repo prefix-scoping spelling still works but must not be
+# presented as a current form (surface.self-naming); --repo means the repo
+# basename on create / admin init-project / admin migrate.
+# COVERS: surface.self-naming
+assert_not_contains "--repo" "$HELP_OUTPUT" "--help does not present the retired --repo"
 assert_contains "--status" "$HELP_OUTPUT" "--help documents --status"
 assert_contains "--limit" "$HELP_OUTPUT" "--help documents --limit"
 assert_contains "--json" "$HELP_OUTPUT" "--help documents --json"
@@ -134,18 +140,45 @@ assert_contains "IM-001" "$FIRST_OPEN" "Open group ordered by priority (high IM-
 
 # ---------------------------------------------------------------------------
 echo
-echo "[C] --repo and --status scoping"
+echo "[C] --prefix and --status scoping"
 
-OUT=$("$ISSUE" index --repo IM)
+OUT=$("$ISSUE" index --prefix IM)
 # COVERS: cli.index
-assert_contains "IM-001" "$OUT" "--repo IM includes IM issues"
-assert_not_contains "DOUG-001" "$OUT" "--repo IM excludes DOUG"
+assert_contains "IM-001" "$OUT" "--prefix IM includes IM issues"
+assert_not_contains "DOUG-001" "$OUT" "--prefix IM excludes DOUG"
+
+# The board labels its own scope with the current spelling, whichever flag
+# the caller reached for (surface.self-naming).
+# COVERS: surface.self-naming
+assert_contains "(prefix IM)" "$OUT" "board header names the scope 'prefix'"
+assert_not_contains "(repo IM)" "$OUT" "board header does not name the retired 'repo'"
+assert_contains "(prefix IM)" "$("$ISSUE" index --repo IM)" \
+    "retired --repo still reports the scope as 'prefix'"
+
+# The retired spelling is still accepted for one release (surface.stability).
+# The board stamps a per-invocation `generated <ISO-second>` line, so two
+# separate runs differ whenever they straddle a second boundary; compare the
+# board proper, not the stamp.
+board_body() { echo "$1" | grep -v '^generated '; }
+REPO_OUT=$("$ISSUE" index --repo IM)
+# COVERS: surface.stability
+assert_eq "$(board_body "$OUT")" "$(board_body "$REPO_OUT")" \
+    "retired --repo IM yields the same board as --prefix IM"
 
 OUT=$("$ISSUE" index --status open)
 # COVERS: cli.index
 assert_contains "## Open" "$OUT" "--status open renders the Open group"
 assert_not_contains "## Done" "$OUT" "--status open omits the Done group"
 assert_not_contains "## Blocked" "$OUT" "--status open omits the Blocked group"
+
+# Repeated --status accumulates here too. This verb was always correct; the
+# assertion pins it so the convergence IM-269 made cannot drift back by
+# fixing the wrong side.
+OUT=$("$ISSUE" index --status open --status done)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "## Open" "$OUT" "repeated --status renders the Open group"
+assert_contains "## Done" "$OUT" "repeated --status renders the Done group"
+assert_not_contains "## Blocked" "$OUT" "repeated --status omits Blocked"
 
 # ---------------------------------------------------------------------------
 echo
@@ -167,13 +200,14 @@ assert_eq "3" "$SHOWN" "--limit 0 shows the full Open group"
 echo
 echo "[E] --json shape"
 
-JSON_OUT=$("$ISSUE" index --repo IM --status open --json)
+JSON_OUT=$("$ISSUE" index --prefix IM --status open --json)
 # COVERS: cli.index
 PY_CHECK=$(python3 -c '
 import json, sys
 d = json.loads(sys.stdin.read())
-assert set(d.keys()) == {"store", "repo", "generated_at", "groups"}, "top keys"
-assert d["repo"] == "IM", "repo echoed"
+assert set(d.keys()) == {"store", "prefix", "repo", "generated_at", "groups"}, "top keys"
+assert d["prefix"] == "IM", "prefix echoed"
+assert d["repo"] == d["prefix"], "retired repo key duplicates prefix"
 assert isinstance(d["groups"], list) and len(d["groups"]) == 1, "one group"
 g = d["groups"][0]
 assert g["status"] == "open", "group status"
@@ -188,13 +222,13 @@ assert_eq "ok" "$PY_CHECK" "--json shape validates"
 echo
 echo "[F] Legacy mode refusal + usage errors"
 
-# Bad --repo / --status / --limit are usage errors (exit 2), store-independent.
-# `--repo lower` now case-folds to LOWER (accepted); only a shape
+# Bad --prefix / --status / --limit are usage errors (exit 2), store-independent.
+# `--prefix lower` now case-folds to LOWER (accepted); only a shape
 # that is invalid even upper-cased (leading digit) stays exit 2.
-"$ISSUE" index --repo "1x" >/dev/null 2>&1
+"$ISSUE" index --prefix "1x" >/dev/null 2>&1
 RC=$?
 # COVERS: cli.index
-assert_eq "2" "$RC" "invalid --repo exits 2"
+assert_eq "2" "$RC" "invalid --prefix exits 2"
 
 "$ISSUE" index --status "bogus" >/dev/null 2>&1
 RC=$?
@@ -212,8 +246,11 @@ mkdir -p "$LEGACY/.issues"
     cd "$LEGACY"
     ERR=$("$ISSUE" index 2>&1 >/dev/null)
     RC=$?
-    if [ "$RC" = "1" ] && echo "$ERR" | grep -qF "store mode"; then
-        echo "PASS: legacy mode exits 1 with a store-mode hint"
+    # COVERS: surface.structured-errors
+    if [ "$RC" = "1" ] \
+       && echo "$ERR" | grep -qF "error=precondition-failed" \
+       && echo "$ERR" | grep -qF "reason=store-unresolvable"; then
+        echo "PASS: legacy mode exits 1 with a branchable store payload"
     else
         echo "FAIL: legacy mode rc=$RC err=$ERR"
     fi

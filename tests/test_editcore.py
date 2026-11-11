@@ -40,6 +40,9 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from fixture_identity import FIXTURE_EMAIL  # noqa: E402
 
 import concurrency  # noqa: E402
 import deps  # noqa: E402
@@ -263,12 +266,33 @@ class TestInterpretSectionActions(unittest.TestCase):
         self.assertIn("requires a preceding --remove-dep", str(cm.exception))
 
     def test_dep_type_twice_raises(self):
+        # IM-241: --dep-type is the retired spelling of --kind. It still
+        # parses, and the diagnostic names the CURRENT form so a caller is
+        # never told to retry with a retired flag (surface.self-naming).
         with self.assertRaises(ValueError) as cm:
             self._interp([
                 ("--remove-dep", "IM-101"),
                 ("--dep-type", "blocks"), ("--dep-type", "related"),
             ])
-        self.assertIn("--dep-type already set", str(cm.exception))
+        self.assertIn("--kind already set", str(cm.exception))
+
+    def test_kind_twice_raises(self):
+        with self.assertRaises(ValueError) as cm:
+            self._interp([
+                ("--remove-dep", "IM-101"),
+                ("--kind", "blocks"), ("--kind", "related"),
+            ])
+        self.assertIn("--kind already set", str(cm.exception))
+
+    def test_kind_and_retired_dep_type_are_one_concept(self):
+        # Mixing the two spellings for one anchor is the same collision,
+        # not two independent qualifiers.
+        with self.assertRaises(ValueError) as cm:
+            self._interp([
+                ("--remove-dep", "IM-101"),
+                ("--kind", "blocks"), ("--dep-type", "related"),
+            ])
+        self.assertIn("--kind already set", str(cm.exception))
 
     def test_dep_note_without_add_dep_raises(self):
         with self.assertRaises(ValueError) as cm:
@@ -870,7 +894,7 @@ class StoreFixture(unittest.TestCase):
         (self.store / "IM").mkdir()
         (self.store / "IM" / ".locks").mkdir()
         _git(self.store, "init", "-q")
-        _git(self.store, "config", "user.email", "t@e.invalid")
+        _git(self.store, "config", "user.email", FIXTURE_EMAIL)
         _git(self.store, "config", "user.name", "T")
         self.today = datetime.date.today().isoformat()
 

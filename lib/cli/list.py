@@ -11,8 +11,9 @@ while filter-only demand routed through a hallucinated `issue-list`
 The engine, filters, output shapes (TSV + --json), and grep exit
 convention (0 = at least one, 1 = zero) are identical to `issue search` run
 with an empty query, so the two verbs stay byte-compatible with one code
-path. `--repo` is accepted as an alias of `--prefix` (design 2a names the
-filter `--repo`; 5.2 says list takes "the same filters" as search, which
+path. `--prefix` is the sole scoping spelling (IM-237); `--repo` scoping
+survives one release as a hidden synonym. (Design 2a named the filter
+`--repo`; 5.2 says list takes "the same filters" as search, which
 spells it `--prefix`) -- both map to the same prefix scoping.
 """
 
@@ -32,18 +33,25 @@ TIER = "tier1"
 SUMMARY = "list issues by prefix/status/type (filters only, no text query)"
 ORDER = 40
 
-# Top-level keys of each per-issue --json object (search.IssueMatch.to_dict);
-# the field-selection set for `--json <fields>`.
-VALID_JSON_FIELDS = (
-    "id", "file", "title", "status", "priority", "type", "body_matches",
-)
+# Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
+SURFACE_CLASS = "enumeration-read"
+SURFACE_STORE = "flag"
+# IM-254: `unconverted` until every failure path on this verb carries the
+# key=value payload; the set is enumerated, never waived, and only shrinks
+# (conversion work is IM-260).
+SURFACE_STRUCTURED_ERRORS = "unconverted"
+
+# Top-level keys of each per-issue --json object, derived from the row
+# builder itself (search.IssueMatch.to_dict) rather than restated, so a
+# field added there is selectable here by construction (IM-263).
+VALID_JSON_FIELDS = search.IssueMatch.json_fields()
 
 _DESCRIPTION = """\
 Enumerate issues by frontmatter filters -- no body text query. Read-only:
 no locks acquired. This is `issue search` with the text query fixed empty;
 use `issue search QUERY` when you have body text to match.
 
-Filters (--prefix/--repo, --status, --type) accept comma-separated lists
+Filters (--prefix, --status, --type) accept comma-separated lists
 (OR within a flag, AND across flags). With no filters, every issue is
 listed. Default output is TSV (id<TAB>status<TAB>priority<TAB>title) in scan
 order; --json emits a top-level array of per-issue objects (body_matches is
@@ -53,12 +61,16 @@ top-level fields, in the order given; bare --json emits the full shape and
 an unknown field name is a usage error (exit 2)."""
 
 _EPILOG = """\
+Exit codes: 0 at least one row emitted; 1 zero rows (grep convention,
+uniform across every enumeration read); 2 argument/usage error, including
+a --prefix the store does not have (error=unknown-prefix).
+
 Examples:
   issue list
   issue list --status open,blocked
-  issue list --repo ABC --type bug
+  issue list --prefix ABC --type bug
   issue list --prefix ABC,XYZ --status open --json
-  issue list --repo ABC --json id,title,status
+  issue list --prefix ABC --json id,title,status
 """
 
 
@@ -70,14 +82,13 @@ def register(subparsers):
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument(
-        "--prefix", "--repo", default=None, metavar="PFX[,PFX...]",
-        dest="prefix",
-        help="Limit to these prefixes (OR within the flag). Alias: --repo.",
+    common.add_prefix_scope_flag(
+        p, help="Limit to these prefixes (OR within the flag).",
     )
-    p.add_argument(
-        "--status", default=None, metavar="STATUS[,STATUS...]",
-        help="Match only these frontmatter status values.",
+    common.add_value_set_flag(
+        p, "--status", metavar="STATUS[,STATUS...]",
+        help="Repeatable/comma-separated. Match only these frontmatter "
+             "status values.",
     )
     p.add_argument(
         "--type", default=None, metavar="TYPE[,TYPE...]",
@@ -112,9 +123,25 @@ def run(args) -> int:
     def _note(before, after):
         print(f"issue list: resolved {before} -> {after}", file=sys.stderr)
 
+    rc = common.require_store(
+        store_root, prog="issue list",
+        json_mode=jsonfields.json_enabled(args.json_mode),
+        legacy_anchor=anchor,
+    )
+    if rc is not None:
+        return rc
+
+    raw_prefixes = search.parse_csv_set(args.prefix)
+    rc = common.enforce_prefix_scope(
+        raw_prefixes, store_root, anchor, prog="issue list",
+        json_mode=jsonfields.json_enabled(args.json_mode),
+    )
+    if rc is not None:
+        return rc
+
     ff = search.FrontmatterFilter(
         prefixes=common.canonicalize_prefix_set(
-            search.parse_csv_set(args.prefix), store_root, anchor,
+            raw_prefixes, store_root, anchor,
             emit_note=_note,
         ),
         statuses=search.parse_csv_set(args.status),
