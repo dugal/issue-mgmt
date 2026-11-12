@@ -96,7 +96,7 @@ import repo as repo_lib  # noqa: E402
 
 from . import common
 
-VERSION = "v3.4.0"
+VERSION = "v3.4.1"
 
 PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
 RESERVED_PREFIXES = {"ISSUE"}

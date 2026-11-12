@@ -55,10 +55,14 @@
 #                      verification script or this file.
 #
 #   shipped_skill_names / shipped_skill_count
-#                   -- the ground-truth shipped skill set, derived from
-#                      .claude/skills/<name>-dev/ (IM-264). Every link in
-#                      the skill chain reads these instead of restating a
-#                      literal; see the definitions at the end of this file.
+#                   -- the ground-truth shipped skill set, derived from the
+#                      SHIPPED sources share/issue-mgmt/skills/<name>.md
+#                      (IM-264; re-pointed off the derived .claude/skills/
+#                      *-dev copies in IM-276, so the skill chain is
+#                      measured from the artifact that installs rather than
+#                      from a dev-tree view of it). Every link in the chain
+#                      reads these instead of restating a literal; see the
+#                      definitions at the end of this file.
 #
 #   FIXTURE_EMAIL   -- the one throwaway git identity for the whole suite
 #                      (IM-268). A script that needs `git commit` to not
@@ -200,12 +204,12 @@ resolve_cli() {
 # every "exactly this set" assertion downstream vacuous, which is the failure
 # mode this function exists to prevent.
 shipped_skill_names() {
-    _ssn=$(ls -d "$PROJECT_ROOT"/.claude/skills/*-dev 2>/dev/null \
-            | xargs -n1 basename | sed 's/-dev$//' | sort)
+    _ssn=$(ls "$PROJECT_ROOT"/share/issue-mgmt/skills/*.md 2>/dev/null \
+            | xargs -n1 basename | sed 's/\.md$//' | sort)
     if [ -z "$_ssn" ]; then
         echo "tests/verification/lib.sh: no skills found under" \
-             "$PROJECT_ROOT/.claude/skills/*-dev -- refusing to report an" \
-             "empty skill set" >&2
+             "$PROJECT_ROOT/share/issue-mgmt/skills/*.md -- refusing to" \
+             "report an empty skill set" >&2
         return 1
     fi
     printf '%s\n' "$_ssn"

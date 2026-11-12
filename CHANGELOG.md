@@ -2,6 +2,178 @@
 
 ## [Unreleased]
 
+## [v3.4.1] - 2026-11-12
+
+### Fixed
+- `issue admin reap --prefix im` refused a resolvable lowercase prefix with
+  `invalid prefix 'im'` and exit 2, while all six other prefix-scoping
+  surfaces (`search`, `list`, `index`, `ready`, `history search`,
+  `history activity`) resolved it, announced `resolved im -> IM` on stderr,
+  and exited 0. The reaper was the last surface still matching the raw
+  argument against `PREFIX_DIR_RE` -- a pattern describing an on-disk prefix
+  DIRECTORY, which is always upper-case -- so the one case the gate rejected
+  was the case the store could resolve. It is the surviving instance of the
+  case-folding half of IM-236; v3.4.0 converged the other six onto the shared
+  resolver in `lib/idresolve.py` and did not reach this one, leaving the verb
+  out of compliance with `cli.id-canonicalization`, a requirement already
+  marked `[implemented]`. The value now goes through
+  `idresolve.resolve_prefix` against the store's real prefixes, with the same
+  announcement wording and stream as `index` and `ready`, so `--json` stdout
+  stays a single clean document; the shape gate survives case-insensitively,
+  so a prefix invalid even upper-cased still exits 2, and a well-shaped but
+  absent prefix still exits 2 with the structured `error=unknown-prefix`
+  payload naming the known set. No argparse registration moved, so
+  `docs/cli-surface.json` is unchanged. The exit code on this path moves
+  2 -> 0 for a resolvable lowercase prefix: that is the defect being removed,
+  not a contract being re-meant -- the six sibling surfaces define what the
+  promise is. Pinned by new assertions in
+  `tests/verification/im-098-lease.sh`, proven to fail against the pre-fix
+  module. (IM-277)
+- `issue create` with no positional arguments now fails as an argument error
+  when stdin is not a TTY, instead of dying in an unhandled `EOFError`
+  traceback. The zero-positional form prompts for title, type and priority, and
+  the prompt was unconditional: `issue create </dev/null` reached
+  `input("Title: ")`, raised, and exited 1 with a Python stack trace and no
+  payload -- while under a live pipe rather than a closed stdin it blocked
+  indefinitely instead. Either way an agent that reached for the documented
+  interactive form, which is the shape a model tries before reading `--help`,
+  got a crash or a hang rather than the line telling it the non-interactive
+  form exists. Now refused with exit 2 and a branchable
+  `error=usage-error reason=non-interactive-stdin` line naming
+  `issue create TITLE TYPE PRIORITY` and the `--section` / `--from-file` body
+  seeding flags (one JSON object on stderr under `--json`). The check runs with
+  the other argv-shape checks, before any store is resolved, any directory is
+  created, or `--from-file -` consumes a stream the verb is about to refuse; a
+  real TTY still prompts exactly as before. Closes the last known violation of
+  `surface.no-traceback` -- the one clause of the twelve enforced surface-wide
+  and immediately -- and of `surface.non-interactive`. **The exit code on this
+  path moves 1 -> 2**, which the bump rules list as a MAJOR marker; it ships as
+  a PATCH on the judgement recorded on the issue, that the current behavior IS
+  the defect rather than a contract -- an unhandled traceback was never
+  promised. Same reasoning v3.4.0 used for IM-252's traceback fix. New
+  `errors.UsageError`, the exit-2 counterpart to `PreconditionError`, so a new
+  exit-2 path is born carrying the branchable payload even while `create`'s
+  older argv checks stay declared `unconverted`; no argparse registration
+  moves, so `docs/cli-surface.json` is unchanged. Covered by a
+  `# COVERS: surface.non-interactive` / `surface.no-traceback` block in
+  `tests/verification/new-issue-store-mode.sh` (closed stdin, live pipe, and
+  `--json`, each proven to fail with the guard disabled) plus unit tests in
+  `tests/test_errors.py`. (IM-248)
+- `tests/verification/v2-release-smoke.sh` no longer mutates the operator's real
+  issue store. It resolved `${ISSUE_STORE_ROOT:-$HOME/issues-store}` and sits in
+  `tests/verification/` with the executable bit set, so every
+  `for f in tests/verification/*.sh` sweep wrote fixture issues into the
+  production store -- and because every mutation commits itself
+  (`concurrency.auto-commit-per-mutation`), the script's cleanup trap could not
+  undo them: 447 commits touching `SMOKE/` had accumulated by 2026-11-12, the
+  newest from the v3.4.0 release ceremony's own sweep. One of them
+  (`53745780`) shows the sharper risk realized -- a SMOKE mutation racing a live
+  session absorbed that session's real content edit under the generic
+  `catchup: reconcile pending store changes` message, so the content survived
+  but its attribution did not. The script now has two modes: the DEFAULT builds
+  a throwaway store under `mktemp -d` with `HOME` redirected into the same temp
+  tree, so no step of the store-resolution precedence can reach the operator's
+  store, and a caller-supplied `ISSUE_STORE_ROOT` is deliberately ignored;
+  the real-store mode is opt-in and takes two deliberate acts
+  (`ISSUE_MGMT_SMOKE_REAL_STORE=1` *and* an explicit `ISSUE_STORE_ROOT`, since
+  that mode has no default store). The executable bit is kept, because the
+  default mode is now safe to sweep. Also fixes the secondary defect that made
+  the move possible: the script passed 17/17 only against the operator store and
+  failed 6 checks against any scratch one, because the fixture store was never a
+  git repo with an identity, so each uncontested write failed its own commit and
+  exited 1 -- the gap IM-086/IM-087 closed for the other store-mode fixtures.
+  The throwaway store is scaffolded with `issue admin init-store` rather than a
+  hand-rolled `git init`, which also supplies the seeded `.gitignore` the
+  store-wide commit lock's `.locks/` needs, so both modes exercise the same real
+  layout by construction. (IM-255)
+- `tests/verification/project-meta.sh` gained the project-level invariant that
+  earned the gate: nothing under `tests/verification/` may target the resolved
+  operator store by default. Four mechanical shapes fail the check -- an
+  `${ISSUE_STORE_ROOT:-...}` default (inherit-with-fallback), a `$HOME`- or
+  `~`-rooted store path reached before the script redirects `HOME` into a temp
+  tree, the literal operator-store path (derived from this checkout's
+  `.issues/.migrated-to-store` sentinel plus `~/.config/issue-mgmt/config`
+  `store_root`, so the check never restates a path), and any script setting an
+  `ISSUE_MGMT_*REAL_STORE`-shaped opt-in from inside the suite. Same defect class
+  as the 2026-11-07 incident where store resolution fell through to the config
+  file and flipped a done issue back to open. (IM-255)
+- Every `INDEX.md` row for an issue carrying dependency edges reported the
+  dependency kind as the issue's type, and the templated `changelog:` guard
+  comment rendered as a table cell. `reindex_core.parse_frontmatter` built its
+  field dict with a line-by-line `line.split(":", 1)` scan and `.strip()` on
+  the key, which discards the indentation that distinguishes a nested mapping
+  key from a top-level one -- so a `depends_on` entry's `type: related` (which
+  `issue dep add` writes) clobbered the issue's own `type: feature`, and the
+  last edge's kind won. Observed across four MAD rows on 2026-07-18 and five
+  LI rows later; `LI-005` showed `blocks` for a `chore`. The same scan kept a
+  comment as a value, so `changelog:    # set by /update-changelog only -- do
+  not edit manually` became the Changelog cell's content in the six-column
+  Done table. The renderer now reads frontmatter through the block-aware
+  `frontmatter.parse_frontmatter_lines` -- the parser the query, dependency,
+  and validation surfaces already use, which is why `issue list --type
+  feature` was right while the rendered INDEX disagreed with the files it
+  indexes -- so column-0 keys win and inline comments are split outside
+  quotes. Both index renderers (store per-prefix plus root aggregate, and the
+  legacy single-dir path) are fixed by the one change, and the fix is generic:
+  any future nested key sharing a top-level name is handled, not just `type`,
+  which was merely the only collision a `depends_on` entry produces today.
+  Structured values (`depends_on`, `claim`, `tags`) are dropped rather than
+  handed to a table cell, so every rendered field is a cell-safe string.
+  This changes generated-output content, which the bump rules list as a MAJOR
+  marker, but it ships as a PATCH on the judgement recorded on the issue: the
+  current rows ARE the defect, and the fix restores the documented table shape
+  rather than altering it -- the same reasoning v3.4.0 used for IM-252. No
+  argparse registration moved, so `docs/cli-surface.json` is unchanged.
+  (IM-166; IM-256 was cancelled into it as a duplicate after its root-cause
+  analysis was transplanted)
+- The `issue-complete` and `issue-cancel` skills told the agent the `branch:`
+  field survives a terminal transition and to run a second command to clear
+  it. IM-226 made `done` and `cancelled` clear `branch:` in v3.1.0 (
+  `state.terminal-clears-branch`), so both notes had been factually wrong for
+  three minor versions, and the `/issue-edit <id> --set branch=""` follow-up
+  they prescribed was work the transition already did. Re-measured in an
+  isolated temp store before rewording: `start --branch probe-branch` then
+  `cancel` with no `--branch` yields `branch: ""`. Both notes now state what
+  the CLI does. The disagreement between the skill recipe and the lifecycle
+  convention is what IM-127 was filed on; its other three criteria were
+  already met. (IM-127)
+- Shipped skills named commands that do not exist. All 15 installed
+  `SKILL.md` files carried the project-local `-dev` alias in their BODIES --
+  129 occurrences in v3.4.0, including every frontmatter `name:`, so
+  `~/.claude/skills/issue-activity/SKILL.md` declared
+  `name: issue-activity-dev` and `issue-complete` told the agent to run
+  `/issue-edit-dev`. Staging renamed the FILE and never rewrote the content,
+  so the alias flowed source -> tarball -> pkgshare -> installed skill
+  unchanged; on any machine without this project checked out, those
+  invocations do not resolve. A skill is the program the model runs, so this
+  is a behavior bug, not a stale comment (the IM-228 / IM-265 class;
+  `surface.self-naming` names shipped skills explicitly). The fix inverts the
+  authoring direction: the skills are now authored canonically at
+  `share/issue-mgmt/skills/<name>.md` -- the shipped layout, staged verbatim,
+  so the bytes that install are the bytes an author edits -- and
+  `scripts/gen-dev-skills` (`make dev-skills`) generates the
+  `.claude/skills/<name>-dev/SKILL.md` copies from them, rewriting the
+  frontmatter `name:` and the `/issue-*` skill references only (an
+  `issue <verb>` CLI invocation is the same command in both worlds and is
+  never touched). Also removes a dangling `/issue-validate-dev` reference in
+  the search skill, which named a skill this project has never shipped.
+  Two new guards, plus the reason the four existing ones missed it -- each
+  derived both sides of its comparison from `.claude/skills/*-dev`, so the
+  alias cancelled out: `scripts/check-shipped-skills`
+  (`make shipped-skills-check`) reads the STAGED bytes, built by the same
+  `scripts/stage-skills` the tarball recipe runs, and requires every body to
+  declare its own installed name and to name only installed skills and real
+  `issue` verbs -- deriving the installed-command set from the staged tree's
+  own basenames and the verb set from the `VERB`/`TIER` constants in
+  `lib/cli/*.py`, never from the dev tree; and `make dev-skills-check` makes
+  the committed dev copies their own detector, so a hand edit to a generated
+  file fails `make test` instead of being silently discarded on the next
+  regeneration. `make skills-check` is the one-command verdict. The four
+  pre-existing skill guards (`check-skill-contract`, `skill-exit-codes.sh`,
+  `project-meta.sh` check 3, `im-029-homebrew.sh` via `lib.sh`
+  `shipped_skill_names`) now all read the shipped sources, which retires
+  `check-skill-contract`'s alias-stripping. (IM-276)
+
 ## [v3.4.0] - 2026-11-10
 
 ### Added
@@ -17,8 +189,13 @@
   flags, and `-h` as the sole short flag. A licensed deviation must cite a
   `[REQ:]` key that exists in `docs/requirements.md`, so a licence terminates in
   the requirements document rather than in the registry's own prose. The lint is
-  green on today's tree only via a 24-entry waiver baseline owned by seven open
-  issues, and the baseline is shrink-only by construction: a waiver matching no
+  green on today's tree only via a waiver baseline owned entirely by open
+  issues -- read the live count and owner set from `make surface-lint`, never
+  from prose, because a transcribed count goes stale the next time an owner
+  lands and nothing derives it (this sentence was itself an instance: it shipped
+  claiming 24 entries across seven issues, the pre-IM-269 state, while IM-269
+  shrank it to 22 later in this same release). The baseline is shrink-only by
+  construction: a waiver matching no
   finding fails as obsolete, a waiver whose issue is done or cancelled fails as
   unowned (`--check-issues`), and a waiver cannot suppress either of those.
   `tests/test_surface_lint.py` (46 tests) rides `make test` and proves per entry

@@ -14,6 +14,9 @@
 #   - --lease-ttl overrides the 3600s binary default
 #   - issue-reap-expired-claims: --dry-run, real reap preserves
 #     generation, appends reaper note, never touches valid leases
+#   - reaper --prefix case-folds through the shared resolver (IM-277):
+#     `--prefix im` resolves IM, announces on stderr, keeps --json stdout
+#     a single document; an absent prefix stays exit 2 naming the known set
 #   - claim on blocked issue exits 7 (error=not-claimable)
 #   - claim on missing issue exits 7 (reason=not-found)
 #   - edit-issue --claim-generation guard (exit 5 mismatch / exit 0 match)
@@ -350,6 +353,40 @@ OUT=$(ISSUE_STORE_ROOT="$STORE" "$REAP")
 assert_eq "0" "$?" "second reap run exits 0"
 assert_contains "No expired claims." "$OUT" "second run reports nothing to reap"
 
+# IM-277: --prefix case-folds through the one shared resolver, so the reaper
+# is the seventh scoping surface converged with search / list / index /
+# ready / history search / history activity. Before the fix a resolvable
+# lowercase prefix died at an upper-case-only shape gate with exit 2.
+OUT=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix im --dry-run 2>/dev/null)
+RC=$?
+# COVERS: cli.id-canonicalization
+assert_eq "0" "$RC" "reaper --prefix im (lowercase) resolves and exits 0"
+
+ERR=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix im --dry-run 2>&1 >/dev/null)
+# COVERS: cli.id-canonicalization
+assert_contains "resolved im -> IM" "$ERR" \
+    "reaper announces the prefix canonicalization on stderr"
+
+# Already-canonical input is silent (the sibling surfaces' contract).
+ERR=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix IM --dry-run 2>&1 >/dev/null)
+assert_eq "" "$ERR" "reaper --prefix IM emits no canonicalization note"
+
+# The note is on stderr, so --json stdout stays exactly one document.
+OUT=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix im --dry-run --json 2>/dev/null)
+JCHK=$(printf '%s' "$OUT" | python3 -c \
+    'import json,sys; json.load(sys.stdin); print("ok")' 2>/dev/null)
+# COVERS: output.json-stable
+assert_eq "ok" "$JCHK" \
+    "reaper --prefix im --json stdout is one clean JSON document"
+
+# A genuinely absent prefix is still an argument error naming the known set.
+ERR=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix ZZZZ --dry-run 2>&1 >/dev/null)
+RC=$?
+# COVERS: output.exit-codes
+assert_eq "2" "$RC" "reaper --prefix ZZZZ (absent) -> exit 2"
+assert_contains "known=IM" "$ERR" \
+    "reaper absent-prefix error names the known set"
+
 # Reaper is privileged: after the reap, a paused actor presenting the old
 # generation gets exit 5 from the CLI (the reaper itself never checked one).
 ISSUE_STORE_ROOT="$STORE" "$TRANSITION" IM-202 --claim intruder \
@@ -450,6 +487,8 @@ assert_eq "2" "$?" "invalid claimant exits 2"
 assert_eq "2" "$?" "--lease-ttl 0 exits 2"
 "$TRANSITION" IM-201 in-progress --lease-ttl 60 2>/dev/null
 assert_eq "2" "$?" "--lease-ttl on a plain transition exits 2"
+# IM-277: `--prefix im` now case-folds to IM (section [G]); only a shape
+# invalid even upper-cased -- here 9 characters -- stays exit 2.
 "$REAP" --prefix lowercase 2>/dev/null
 assert_eq "2" "$?" "reaper invalid --prefix exits 2"
 # Additional transition-primitive argument-shape errors (each fails before

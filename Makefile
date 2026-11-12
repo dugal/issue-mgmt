@@ -94,15 +94,20 @@ PUBLIC_TARGET        := $(or $(GITHUB_PUBLISHER_TAP),$(filter github,$(BACKEND) 
 # Source files staged into the tarball (renamed/restructured in the recipe).
 # `scripts/issue` is the single CLI dispatcher. Python helper modules under
 # lib/ (including the lib/cli/ verb package the dispatcher discovers) ship
-# alongside; skill sources under .claude/skills/<name>-dev/SKILL.md are
-# renamed to skills/<name>.md during staging (the -dev suffix is the
-# dev-alias convention; canonical names are what end users install).
+# alongside; the skills are AUTHORED canonically under
+# share/issue-mgmt/skills/<name>.md, in the shipped layout, so staging copies
+# them verbatim and the bytes that ship are the bytes an author edits. The
+# project-local .claude/skills/<name>-dev/ copies are DERIVED from them
+# (scripts/gen-dev-skills) and are not sources (IM-276: through v3.4.0 the
+# dev copies were the sources and staging renamed the FILE without rewriting
+# the BODY, so every shipped skill named `-dev` commands that do not exist
+# off this checkout).
 SCRIPTS := \
   scripts/issue
 LIB_FILES := $(wildcard lib/*.py) $(wildcard lib/*.sh) $(wildcard lib/cli/*.py)
-SKILL_DEV_SOURCES := $(wildcard .claude/skills/*-dev/SKILL.md)
+SKILL_SOURCES := $(wildcard share/issue-mgmt/skills/*.md)
 STORE_TEMPLATE_FILES := $(wildcard share/store-template/*.md)
-SOURCES  := $(SCRIPTS) $(LIB_FILES) $(SKILL_DEV_SOURCES) $(STORE_TEMPLATE_FILES) ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md LICENSE CHANGELOG.md README.md
+SOURCES  := $(SCRIPTS) $(LIB_FILES) $(SKILL_SOURCES) $(STORE_TEMPLATE_FILES) ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md LICENSE CHANGELOG.md README.md
 
 # Reproducible tarballs.
 #   - Release builds (VERSION starts with 'v'): HEAD commit time. This is
@@ -149,16 +154,10 @@ $(TARBALL): $(SOURCES) $(wildcard docs/release-notes/*.md) stamp
 	cp share/store-template/*.md $(STAGE)/store-template/
 	cp lib/*.py lib/*.sh $(STAGE)/lib/
 	cp lib/cli/*.py $(STAGE)/lib/cli/
-	@# Stage skills with the canonical (non-dev) name. Source paths look
-	@# like .claude/skills/issue-create-dev/SKILL.md; target is
-	@# skills/issue-create.md. Done inline so a missing -dev skill source
-	@# fails the build loudly.
-	@for src in .claude/skills/*-dev/SKILL.md; do \
-	  d=$$(dirname $$src); \
-	  name=$$(basename $$d); \
-	  canonical=$${name%-dev}; \
-	  cp $$src $(STAGE)/skills/$$canonical.md; \
-	done
+	@# Stage the skills. One implementation, in scripts/stage-skills, so the
+	@# shipped-skill guard can inspect the real staged bytes without running
+	@# a release target -- a second copy of this rule is how IM-276 hid.
+	scripts/stage-skills $(STAGE)/skills
 	cp ISSUE-TEMPLATE.md share/issue-mgmt/CHEATSHEET.md LICENSE CHANGELOG.md README.md $(STAGE)/
 	@cp docs/release-notes/*.md $(STAGE)/docs/release-notes/ 2>/dev/null || true
 	find $(STAGE) -exec touch -t $(MTIME) {} +
@@ -502,6 +501,42 @@ surface-lint:
 # a prep commit whose diff changes the CLI surface must pass it.
 surface-check: cli-surface-check surface-lint
 
+# --- Shipped skills: derived dev copies + shipped-body guard (IM-276) ---
+
+# The skills are authored ONCE, canonically, under
+# share/issue-mgmt/skills/<name>.md -- the same layout and bytes the formula
+# installs at <pkgshare>/skills/<name>.md. The project-local dev-alias copies
+# at .claude/skills/<name>-dev/SKILL.md are DERIVED from them, because the two
+# variants differ in CONTENT (a dev session must be told the `-dev` commands,
+# an installed one the canonical names) and exactly one side has to be
+# generated. Authoring the canonical side puts the shipped bytes under the
+# author's hands; through v3.4.0 it was the other way round and the shipped
+# body had no reader, which is how the alias leak survived four guards.
+#
+# Same detect-then-validate shape as the surface manifest: the committed dev
+# copies ARE the detector (tests/test_dev_skills.py byte-compares what the
+# generator produces), so a hand edit to a generated dev copy -- which the
+# next regeneration would silently discard -- turns `make test` red instead.
+dev-skills:
+	scripts/gen-dev-skills --write
+
+# Non-mutating verdict. Same comparison the unit test makes.
+dev-skills-check:
+	scripts/gen-dev-skills --check
+
+# The guard that reads the SHIPPED artifact rather than the dev tree: every
+# staged skill body must declare its own installed name and may name only
+# commands that exist off this checkout (an installed skill or a real `issue`
+# verb). Defaults to a temp staging tree built by scripts/stage-skills, so no
+# release target runs; point it at pkgshare or a tarball to check a published
+# artifact.
+shipped-skills-check:
+	scripts/check-shipped-skills
+
+# The one-command skills verdict: the dev copies are current AND the shipped
+# bodies name only commands that resolve.
+skills-check: dev-skills-check shipped-skills-check
+
 # --- Coverage targets (thin delegators -- coverage-model CLI) ---
 coverage-spec:
 	@command -v coverage-model >/dev/null 2>&1 || \
@@ -519,4 +554,4 @@ coverage-unit:
 	@COVERAGE_VERSION=$(VERSION) coverage-model run unit
 
 
-.PHONY: all stamp dist formula publish-local release-check release-prep install sync-tap publish-github release-github publish-gitea release-gitea release verify-publish test coverage-unit coverage-black-box coverage-spec cli-surface cli-surface-check surface-lint surface-check
+.PHONY: all stamp dist formula publish-local release-check release-prep install sync-tap publish-github release-github publish-gitea release-gitea release verify-publish test coverage-unit coverage-black-box coverage-spec cli-surface cli-surface-check surface-lint surface-check dev-skills dev-skills-check shipped-skills-check skills-check

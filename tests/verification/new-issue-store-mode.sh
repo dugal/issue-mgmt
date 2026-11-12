@@ -365,6 +365,58 @@ else
     fail "regression: IM-001 not in <store>/INDEX.md aggregate after new-issue"
 fi
 
+# --- Test 16: zero positionals + non-TTY stdin is an argument error ---
+# IM-248: the zero-positional form prompts, and `input()` raised an
+# unhandled EOFError on a closed stdin -- exit 1, a Python traceback, no
+# payload, and no hint that three positionals are the non-interactive form.
+# A live pipe was worse: the prompt blocked indefinitely instead. The store
+# is fully registered here so the ONLY thing under test is the refusal; if
+# the guard regressed, the verb would reach the prompt and crash.
+STORE16="$(mk_store store-non-tty)"
+REPO16="$(mk_registered_repo issue-mgmt "$STORE16" IM)"
+out=$( cd "$REPO16" && ISSUE_STORE_ROOT="$STORE16" "$SCRIPT" </dev/null 2>&1 )
+rc=$?
+# COVERS: surface.non-interactive
+# COVERS: surface.no-traceback
+if [[ $rc -eq 2 ]] \
+   && [[ "$out" == *"error=usage-error"* ]] \
+   && [[ "$out" == *"reason=non-interactive-stdin"* ]] \
+   && [[ "$out" == *"TITLE TYPE PRIORITY"* ]] \
+   && [[ "$out" == *"--section"* && "$out" == *"--from-file"* ]] \
+   && [[ "$out" != *"Traceback"* && "$out" != *"EOFError"* ]] \
+   && ! ls "$STORE16/IM/"IM-*.md >/dev/null 2>&1; then
+    pass "non-TTY stdin: exit 2, names the positional form, no traceback, no write"
+else
+    fail "non-TTY stdin refusal (rc=$rc out=$out)"
+fi
+
+# A live pipe is not a TTY either, so it must refuse rather than block.
+# `timeout` is the assertion: a regression hangs here instead of failing.
+out=$( cd "$REPO16" && printf 'piped\n' | \
+       timeout 20 env ISSUE_STORE_ROOT="$STORE16" "$SCRIPT" 2>&1 )
+rc=$?
+if [[ $rc -eq 2 ]] && [[ "$out" == *"reason=non-interactive-stdin"* ]]; then
+    pass "non-TTY stdin: a live pipe refuses promptly rather than blocking"
+else
+    fail "non-TTY stdin piped (rc=$rc out=$out)"
+fi
+
+# The payload is branchable under --json too: one line on stderr, the same
+# condition, and stdout stays empty because no issue was created.
+json_err=$( cd "$REPO16" && ISSUE_STORE_ROOT="$STORE16" \
+            "$SCRIPT" --json </dev/null 2>&1 >/dev/null )
+json_out=$( cd "$REPO16" && ISSUE_STORE_ROOT="$STORE16" \
+            "$SCRIPT" --json </dev/null 2>/dev/null )
+if [[ -z "$json_out" ]] \
+   && printf '%s' "$json_err" | python3 -c \
+        'import json,sys; o=json.loads(sys.stdin.read()); \
+sys.exit(0 if o["exit"]==2 and o["class"]=="usage-error" \
+         and o["reason"]=="non-interactive-stdin" else 1)'; then
+    pass "non-TTY stdin: --json emits the condition as one JSON object on stderr"
+else
+    fail "non-TTY stdin --json (out=$json_out err=$json_err)"
+fi
+
 # --- Summary ---------------------------------------------------------
 echo "---"
 if [[ $fail_count -eq 0 ]]; then

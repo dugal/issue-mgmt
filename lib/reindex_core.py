@@ -20,6 +20,7 @@ from datetime import date
 from pathlib import Path
 
 import concurrency
+import frontmatter
 from concurrency import atomic_write
 
 STATUS_ORDER = ["in-progress", "open", "blocked", "done", "cancelled"]
@@ -39,9 +40,28 @@ _REQUIRED = ("id", "title", "type", "status", "priority", "updated")
 def parse_frontmatter(path: Path):
     """Parse an issue file's frontmatter, or None if malformed/unreadable.
 
-    Matches the store generator's tolerant read (OSError -> None); the
-    legacy generator read without the guard, but an unreadable file mid-glob
-    is pathological and the rendered output is unaffected.
+    Returns the TOP-LEVEL scalar fields only, each as a cell-safe string --
+    the renderers below drop every value straight into a markdown table cell.
+
+    The read delegates to the block-aware ``frontmatter.parse_frontmatter_lines``
+    (the same parser the query, dependency, and validation surfaces use) rather
+    than scanning ``line.split(":", 1)`` per line. That naive scan was
+    nesting-blind and comment-blind, and INDEX.md carried both defects: a
+    ``depends_on`` entry's indented ``type: related`` clobbered the issue's own
+    top-level ``type:`` (the Type column rendered the last dependency edge's
+    kind), and the templated ``changelog:    # set by ...`` guard comment
+    rendered as the Changelog cell's content. Keying on column-0 keys and
+    splitting inline comments outside quotes fixes both at once, and does so
+    for ANY nested key colliding with a top-level name -- ``type`` happens to
+    be the only such collision today, which is incidental, not structural.
+
+    Structured values (block lists like ``depends_on``, nested maps like
+    ``claim``, flow lists like ``tags``) are not rendered in any INDEX column,
+    so they are dropped here; an empty-valued key (``changelog:`` with only a
+    comment after it) normalizes to ``""``.
+
+    Tolerant read, as before: OSError or absent frontmatter -> None, and a
+    frontmatter missing any required field -> None.
     """
     try:
         text = path.read_text()
@@ -51,10 +71,13 @@ def parse_frontmatter(path: Path):
     if not m:
         return None
     fields = {}
-    for line in m.group(1).splitlines():
-        kv = line.split(":", 1)
-        if len(kv) == 2:
-            fields[kv[0].strip()] = kv[1].strip().strip('"')
+    for key, value in frontmatter.parse_frontmatter_lines(
+        m.group(1).splitlines()
+    ).items():
+        if value is None:
+            fields[key] = ""
+        elif isinstance(value, str):
+            fields[key] = value
     if not all(k in fields for k in _REQUIRED):
         return None
     return fields

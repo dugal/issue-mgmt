@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""
+stage-skills -- stage the shipped Claude Code skills into a directory
+
+Usage: stage-skills <destdir>
+
+The one implementation of the skill half of staging. `$(TARBALL)` calls it
+with `$(STAGE)/skills`, and `scripts/check-shipped-skills` calls it with a
+temp directory so the guard inspects the bytes that actually ship rather
+than a dev-tree stand-in. Two copies of this rule is exactly the shape
+IM-261 catalogued, and the IM-276 bug lived in the staging rule itself.
+
+Staging is a verbatim copy: the skills are authored canonically under
+`share/issue-mgmt/skills/<name>.md`, in the shipped layout, so nothing is
+renamed and nothing is rewritten here. Through v3.4.0 this step renamed
+`.claude/skills/<name>-dev/SKILL.md` to `skills/<name>.md` and the rename
+was on the PATH only, so every shipped body kept naming `-dev` commands
+that exist only in a project checkout (IM-276). The dev copies are now
+derived instead -- see scripts/gen-dev-skills.
+
+Exit 0 on success, 2 on a usage or I/O error.
+
+Examples:
+  stage-skills /tmp/stage/skills
+  make dist                        # stages into $(STAGE)/skills
+"""
+
+import os
+import shutil
+import sys
+
+PROG = "stage-skills"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CANONICAL_DIR = os.path.join(REPO_ROOT, "share", "issue-mgmt", "skills")
+
+
+def die(msg, code=2):
+    sys.stderr.write("%s: %s\n" % (PROG, msg))
+    raise SystemExit(code)
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0 if args else 2
+    if len(args) != 1:
+        die("usage: %s <destdir>" % PROG)
+    dest = args[0]
+
+    try:
+        sources = sorted(f for f in os.listdir(CANONICAL_DIR)
+                         if f.endswith(".md"))
+    except (IOError, OSError) as e:
+        die("cannot list the skill sources %s: %s" % (CANONICAL_DIR, e))
+    if not sources:
+        die("no skill sources under %s -- refusing to stage an empty skill "
+            "set" % CANONICAL_DIR)
+
+    try:
+        os.makedirs(dest, exist_ok=True)
+        for name in sources:
+            shutil.copyfile(os.path.join(CANONICAL_DIR, name),
+                            os.path.join(dest, name))
+    except (IOError, OSError) as e:
+        die("cannot stage skills into %s: %s" % (dest, e))
+
+    print("%s: staged %d skill(s) into %s" % (PROG, len(sources), dest))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

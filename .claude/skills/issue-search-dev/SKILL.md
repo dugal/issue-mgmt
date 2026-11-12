@@ -57,6 +57,6 @@ This skill is read-only; exit code 3 (`concurrent-edit`) is reserved for mutatin
 
 ## Notes
 
-- Files with malformed frontmatter are silently skipped; structural validation is `/issue-validate-dev`'s job (or `issue admin validate` directly).
+- Files with malformed frontmatter are silently skipped; structural validation is the job of `issue admin validate`.
 - Line numbers in `--json` body matches are file-absolute (frontmatter and heading lines counted from 1), suitable for editor jumps.
 - Performance: sub-second on the live workspace corpus.

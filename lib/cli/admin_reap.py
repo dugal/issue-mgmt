@@ -27,6 +27,7 @@ from pathlib import Path
 import concurrency  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import errors  # noqa: E402
 import frontmatter  # noqa: E402
+import idresolve  # noqa: E402
 import lease  # noqa: E402
 
 from . import common
@@ -238,7 +239,14 @@ def _reap_one(store_root, prefix, issue_file, issue_id, lock_timeout, now):
 
 
 def run(args) -> int:
-    if args.prefix is not None and not PREFIX_DIR_RE.match(args.prefix):
+    # IM-277: the shape gate is case-insensitive. PREFIX_DIR_RE describes an
+    # on-disk prefix DIRECTORY (always upper-case), so matching the raw
+    # argument against it rejected `--prefix im` -- a value every other
+    # scoping surface resolves. Canonical casing is resolved from the store
+    # below, through the one shared resolver (cli.id-canonicalization); only
+    # a shape invalid even upper-cased is a usage error here.
+    if (args.prefix is not None
+            and not PREFIX_DIR_RE.match(args.prefix.upper())):
         print(
             f"issue admin reap: invalid prefix {args.prefix!r} "
             f"(must match {PREFIX_DIR_RE.pattern})",
@@ -272,8 +280,23 @@ def run(args) -> int:
     if rc is not None:
         return rc
 
+    # IM-277: case-fold --prefix to the store's canonical prefix through the
+    # one shared resolver, so `--prefix im` scopes the IM prefix rather than
+    # matching no prefix directory at all. Same entry point, announcement
+    # wording, and stream as `index` / `ready` / the history verbs; the note
+    # goes to stderr so --json stdout stays one clean document.
+    repo = args.prefix
+    if repo is not None:
+        resolved = idresolve.resolve_prefix(
+            repo, idresolve._known_prefixes(store_root, None)
+        ) or repo.upper()
+        if resolved != repo:
+            print(f"issue admin reap: resolved {repo} -> {resolved}",
+                  file=sys.stderr)
+            repo = resolved
+
     now = lease.now_utc()
-    candidates = _scan_expired(store_root, args.prefix, now)
+    candidates = _scan_expired(store_root, repo, now)
 
     reaped = []
     if args.dry_run:

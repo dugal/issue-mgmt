@@ -103,7 +103,7 @@ import concurrency  # noqa: E402
 import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 
-VERSION = "v3.4.0"
+VERSION = "v3.4.1"
 
 # The one place this verb names itself. Every diagnostic, usage line,
 # and `prog=` keyword formats through it, so the surface manifest sees

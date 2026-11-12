@@ -33,6 +33,7 @@ Public import path:
         ContractError, ConcurrentEdit, LostRaceError, StaleViewError,
         DependencyChangedError, NotClaimableError, LeaseExpiredError,
         IssueNotFoundError, DependencyCycleError, PreconditionError,
+        UsageError,
     )
 
 `ConcurrentEdit` moved here from lib/concurrency.py; its
@@ -117,6 +118,26 @@ class PreconditionError(ContractError):
 
     exit_code = EXIT_PRECONDITION
     error_class = "precondition-failed"
+
+
+class UsageError(ContractError):
+    """A generic argument/usage failure, carrying a `reason=` discriminator.
+
+    The exit-2 counterpart to `PreconditionError`: the shape a verb uses to
+    refuse an argv the caller must fix rather than retry. `UnknownPrefixError`
+    below is the one condition specific enough to have earned its own class;
+    everything else branches on `reason` and reads the fix out of `detail`.
+
+    IM-248: the first user is `issue create`'s non-TTY refusal, where the
+    alternative was the bare `print` + `return 2` the verb's older argv
+    checks use. A caller that has to regex prose to tell an argument error
+    from a precondition is the drift `surface.structured-errors` exists to
+    close, so a new exit-2 path is born carrying the payload even while the
+    verb's pre-existing ones are still declared `unconverted`.
+    """
+
+    exit_code = EXIT_USAGE
+    error_class = "usage-error"
 
 
 class UnknownPrefixError(ContractError):

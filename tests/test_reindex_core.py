@@ -206,6 +206,99 @@ class TestReindexCoreEdges(unittest.TestCase):
         finally:
             subprocess.run(["rm", "-rf", str(store)], check=False)
 
+    def test_parse_frontmatter_nested_dep_type_does_not_clobber_top_level(self):
+        # IM-166 defect 1: a depends_on entry's indented `type:` must not win
+        # over the issue's own top-level `type:`.
+        d = Path(tempfile.mkdtemp(prefix="im-fm-nest-"))
+        try:
+            p = d / "x.md"
+            p.write_text(
+                "---\nid: X-001\ntitle: t\ntype: feature\nstatus: open\n"
+                "priority: high\nupdated: 2026-08-01\n"
+                "depends_on:\n"
+                "  - to: X-002\n    type: blocks\n"
+                "  - to: X-003\n    type: related\n"
+                "---\n\nbody\n"
+            )
+            fields = reindex_core.parse_frontmatter(p)
+            self.assertEqual(fields["type"], "feature")
+        finally:
+            subprocess.run(["rm", "-rf", str(d)], check=False)
+
+    def test_parse_frontmatter_strips_templated_changelog_comment(self):
+        # IM-166 defect 2: the templated guard comment is a comment, not the
+        # changelog value, so it must not reach a table cell.
+        d = Path(tempfile.mkdtemp(prefix="im-fm-cmt-"))
+        try:
+            p = d / "x.md"
+            p.write_text(
+                "---\nid: X-001\ntitle: t\ntype: bug\nstatus: done\n"
+                "priority: low\nupdated: 2026-08-01\n"
+                "changelog:    # set by /update-changelog only"
+                " -- do not edit manually\n"
+                "---\n\nbody\n"
+            )
+            fields = reindex_core.parse_frontmatter(p)
+            self.assertEqual(fields["changelog"], "")
+        finally:
+            subprocess.run(["rm", "-rf", str(d)], check=False)
+
+    def test_parse_frontmatter_handles_both_defects_at_once(self):
+        # IM-166: the real shape -- `issue create`'s guard comment plus edges
+        # authored by `issue dep add`.
+        d = Path(tempfile.mkdtemp(prefix="im-fm-both-"))
+        try:
+            p = d / "x.md"
+            p.write_text(
+                "---\nid: X-001\ntitle: \"quoted: title\"\ntype: decision\n"
+                "status: done\npriority: medium\ncreated: 2026-07-01\n"
+                "updated: 2026-08-01\nbranch: \"\"\ntags: []\n"
+                "changelog:    # set by /update-changelog only"
+                " -- do not edit manually\n"
+                "depends_on:\n"
+                "  - to: X-002\n    type: related\n"
+                "    note: why this edge exists\n"
+                "claim:\n  assignee: someone\n"
+                "---\n\nbody\n"
+            )
+            fields = reindex_core.parse_frontmatter(p)
+            self.assertEqual(fields["type"], "decision")
+            self.assertEqual(fields["changelog"], "")
+            self.assertEqual(fields["title"], "quoted: title")
+            # Structured values are not rendered in any column, so they are
+            # dropped rather than handed to a table cell as a repr.
+            self.assertNotIn("depends_on", fields)
+            self.assertNotIn("claim", fields)
+            # Every surviving value is cell-safe.
+            for key, value in fields.items():
+                self.assertIsInstance(value, str, key)
+        finally:
+            subprocess.run(["rm", "-rf", str(d)], check=False)
+
+    def test_index_row_for_issue_with_dep_edges_shows_own_type(self):
+        # IM-166, rendering level: the row an operator or agent reads.
+        d = Path(tempfile.mkdtemp(prefix="im-rows-"))
+        try:
+            (d / "IM-400.md").write_text(
+                "---\nid: IM-400\ntitle: with edges\ntype: feature\n"
+                "status: open\npriority: high\nupdated: 2026-08-01\n"
+                "changelog:    # set by /update-changelog only"
+                " -- do not edit manually\n"
+                "depends_on:\n  - to: IM-401\n    type: related\n"
+                "---\n\nbody\n"
+            )
+            reindex_core.reindex_legacy_dir(d)
+            row = [
+                ln for ln in (d / "INDEX.md").read_text().splitlines()
+                if ln.startswith("| IM-400 |")
+            ]
+            self.assertEqual(len(row), 1, "expected exactly one IM-400 row")
+            self.assertIn("| feature |", row[0])
+            self.assertNotIn("related", row[0])
+            self.assertNotIn("update-changelog", row[0])
+        finally:
+            subprocess.run(["rm", "-rf", str(d)], check=False)
+
     def test_legacy_done_changelog_skip_column(self):
         d = Path(tempfile.mkdtemp(prefix="im-legacy-skip-"))
         try:

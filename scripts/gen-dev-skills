@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""
+gen-dev-skills -- derive the project-local `-dev` skill copies from the
+                  canonical shipped sources
+
+Usage: gen-dev-skills [--check | --write] [--list]
+
+The skills are authored ONCE, canonically, under
+`share/issue-mgmt/skills/<name>.md` -- the same layout and the same bytes
+the formula installs at `<pkgshare>/skills/<name>.md`. The project-local
+dev-alias copies at `.claude/skills/<name>-dev/SKILL.md` are DERIVED from
+them by this script and are not hand-edited.
+
+Why the direction is this way round (IM-276 decision, 2026-11-12). The two
+variants genuinely differ in CONTENT, not just in filename: a dev session
+invoking `/issue-complete-dev` must be told to call the other DEV aliases,
+because those are what resolve in a project checkout, while an installed
+session must be told the canonical names. So exactly one side has to be
+derived. Through v3.4.0 the dev side was authored and staging renamed the
+FILE without ever rewriting the BODY, so all 15 shipped skills named
+`/issue-*-dev` commands that do not exist on a machine without this
+checkout -- and four guards missed it, every one of them because it derived
+both sides of its comparison from the dev tree. Authoring canonically puts
+the shipped bytes under the author's hands, which is the half that had no
+reader.
+
+The transform is deliberately narrow -- a skill reference carries the
+alias, a CLI invocation does not:
+
+  * the frontmatter `name:` value gains the `-dev` suffix, so the installed
+    copy's declared name matches the directory it installs as;
+  * a `/issue-*` Claude Code slash-command reference gains the suffix;
+  * an `issue <verb>` CLI invocation is NEVER touched -- `issue complete`
+    is the same command in both worlds -- and neither is a path that merely
+    contains the token (`.claude/issue-mgmt-sessions`), because only names
+    in the canonical skill set are rewritten and only at a word boundary.
+
+`strip_dev` is the inverse. It is what created the canonical sources from
+the pre-IM-276 dev bodies, and `tests/test_dev_skills.py` keeps using it to
+assert the pair is a bijection over the real corpus -- a one-way transform
+could silently lose content.
+
+Exit 0 when every dev copy matches what the canonical source generates,
+1 under --check when any has diverged (naming each), 2 on a usage or I/O
+error.
+
+Examples:
+  gen-dev-skills --check          # verdict only; the `make test` gate
+  gen-dev-skills --write          # regenerate the dev copies
+  gen-dev-skills --list           # show the canonical -> dev mapping
+"""
+
+import os
+import re
+import sys
+
+PROG = "gen-dev-skills"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The canonical sources ARE the shipped artifact: staging copies this
+# directory's files verbatim into <stage>/skills/ (see scripts/stage-skills).
+CANONICAL_DIR = os.path.join(REPO_ROOT, "share", "issue-mgmt", "skills")
+DEV_DIR = os.path.join(REPO_ROOT, ".claude", "skills")
+DEV_SUFFIX = "-dev"
+
+_FRONTMATTER_NAME_RE = re.compile(r"^name:[ \t]*(\S+)[ \t]*$")
+
+
+def die(msg, code=2):
+    sys.stderr.write("%s: %s\n" % (PROG, msg))
+    raise SystemExit(code)
+
+
+def canonical_names():
+    """Every canonical skill name, from the shipped source directory."""
+    try:
+        entries = sorted(os.listdir(CANONICAL_DIR))
+    except (IOError, OSError) as e:
+        die("cannot list the canonical skill sources %s: %s"
+            % (CANONICAL_DIR, e))
+    names = [e[: -len(".md")] for e in entries if e.endswith(".md")]
+    if not names:
+        die("no canonical skill sources under %s -- refusing to report an "
+            "empty skill set" % CANONICAL_DIR)
+    return names
+
+
+def canonical_path(name):
+    return os.path.join(CANONICAL_DIR, "%s.md" % name)
+
+
+def dev_path(name):
+    return os.path.join(DEV_DIR, "%s%s" % (name, DEV_SUFFIX), "SKILL.md")
+
+
+def _slash_re(names):
+    """`/<skill>` at a word boundary, for the known skill names only.
+
+    Longest name first and a trailing boundary so `/issue-show` cannot eat
+    `/issue-show-at`; a leading boundary so a path component is never
+    mistaken for a slash command (`.claude/issue-mgmt-sessions`).
+    """
+    alts = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+    return re.compile(
+        r"(?<![A-Za-z0-9_.\-])/(%s)(?![A-Za-z0-9_\-])" % alts
+    )
+
+
+def _split_frontmatter(text, path):
+    """(frontmatter_lines, rest) for a `---`-fenced YAML frontmatter block."""
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        die("%s does not open with a `---` frontmatter fence" % path)
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return lines[: i + 1], lines[i + 1:]
+    die("%s has an unterminated frontmatter fence" % path)
+
+
+def _rewrite_name(front, path, want_suffix, name):
+    """Set the frontmatter `name:` to <name> or <name>-dev. Fails loud."""
+    expected = name + (DEV_SUFFIX if want_suffix else "")
+    source = name + ("" if want_suffix else DEV_SUFFIX)
+    out, seen = [], False
+    for line in front:
+        m = _FRONTMATTER_NAME_RE.match(line)
+        if m:
+            if m.group(1) != source:
+                die("%s declares `name: %s`, but its filename says the "
+                    "skill is %r -- the declared name must match, since it "
+                    "is what the installed directory is checked against"
+                    % (path, m.group(1), source))
+            line = "name: %s" % expected
+            seen = True
+        out.append(line)
+    if not seen:
+        die("%s has no frontmatter `name:` line -- an installed skill "
+            "without one declares no name at all" % path)
+    return out
+
+
+def to_dev(text, name, names, path="<canonical>"):
+    """Canonical skill body -> dev-aliased body."""
+    front, rest = _split_frontmatter(text, path)
+    front = _rewrite_name(front, path, want_suffix=True, name=name)
+    body = _slash_re(names).sub(r"/\1%s" % DEV_SUFFIX, "\n".join(rest))
+    return "\n".join(front) + "\n" + body
+
+
+def strip_dev(text, name, names, path="<dev>"):
+    """Dev-aliased body -> canonical body (the inverse of to_dev)."""
+    front, rest = _split_frontmatter(text, path)
+    front = _rewrite_name(front, path, want_suffix=False, name=name)
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_.\-])/(%s)%s(?![A-Za-z0-9_\-])"
+        % ("|".join(re.escape(n) for n in sorted(names, key=len, reverse=True)),
+           re.escape(DEV_SUFFIX))
+    )
+    return "\n".join(front) + "\n" + pattern.sub(r"/\1", "\n".join(rest))
+
+
+def read(path):
+    try:
+        with open(path, "r") as fh:
+            return fh.read()
+    except (IOError, OSError) as e:
+        die("cannot read %s: %s" % (path, e))
+
+
+def generate():
+    """name -> (dev path, generated text) for every canonical source."""
+    names = canonical_names()
+    out = []
+    for name in names:
+        src = canonical_path(name)
+        out.append((name, dev_path(name),
+                    to_dev(read(src), name, names, path=src)))
+    return out
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+
+    mode = "check"
+    show_list = False
+    for arg in args:
+        if arg == "--write":
+            mode = "write"
+        elif arg == "--check":
+            mode = "check"
+        elif arg == "--list":
+            show_list = True
+        else:
+            die("unknown argument %r (try --help)" % arg)
+
+    rows = generate()
+
+    if show_list:
+        for name, dest, _text in rows:
+            print("%-26s -> %s" % (os.path.relpath(canonical_path(name),
+                                                   REPO_ROOT),
+                                   os.path.relpath(dest, REPO_ROOT)))
+        print()
+
+    if mode == "write":
+        written = 0
+        for name, dest, text in rows:
+            current = read(dest) if os.path.isfile(dest) else None
+            if current == text:
+                continue
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "w") as fh:
+                    fh.write(text)
+            except (IOError, OSError) as e:
+                die("cannot write %s: %s" % (dest, e))
+            written += 1
+            print("wrote %s" % os.path.relpath(dest, REPO_ROOT))
+        print("%s: %d dev skill copies derived from %s (%d rewritten)."
+              % (PROG, len(rows),
+                 os.path.relpath(CANONICAL_DIR, REPO_ROOT), written))
+        return 0
+
+    stale = []
+    for name, dest, text in rows:
+        if not os.path.isfile(dest):
+            stale.append((dest, "missing"))
+        elif read(dest) != text:
+            stale.append((dest, "diverged from its canonical source"))
+    if stale:
+        sys.stderr.write(
+            "%s: %d dev skill copy/copies do not match what "
+            "%s generates:\n\n" % (PROG, len(stale),
+                                   os.path.relpath(CANONICAL_DIR, REPO_ROOT))
+        )
+        for dest, why in stale:
+            sys.stderr.write("  - %s -- %s\n"
+                             % (os.path.relpath(dest, REPO_ROOT), why))
+        sys.stderr.write(
+            "\n  The dev copies are GENERATED. Author the change in\n"
+            "  %s/<name>.md and run `make dev-skills`; a hand edit to a\n"
+            "  dev copy is lost on the next regeneration, which is what\n"
+            "  this check exists to make loud.\n"
+            % os.path.relpath(CANONICAL_DIR, REPO_ROOT)
+        )
+        return 1
+    print("%s: all %d dev skill copies match their canonical sources."
+          % (PROG, len(rows)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

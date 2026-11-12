@@ -70,8 +70,9 @@ docker exec -u root "$CONTAINER" chmod 777 /mnt /mnt/dist
 docker cp "$TARBALL" "$CONTAINER:/mnt/dist/"
 docker cp "$PROJECT_ROOT/dist/issue-mgmt-im164-test.rb" "$CONTAINER:/mnt/dist/issue-mgmt.rb"
 
-# Close the skill chain end to end (IM-264). The host's
-# .claude/skills/*-dev is ground truth; everything downstream -- the
+# Close the skill chain end to end (IM-264). The host's shipped sources
+# under share/issue-mgmt/skills/ are ground truth (IM-276 re-pointed this
+# off the generated .claude/skills/*-dev copies); everything downstream -- the
 # tarball's skills/, the formula's directory install, <pkgshare>/skills/,
 # and ~/.claude/skills/ -- must carry exactly that many. This is the only
 # non-tautological link in the chain: both sides of every in-repo check are

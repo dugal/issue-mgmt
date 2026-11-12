@@ -31,7 +31,7 @@ from pathlib import Path
 
 from . import discover
 
-VERSION = "v3.4.0"
+VERSION = "v3.4.1"
 
 # The one place this verb names itself, so the manifest sees exactly one
 # name for it and `surface.self-naming` is checkable (IM-239). Declared

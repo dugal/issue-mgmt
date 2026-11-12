@@ -18,6 +18,10 @@ the checker cannot quietly become vacuous:
   * `concurrent-edit` membership comes from `lib/errors.py`,
   * a documented flag is checked against the verb it is declared passed to.
 
+Its input is the SHIPPED skill sources (`share/issue-mgmt/skills/<name>.md`).
+It read the derived `.claude/skills/*-dev` copies through v3.4.0 and stripped
+the alias to get the canonical name, which is why it could not see IM-276.
+
 The gate-bites negative cases are exercised against synthetic skill trees in a
 temp directory rather than by editing the real shipped skills.
 
@@ -52,7 +56,9 @@ def load_checker(repo_root=None):
     spec.loader.exec_module(module)
     if repo_root is not None:
         module.REPO_ROOT = str(repo_root)
-        module.SKILLS_DIR = os.path.join(str(repo_root), ".claude", "skills")
+        module.SKILLS_DIR = os.path.join(
+            str(repo_root), "share", "issue-mgmt", "skills"
+        )
         module.MANIFEST = os.path.join(
             str(repo_root), "docs", "cli-surface.json"
         )
@@ -85,9 +91,9 @@ class TestRealTreePasses(unittest.TestCase):
         module = load_checker()
         problems, rows = module.check()
         self.assertEqual(problems, [])
-        names = sorted(os.path.basename(p).replace("-dev", "")
+        names = sorted(os.path.basename(p)[: -len(".md")]
                        for p in os.listdir(module.SKILLS_DIR)
-                       if p.endswith("-dev"))
+                       if p.endswith(".md"))
         self.assertEqual(sorted(r[0] for r in rows), names)
         for skill, target, verb_class, _invoked in rows:
             self.assertTrue(target, "%s resolved to no verb" % skill)
@@ -158,7 +164,7 @@ class TestGateBites(unittest.TestCase):
         self.root = Path(self._tmp.name)
         (self.root / "docs").mkdir()
         (self.root / "lib").mkdir()
-        (self.root / ".claude" / "skills").mkdir(parents=True)
+        (self.root / "share" / "issue-mgmt" / "skills").mkdir(parents=True)
         shutil.copy(REPO_ROOT / "docs" / "cli-surface.json",
                     self.root / "docs" / "cli-surface.json")
         shutil.copy(REPO_ROOT / "lib" / "errors.py",
@@ -168,9 +174,8 @@ class TestGateBites(unittest.TestCase):
         self._tmp.cleanup()
 
     def write_skill(self, name, body):
-        d = self.root / ".claude" / "skills" / ("%s-dev" % name)
-        d.mkdir()
-        (d / "SKILL.md").write_text(body, encoding="utf-8")
+        d = self.root / "share" / "issue-mgmt" / "skills"
+        (d / ("%s.md" % name)).write_text(body, encoding="utf-8")
 
     def run_check(self):
         return load_checker(self.root).check()[0]

@@ -15,8 +15,11 @@
 #   - install-skills exits non-zero when the pkgshare is missing
 #     or empty
 #
-# Every skill name and count below is DERIVED from .claude/skills/*-dev via
-# lib.sh's shipped_skill_names (IM-264). A hand-maintained EXPECTED_SKILLS
+# Every skill name and count below is DERIVED from the SHIPPED sources
+# share/issue-mgmt/skills/*.md via lib.sh's shipped_skill_names (IM-264;
+# re-pointed off the derived .claude/skills/*-dev copies in IM-276, which is
+# the defect this script could not see while both sides of its comparison
+# came from the dev tree). A hand-maintained EXPECTED_SKILLS
 # literal lived here from v2.0.0 and declared 13 of the 15 shipped skills,
 # while being the only guard for gen-formula's own hand list -- two hand
 # lists compared to each other, neither to ground truth.
@@ -399,6 +402,10 @@ And confirm all $SHIPPED_SKILL_COUNT skills landed under ~/.claude/skills/
 as '<name>/SKILL.md' (no -dev suffix) -- this prints the diff, so empty
 output means the installed set matches what this tree ships:
 
-  diff <(ls -d .claude/skills/*-dev | xargs -n1 basename | sed 's/-dev\$//' | sort) \\
+  diff <(ls share/issue-mgmt/skills/*.md | xargs -n1 basename | sed 's/\.md\$//' | sort) \\
        <(ls -d ~/.claude/skills/issue-*/ | xargs -n1 basename | sort)
+
+And that no installed body carries the project-local alias (0 expected):
+
+  grep -rc -- '-dev' ~/.claude/skills/*/SKILL.md | awk -F: '{ n += \$2 } END { print n + 0 }'
 EOF

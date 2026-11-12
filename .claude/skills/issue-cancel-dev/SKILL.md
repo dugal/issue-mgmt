@@ -84,4 +84,4 @@ Always pass `--json` on the wrapped call. On a contract error stderr carries a s
 - Cancellation is reversible: `issue transition <id> open` (or `in-progress`) brings the issue back. Use `/issue-start-dev` for the latter.
 - Issue files must never be deleted from the store. Use this skill for any "remove" or "abandon" intent.
 - A successful `cancelled` leaves any `claim:` block in place. Optional housekeeping: release it with `issue transition <id> --release --claim-generation <N>`.
-- The `branch:` field is preserved on cancellation. If the branch was cleaned up locally, clear it with `/issue-edit-dev <id> --set branch=""`.
+- The `branch:` field is cleared by the transition. `cancelled` is terminal, and a terminal transition drops `branch:` unless an explicit `--branch` is passed, so there is no stale branch left to clean up by hand.

@@ -877,17 +877,16 @@
     {
       "clause": "surface.no-traceback",
       "issues": [
-        "IM-248"
+        "IM-282"
       ],
-      "note": "Needs every failure path exercised, which no manifest shows. IM-248 is the known survivor (issue create on non-TTY stdin)."
+      "note": "Needs every failure path exercised, which no manifest shows. IM-248 fixed the last known violation (issue create on non-TTY stdin) in v3.4.1, so the clause carries no live known violation and no waiver -- but no gate measures it, which is why it stays planned. IM-282 owns both that measurement gap and the missing owner check over this table."
     },
     {
       "clause": "surface.non-interactive",
       "issues": [
-        "IM-248",
-        "IM-252"
+        "IM-282"
       ],
-      "note": "Behavioral. IM-252 also left open whether the clause as written forbids a PIPED prompt answer, which two init-issue-project tests pin as a real capability."
+      "note": "Behavioral. IM-248 and IM-252 closed the two known violations; what stays open, and is what IM-282 carries, is whether the clause as written forbids a PIPED prompt answer, which two admin init-project tests pin as a real capability."
     },
     {
       "clause": "surface.preview-not-confirmation",

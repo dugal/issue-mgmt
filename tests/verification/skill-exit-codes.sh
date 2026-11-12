@@ -25,7 +25,9 @@ PROJECT_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 # copied into every new store by `issue admin init-store`, and both carrying
 # exit codes -- outside the one guard that checks them. IM-228 had to correct
 # the store templates by hand for exactly this reason.
-SKILL_GLOB="$PROJECT_ROOT"/.claude/skills/*-dev/SKILL.md
+# The SHIPPED skill bodies, not the derived dev copies (IM-276): the two
+# differ in content, and the shipped side is the one an installed agent runs.
+SKILL_GLOB="$PROJECT_ROOT"/share/issue-mgmt/skills/*.md
 SHIPPED_GLOB="$PROJECT_ROOT/share/issue-mgmt/CHEATSHEET.md $PROJECT_ROOT/share/store-template/LAYOUT.md $PROJECT_ROOT/share/store-template/README.md"
 ALL_GLOB="$SKILL_GLOB $SHIPPED_GLOB"
 ERRORS="$PROJECT_ROOT/lib/errors.py"

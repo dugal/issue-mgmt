@@ -208,5 +208,77 @@ class ValueQuoting(unittest.TestCase):
         self.assertIn("reason=no-claim", line)
 
 
+class UsageErrorShape(unittest.TestCase):
+    """IM-248: the exit-2 counterpart to PreconditionError.
+
+    A caller must be able to tell "fix your arguments" from "the state is
+    wrong" without reading prose, so the class fixes the exit code and the
+    condition key and leaves the discriminator in `reason`.
+    """
+
+    def test_is_a_contract_error_at_exit_2(self):
+        self.assertTrue(issubclass(errors.UsageError, errors.ContractError))
+        self.assertEqual(errors.UsageError("x").exit_code, errors.EXIT_USAGE)
+        self.assertEqual(errors.UsageError("x").error_class, "usage-error")
+
+    def test_key_value_line(self):
+        e = errors.UsageError("stdin is not a TTY",
+                              reason="non-interactive-stdin")
+        line = e.format_stderr("issue create")
+        self.assertTrue(line.startswith("issue create: error=usage-error"))
+        self.assertIn("reason=non-interactive-stdin", line)
+        self.assertIn('detail="stdin is not a TTY"', line)
+        self.assertEqual(len(line.splitlines()), 1)
+
+    def test_json_line(self):
+        e = errors.UsageError("stdin is not a TTY",
+                              reason="non-interactive-stdin")
+        obj = json.loads(e.format_stderr("issue create", json_mode=True))
+        self.assertEqual(obj["exit"], 2)
+        self.assertEqual(obj["class"], "usage-error")
+        self.assertEqual(obj["error"], "usage-error")
+        self.assertEqual(obj["reason"], "non-interactive-stdin")
+        self.assertEqual(obj["tool"], "issue create")
+
+
+class CreateNonInteractiveGuard(unittest.TestCase):
+    """IM-248: `issue create`'s zero-positional prompt needs a TTY.
+
+    The black-box side lives in `tests/verification/new-issue-store-mode.sh`;
+    these pin the two halves a shell test cannot reach -- that the probe
+    itself never raises, and that the refusal message names the non-
+    interactive form a caller is supposed to switch to.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(REPO_ROOT / "lib"))
+        from cli import create
+        cls.create = create
+
+    def test_probe_survives_a_stdin_that_raises(self):
+        class Exploding:
+            def isatty(self):
+                raise ValueError("I/O operation on closed file")
+
+        saved = sys.stdin
+        sys.stdin = Exploding()
+        try:
+            self.assertFalse(self.create._stdin_is_tty())
+        finally:
+            sys.stdin = saved
+
+    def test_probe_treats_a_missing_stdin_as_not_a_tty(self):
+        saved = sys.stdin
+        sys.stdin = None
+        try:
+            self.assertFalse(self.create._stdin_is_tty())
+        finally:
+            sys.stdin = saved
+
+    def test_help_text_names_the_tty_requirement(self):
+        self.assertIn("TTY", self.create._DESCRIPTION)
+
+
 if __name__ == "__main__":
     unittest.main()

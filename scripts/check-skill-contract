@@ -57,7 +57,12 @@ import sys
 PROG = "check-skill-contract"
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILLS_DIR = os.path.join(REPO_ROOT, ".claude", "skills")
+# The SHIPPED skill sources. Through v3.4.0 this read `.claude/skills/*-dev`
+# and STRIPPED the `-dev` suffix to derive the canonical name -- normalizing
+# away the very thing IM-276 turned out to need asserting. The canonical
+# bodies are now the authored artifact (the dev copies are generated from
+# them), so there is no alias to strip and nothing derived on this side.
+SKILLS_DIR = os.path.join(REPO_ROOT, "share", "issue-mgmt", "skills")
 MANIFEST = os.path.join(REPO_ROOT, "docs", "cli-surface.json")
 ERRORS_PY = os.path.join(REPO_ROOT, "lib", "errors.py")
 
@@ -182,11 +187,11 @@ def skill_files():
         die("cannot list %s: %s" % (SKILLS_DIR, e))
     out = []
     for name in entries:
-        if not name.endswith("-dev"):
+        if not name.endswith(".md"):
             continue
-        path = os.path.join(SKILLS_DIR, name, "SKILL.md")
+        path = os.path.join(SKILLS_DIR, name)
         if os.path.isfile(path):
-            out.append((name[: -len("-dev")], path))
+            out.append((name[: -len(".md")], path))
     if not out:
         die("no skills found under %s -- refusing to report an empty set"
             % SKILLS_DIR)

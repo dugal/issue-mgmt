@@ -276,7 +276,7 @@ is lock-free.
 
 | Verb | Purpose |
 |---|---|
-| `issue create` | Create an issue (interactive or non-interactive); seeds body via `--section`/`--from-file` |
+| `issue create` | Create an issue (non-interactive, or interactive from a terminal -- a bare invocation on non-TTY stdin exits 2 naming the non-interactive form); seeds body via `--section`/`--from-file` |
 | `issue show` | Read an issue end-to-end, or only frontmatter / named sections; multi-id batch |
 | `issue transition` | Drive the state machine; convenience verbs `start` / `complete` / `cancel` / `block` / `unblock`; lease flags `--claim` / `--renew` / `--release` |
 | `issue ready` | Readiness computed from frontmatter; `--actor` hides others' leases; `--limit` caps the ready list without silent truncation; `--filtered all` explains what is not claimable |

@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""
+check-shipped-skills -- assert the SHIPPED skill bodies name only commands
+                        that exist on the machine they are installed on
+
+Usage: check-shipped-skills [--from-dir DIR | --from-tarball PATH]
+                            [--list]
+
+A shipped skill is the program the model runs. If its body tells the agent
+to invoke `/issue-edit-dev`, or declares `name: issue-activity-dev` while
+installing as `~/.claude/skills/issue-activity/`, then on any machine
+without this project checked out it names a command that does not resolve
+-- a behavior bug, not a stale comment (the IM-228 / IM-265 class, and
+`surface.self-naming`: user-facing text names commands only in their
+current form).
+
+This guard reads the SHIPPED artifact. That is the whole point of it
+(IM-276): all four pre-existing guards missed the alias leak because each
+derived both sides of its comparison from `.claude/skills/*-dev`, so the
+alias sat on both sides and cancelled out --
+
+  * `scripts/check-skill-contract` STRIPPED `-dev` to derive the canonical
+    name, normalizing away the very thing that needed asserting;
+  * `tests/verification/im-029-homebrew.sh` derived both the expected skill
+    set and the synthetic pkgshare from the dev tree;
+  * `tests/verification/project-meta.sh` check [3] compares the skill SET,
+    never content;
+  * `tests/verification/skill-exit-codes.sh` checks exit codes and flags.
+
+So nothing here reads `.claude/skills/`. The two ground truths are:
+
+  [installed set]  the basenames of the staged/shipped skills directory
+                   under inspection -- `<name>.md` installs as
+                   `~/.claude/skills/<name>/SKILL.md`, so the shipped tree
+                   is itself the authority on which `/issue-*` commands a
+                   reader of these files will have;
+  [verb set]       the `VERB` / `TIER` declarations in `lib/cli/*.py` --
+                   the two constants the dispatcher itself routes on --
+                   read from the code rather than from the surface
+                   manifest, so the check holds for a tree with no
+                   manifest.
+
+Three conditions, each failing loud rather than skipping:
+
+  [name]    the frontmatter `name:` must equal the file's basename, which
+            is the directory the installer creates.
+  [command] every `/issue-*` slash-command reference in the body must be
+            an installed skill in the shipped set.
+  [verb]    every `issue <verb>` invocation inside a fenced block must
+            resolve to a real dispatcher verb.
+
+By default the input is produced by `scripts/stage-skills` into a temp
+directory -- the same staging implementation `make dist` uses, so no
+release target has to run and the bytes are the staged bytes. Point it at
+an installed tree (`--from-dir "$(brew --prefix)/share/issue-mgmt/skills"`)
+or a built tarball to check a published artifact.
+
+Exit 0 when every shipped body is clean, 1 naming each violation, 2 on a
+usage or I/O error.
+
+Examples:
+  check-shipped-skills
+  check-shipped-skills --from-dir "$(brew --prefix)/share/issue-mgmt/skills"
+  check-shipped-skills --from-tarball dist/issue-mgmt-v3.4.1.tar.gz
+"""
+
+import ast
+import os
+import re
+import subprocess
+import sys
+import tarfile
+import tempfile
+
+PROG = "check-shipped-skills"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STAGE_SKILLS = os.path.join(REPO_ROOT, "scripts", "stage-skills")
+LIB_DIR = os.path.join(REPO_ROOT, "lib")
+
+_FENCE_RE = re.compile(r"^\s*```")
+_FRONTMATTER_NAME_RE = re.compile(r"^name:[ \t]*(\S+)[ \t]*$")
+# A Claude Code slash command in this project's namespace. The leading
+# boundary keeps a path component out (`.claude/issue-mgmt-sessions`), and
+# the namespace restriction keeps placeholders out (`/path/to/store`).
+_SLASH_RE = re.compile(r"(?<![A-Za-z0-9_.\-])/(issue-[a-z0-9-]+)")
+# `issue <verb>` / `issue <group> <subverb>`, anywhere on a fenced line --
+# a real invocation is often wrapped, e.g. `X=$(issue transition ...)`.
+_INVOKE_RE = re.compile(r"\bissue\s+(admin\s+|history\s+)?([a-z][a-z-]*)")
+
+
+def die(msg, code=2):
+    sys.stderr.write("%s: %s\n" % (PROG, msg))
+    raise SystemExit(code)
+
+
+def verb_paths():
+    """Every `issue <verb>` path the dispatcher actually routes.
+
+    Read from the verb modules' own `VERB` / `TIER` declarations -- the
+    same two constants `lib/cli.discover` dispatches on -- so a verb added
+    or renamed moves this check with it and no second list has to agree.
+
+    Parsed rather than imported, for the reason `check-skill-contract`
+    parses `lib/errors.py`: the modules import their `lib/` siblings at
+    import time, so importing them needs a path setup whose failure modes
+    have nothing to do with what is being checked here.
+    """
+    verb_dir = os.path.join(LIB_DIR, "cli")
+    try:
+        entries = sorted(f for f in os.listdir(verb_dir)
+                         if f.endswith(".py"))
+    except (IOError, OSError) as e:
+        die("cannot list the dispatcher verb package %s: %s" % (verb_dir, e))
+    paths = set()
+    for entry in entries:
+        path = os.path.join(verb_dir, entry)
+        try:
+            with open(path, "r") as fh:
+                tree = ast.parse(fh.read(), filename=path)
+        except (IOError, OSError, SyntaxError) as e:
+            die("cannot parse %s: %s" % (path, e))
+        found = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if (isinstance(target, ast.Name)
+                        and target.id in ("VERB", "TIER")
+                        and isinstance(node.value, ast.Constant)
+                        and isinstance(node.value.value, str)):
+                    found[target.id] = node.value.value
+        if "VERB" not in found or "TIER" not in found:
+            continue  # lib/cli helpers (__init__, common, _reap) route nothing
+        verb, tier = found["VERB"], found["TIER"]
+        paths.add(verb if tier == "tier1" else "%s %s" % (tier, verb))
+    if not paths:
+        die("no verb modules found under %s -- refusing to check skill "
+            "invocations against an empty verb set" % verb_dir)
+    return paths
+
+
+def shipped_skills(directory):
+    """basename -> text, for every shipped skill markdown file."""
+    try:
+        entries = sorted(os.listdir(directory))
+    except (IOError, OSError) as e:
+        die("cannot list the shipped skills directory %s: %s"
+            % (directory, e))
+    out = {}
+    for entry in entries:
+        if not entry.endswith(".md"):
+            continue
+        path = os.path.join(directory, entry)
+        try:
+            with open(path, "r") as fh:
+                out[entry[: -len(".md")]] = fh.read()
+        except (IOError, OSError) as e:
+            die("cannot read %s: %s" % (path, e))
+    if not out:
+        die("no skill files under %s -- refusing to report an empty shipped "
+            "set clean" % directory)
+    return out
+
+
+def stage_into(directory):
+    """Run the project's own staging step into `directory`."""
+    result = subprocess.run([sys.executable, STAGE_SKILLS, directory],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        die("staging failed (%s): %s"
+            % (result.returncode, (result.stderr or result.stdout).strip()))
+
+
+def extract_from_tarball(tarball, directory):
+    """Pull the tarball's `skills/<name>.md` members into `directory`."""
+    found = 0
+    try:
+        with tarfile.open(tarball, "r:*") as tf:
+            for member in tf:
+                if not member.isfile():
+                    continue
+                parts = member.name.split("/")
+                if len(parts) < 2 or parts[-2] != "skills":
+                    continue
+                if not parts[-1].endswith(".md"):
+                    continue
+                fh = tf.extractfile(member)
+                if fh is None:
+                    continue
+                with open(os.path.join(directory, parts[-1]), "wb") as out:
+                    out.write(fh.read())
+                found += 1
+    except (tarfile.TarError, OSError) as e:
+        die("cannot read %s: %s" % (tarball, e))
+    if not found:
+        die("%s carries no skills/<name>.md members" % tarball)
+
+
+def check(directory):
+    """Return (problems, rows) for the shipped tree at `directory`."""
+    skills = shipped_skills(directory)
+    installed = set(skills)
+    verbs = verb_paths()
+    problems, rows = [], []
+
+    for name in sorted(skills):
+        text = skills[name]
+        lines = text.split("\n")
+        declared = None
+        in_frontmatter = False
+        in_fence = False
+        commands, invoked = set(), set()
+
+        for lineno, line in enumerate(lines, 1):
+            if lineno == 1 and line.strip() == "---":
+                in_frontmatter = True
+                continue
+            if in_frontmatter:
+                if line.strip() == "---":
+                    in_frontmatter = False
+                    continue
+                m = _FRONTMATTER_NAME_RE.match(line)
+                if m:
+                    declared = m.group(1)
+                continue
+            if _FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+
+            for m in _SLASH_RE.finditer(line):
+                command = m.group(1)
+                commands.add(command)
+                if command not in installed:
+                    problems.append(
+                        "%s.md:%d: names the command `/%s`, which is not an "
+                        "installed skill. The shipped set is %s, so on a "
+                        "machine without this project checked out that "
+                        "invocation does not resolve.\n      line: %s"
+                        % (name, lineno, command,
+                           ", ".join(sorted(installed)), line.strip())
+                    )
+            if not in_fence:
+                continue
+            for m in _INVOKE_RE.finditer(line):
+                path = ("%s %s" % ((m.group(1) or "").strip(),
+                                   m.group(2))).strip()
+                invoked.add(path)
+                if path not in verbs:
+                    problems.append(
+                        "%s.md:%d: invokes `issue %s`, which the dispatcher "
+                        "does not route. An agent running it gets exit 2.\n"
+                        "      line: %s" % (name, lineno, path, line.strip())
+                    )
+
+        if declared is None:
+            problems.append(
+                "%s.md: has no frontmatter `name:` line, so the installed "
+                "skill declares no name at all" % name
+            )
+        elif declared != name:
+            problems.append(
+                "%s.md: declares `name: %s`, but installs as "
+                "~/.claude/skills/%s/SKILL.md -- the declared name and the "
+                "directory disagree" % (name, declared, name)
+            )
+        rows.append((name, declared, sorted(commands), sorted(invoked)))
+
+    return problems, rows
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+
+    from_dir = None
+    from_tarball = None
+    show_list = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--from-dir":
+            i += 1
+            if i >= len(args):
+                die("--from-dir requires a directory")
+            from_dir = args[i]
+        elif arg == "--from-tarball":
+            i += 1
+            if i >= len(args):
+                die("--from-tarball requires a path")
+            from_tarball = args[i]
+        elif arg == "--list":
+            show_list = True
+        else:
+            die("unknown argument %r (try --help)" % arg)
+        i += 1
+    if from_dir and from_tarball:
+        die("--from-dir and --from-tarball are mutually exclusive")
+
+    tmp = None
+    try:
+        if from_dir:
+            directory, source = from_dir, "installed tree %s" % from_dir
+        else:
+            tmp = tempfile.mkdtemp(prefix="im276-shipped-")
+            directory = tmp
+            if from_tarball:
+                extract_from_tarball(from_tarball, directory)
+                source = "tarball %s" % from_tarball
+            else:
+                stage_into(directory)
+                source = "staging tree built by scripts/stage-skills"
+        problems, rows = check(directory)
+    finally:
+        if tmp:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if show_list:
+        print("%-24s %-24s %s" % ("shipped skill", "declared name",
+                                  "commands named"))
+        for name, declared, commands, _invoked in rows:
+            print("%-24s %-24s %s"
+                  % (name + ".md", declared,
+                     ", ".join("/%s" % c for c in commands) or "-"))
+        print()
+
+    if problems:
+        sys.stderr.write(
+            "%s: %d problem(s) in the shipped skill bodies (%s):\n\n"
+            % (PROG, len(problems), source)
+        )
+        for p in problems:
+            sys.stderr.write("  - %s\n" % p)
+        sys.stderr.write(
+            "\n  These are the bytes that install as "
+            "~/.claude/skills/<name>/SKILL.md. Author the fix in\n"
+            "  share/issue-mgmt/skills/<name>.md and run `make dev-skills`.\n"
+        )
+        return 1
+    print("%s: %d shipped skill bodies name only installed skills and real "
+          "`issue` verbs (%s)." % (PROG, len(rows), source))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

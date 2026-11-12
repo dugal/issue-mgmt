@@ -15,8 +15,10 @@ Exit codes match the flat binary: 0 success; 1 precondition (unregistered
 repo, prefix mismatch, non-git store mode without ``--repo``, unreadable
 ``--from-file``, missing template, invalid type/priority, wrong positional
 count); 2 argument/usage (``--section``/``--from-file`` mutual exclusion,
-malformed ``--section``). The store-commit-lock path surfaces the
-3-7 loser-side contract unchanged.
+malformed ``--section``, and -- since IM-248 -- the zero-positional form
+with a non-TTY stdin, which used to exit 1 through an unhandled
+``EOFError`` traceback out of the prompt). The store-commit-lock path
+surfaces the 3-7 loser-side contract unchanged.
 """
 
 from __future__ import annotations
@@ -62,7 +64,9 @@ VALID_PRIORITIES = ("high", "medium", "low")
 
 _DESCRIPTION = """\
 Create a new PREFIX-NNN issue file. Non-interactive with three positionals
-(title type priority); with none, prompts interactively.
+(title type priority); with none, prompts interactively -- which needs a TTY
+on stdin, and is otherwise refused with an argument error rather than a
+prompt nobody can answer.
 
 Store mode is selected (highest precedence) by --store ROOT, the
 ISSUE_STORE_ROOT environment variable, or a nearest
@@ -280,6 +284,20 @@ def _validate(value, options, label):
     return True
 
 
+def _stdin_is_tty() -> bool:
+    """Whether the zero-positional prompt has anyone to ask.
+
+    Defensive about the probe itself: a detached or already-closed stdin can
+    raise rather than answer, and a traceback out of the no-traceback guard
+    would be the funniest possible bug. An unanswerable probe reads as "not
+    a TTY", which is the refusing branch.
+    """
+    try:
+        return bool(sys.stdin is not None and sys.stdin.isatty())
+    except (OSError, ValueError):
+        return False
+
+
 def run(args) -> int:
     # --- argument shape / body-input validation (new-issue.sh order) ---
     section_pairs = []
@@ -302,6 +320,30 @@ def run(args) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # IM-248: the zero-positional form prompts, and an unanswerable prompt is
+    # an argv-shape problem -- knowable here, before any store is resolved or
+    # any directory created. `surface.non-interactive` requires the refusal to
+    # name what supplies the value instead; `surface.no-traceback` requires it
+    # to be a diagnostic rather than the EOFError `input()` raises on a closed
+    # stdin (and rather than the indefinite block a live pipe produced).
+    # Checked ahead of the stdin staging below so `--from-file -` cannot
+    # consume a stream the verb is about to refuse.
+    if not args.words and not _stdin_is_tty():
+        import errors as _errors
+        common.emit_error(
+            _errors.UsageError(
+                "stdin is not a TTY, so the interactive prompt for title, "
+                "type and priority cannot be answered -- pass them "
+                f"positionally instead ({PROG} TITLE TYPE PRIORITY), "
+                "seeding the body with --section NAME=TEXT or "
+                "--from-file PATH if wanted",
+                reason="non-interactive-stdin",
+            ),
+            prog=PROG,
+            json_mode=args.json_mode,
+        )
+        return _errors.EXIT_USAGE
 
     # Stage stdin / from-file content up front so I/O errors fail fast.
     from_file_staged = ""

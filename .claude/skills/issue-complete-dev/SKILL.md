@@ -88,4 +88,4 @@ Always pass `--json` on the wrapped call. On a contract error stderr carries a s
 - This skill does not check off plan.md items, edit `requirements.md`, or commit. Those are separate steps in the project's Task Completion Workflow and remain the user's call.
 - Terminal-to-terminal transitions are illegal: to move from `done` to `cancelled` or vice versa, transition through an active state (`open` or `in-progress`) first.
 - A successful `done` leaves any `claim:` block in place. Optional housekeeping: release it with `issue transition <id> --release --claim-generation <N>` (clears `claim:` + `lease_until`, preserves the generation). Leaving it is benign -- a done issue is out of every ready set and the lease lapses on its own.
-- The `branch:` field is preserved by default. Use `/issue-edit-dev <id> --set branch=""` to clear it after merge if desired (not required).
+- The `branch:` field is cleared by the transition. `done` is terminal, and a terminal transition drops `branch:` unless an explicit `--branch` is passed, so a completed issue carries no stale working branch and there is no follow-up command to run.

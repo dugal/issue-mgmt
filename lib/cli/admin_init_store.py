@@ -79,7 +79,7 @@ from pathlib import Path
 
 from . import common
 
-VERSION = "v3.4.0"
+VERSION = "v3.4.1"
 
 # The one place this verb names itself. Every diagnostic, usage line,
 # and `prog=` keyword formats through it, so the surface manifest sees
