@@ -208,7 +208,7 @@ tools, not per-issue lifecycle steps.
 - `issue admin validate FILE...` -- structural frontmatter linter (schema + id/filename/prefix).
 - `issue admin snapshot` -- one-shot catchup sweep; commits pending store state, else exit 0.
 - `issue admin reap` -- clear expired TTL leases (`--dry-run` to preview); never touches a valid lease.
-- `issue admin init-store PATH` -- scaffold or converge a store (idempotent).
+- `issue admin init-store --store ROOT` -- scaffold or converge a store (idempotent).
 - `issue admin init-project` -- register the current repo under a prefix in `<store>/.repos`.
 - `issue admin migrate --project PATH` -- one-shot copy of a project's `.issues/` into the store.
 - `issue admin selftest` -- end-to-end smoke against a throwaway temp store (no network, self-cleaning).

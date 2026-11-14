@@ -22,6 +22,8 @@ Checks, each keyed to the `surface.*` requirement it enforces:
   meaning-uniformity      surface.one-meaning-per-flag
   value-space             surface.one-meaning-per-flag
   synonym-uniformity      surface.vocabulary-registry
+  positional-vocabulary   surface.vocabulary-registry +
+                          surface.one-meaning-per-flag (IM-288)
   class-contract          surface.verb-class-contract
   long-flags-only         surface.long-flags-only
 
@@ -188,6 +190,48 @@ def validate_registry(registry):
                     f"flag {name} overrides to {override['concept']!r} with "
                     f"no owning issue; a second meaning for one spelling is "
                     f"a collision, and a collision needs an owner")
+
+    positionals = registry.get("positionals", [])
+    if not isinstance(positionals, list):
+        raise LintError("registry `positionals` is not a list")
+    seen = set()
+    for row in positionals:
+        if not isinstance(row, dict) or not row.get("verb") \
+                or not row.get("dest"):
+            raise LintError(f"positional row {row!r} names no verb/dest")
+        cid = row.get("concept")
+        where = f"positional {row['dest']!r} on {row['verb']}"
+        if cid is not None and cid not in concepts:
+            raise LintError(f"{where} points at unknown concept {cid!r}")
+        if cid is None and not row.get("meaning"):
+            raise LintError(f"{where} declares neither a concept nor a "
+                            f"meaning -- a declaration that says nothing "
+                            f"does no work")
+        if cid is None and row.get("licensed_by"):
+            raise LintError(f"{where} carries `licensed_by` but names no "
+                            f"concept; only a concept row has a spelling "
+                            f"divergence to license")
+        if cid is not None and row.get("meaning"):
+            raise LintError(f"{where} declares a `meaning` alongside concept "
+                            f"{cid!r}; the concept owns the meaning -- use "
+                            f"`note` for context")
+        key = (row["verb"], row["dest"], cid)
+        if key in seen:
+            raise LintError(f"duplicate declaration for {where}")
+        seen.add(key)
+
+    for ex in registry.get("class_contract", {}).get("exemptions", []):
+        if not isinstance(ex, dict) or not ex.get("verb") \
+                or not ex.get("flag"):
+            raise LintError(f"exemption {ex!r} names no verb/flag")
+        where = f"exemption for {ex['flag']} on {ex['verb']}"
+        if not ex.get("reason"):
+            raise LintError(f"{where} declares no reason")
+        if not ex.get("decided_by"):
+            raise LintError(
+                f"{where} names no deciding issue; an exemption is a "
+                f"permanent licence recorded through a decision issue, and "
+                f"a tracked gap belongs in `waivers` under an open owner")
     return registry
 
 
@@ -257,6 +301,15 @@ def flag_uses(manifest) -> dict:
     return uses
 
 
+def positional_uses(manifest) -> dict:
+    """(verb path, dest) -> positional entry."""
+    uses = {}
+    for verb in manifest["verbs"]:
+        for pos in verb.get("positionals", []):
+            uses[(verb["path"], pos["dest"])] = pos
+    return uses
+
+
 # --------------------------------------------------------------------------
 # checks
 
@@ -305,14 +358,13 @@ def check_meaning_uniformity(manifest, registry, findings, **_):
        override is declared today.
     2. Every DERIVABLE signal of an undeclared second meaning fails. A
        spelling bound to two argparse destinations under one concept is
-       that signal. The proxy is sound but incomplete, in two ways both
-       recorded in the registry's `unenforced` table rather than implied:
-       a second meaning under the SAME dest is invisible to it (`--prefix`
-       was declared that way on `admin init-project` / `admin migrate`
-       until IM-236 settled that the read and write uses are one concept),
-       and a concept spelled positionally on some verb is invisible to
-       every check here, since `flag_uses` reads `verb["flags"]` only
-       (IM-288).
+       that signal. The proxy is sound but incomplete: a second meaning
+       under the SAME dest is invisible to it (`--prefix` was declared
+       that way on `admin init-project` / `admin migrate` until IM-236
+       settled that the read and write uses are one concept). The other
+       historical blind spot -- a concept spelled positionally on some
+       verb -- is closed by `check_positional_vocabulary` (IM-288), which
+       reads the explicit `positionals` table rather than any dest proxy.
     """
     uses = flag_uses(manifest)
 
@@ -464,12 +516,108 @@ def check_synonym_uniformity(manifest, registry, findings, **_):
                     f"not re-learn the spelling per verb"))
 
 
+def check_positional_vocabulary(manifest, registry, findings, *,
+                                req_keys=None, **_):
+    """The positional half of the vocabulary (IM-288).
+
+    The spelling obligation binds positionals as well as flags
+    (`surface.one-meaning-per-flag`), so a write operand cannot leave the
+    vocabulary by being positional. A positional has no spelling to key on
+    and its dest is an implementation detail -- measured: a dest-keyed match
+    finds zero of the three known instances -- so the mapping is declared
+    explicitly in the registry's `positionals` table, one row per fact:
+    either "this verb names registered concept X positionally" (a `concept`
+    row) or "this operand is verb-local" (a `meaning` row).
+
+    Three findings, mirroring the flag checks:
+
+    - `unregistered-positional` / `obsolete-positional`: completeness in
+      both directions (`surface.vocabulary-registry`), so adding a
+      positional stays a deliberate act and a row cannot outlive its
+      operand. Obsolete rows are unwaivable, like every obsolete
+      declaration.
+    - `positional-spelling`: a concept row whose concept carries any live
+      flag spelling is one concept in two shapes -- the agent that learned
+      the flag on a neighboring verb exits 2 here -- unless the row carries
+      `licensed_by`, a [REQ:] key naming the documented capability that
+      makes the positional form deliberate (the same licence currency the
+      value-space deviations use). An unknown key is an unwaivable
+      `unknown-license` finding.
+
+    `synonym-uniformity` has no positional half (there is no second
+    spelling to accept), and `value-space` is deliberately not extended:
+    a positional's arity and shape are the verb's grammar, recorded per
+    verb in the manifest and reviewed on its diff.
+    """
+    if req_keys is None:
+        req_keys = requirement_keys()
+    uses = positional_uses(manifest)
+    live_flags = flag_uses(manifest)
+    declared = {}
+    for row in registry.get("positionals", []):
+        declared.setdefault((row["verb"], row["dest"]), []).append(row)
+
+    for verb_path, dest in sorted(set(uses) - set(declared)):
+        findings.append(Finding(
+            "surface.vocabulary-registry", "positional-vocabulary",
+            f"unregistered-positional:{verb_path}:{dest}",
+            f"`{verb_path}` carries the positional {dest!r}, which the "
+            f"vocabulary registry does not declare -- declare the registered "
+            f"concept it names, or its verb-local meaning, so the positional "
+            f"half of the surface stays inside the vocabulary"))
+
+    for verb_path, dest in sorted(set(declared) - set(uses)):
+        findings.append(Finding(
+            "surface.vocabulary-registry", "positional-vocabulary",
+            f"obsolete-positional:{verb_path}:{dest}",
+            f"the registry declares a positional {dest!r} on `{verb_path}`, "
+            f"which the surface no longer carries; a row for an operand that "
+            f"does not exist cannot go stale against the code -- remove it"))
+
+    for (verb_path, dest), rows in sorted(declared.items()):
+        if (verb_path, dest) not in uses:
+            continue
+        for row in rows:
+            cid = row.get("concept")
+            if not cid:
+                continue
+            spellings = [name for name in spellings_of(registry, cid)
+                         if name in live_flags]
+            if not spellings:
+                continue
+            licence = row.get("licensed_by")
+            if licence is not None:
+                if licence not in req_keys:
+                    findings.append(Finding(
+                        "surface.one-meaning-per-flag",
+                        "positional-vocabulary",
+                        f"unknown-license:{cid}@{verb_path}:{licence}",
+                        f"the positional {dest!r} on `{verb_path}` licenses "
+                        f"its spelling of {cid!r} with {licence!r}, which is "
+                        f"not a [REQ:] key in docs/requirements.md -- a "
+                        f"licence cites a documented capability, or it is "
+                        f"not a licence"))
+                continue
+            findings.append(Finding(
+                "surface.one-meaning-per-flag", "positional-vocabulary",
+                f"positional-spelling:{cid}@{verb_path}",
+                f"`{verb_path}` names concept {cid!r} in its positional "
+                f"{dest!r} while the surface spells that concept "
+                f"{', '.join(spellings)}; one concept, two shapes -- an "
+                f"agent that learned the flag on a neighboring verb exits 2 "
+                f"here. Converge the spelling, or license the operand with "
+                f"the requirement key documenting it"))
+
+
 def check_class_contract(manifest, registry, findings, **_):
     """surface.verb-class-contract, minus the `--store` column.
 
-    Exemptions are declared per (verb, flag) with a reason and are
-    shrink-only: an exemption for a verb that has since gained the flag
-    fails, so the list cannot outlive the gap it describes.
+    Exemptions are declared per (verb, flag) with a reason and the decision
+    issue that vetted it (`decided_by`, enforced by validate_registry), and
+    are shrink-only: an exemption for a verb that has since gained the flag
+    fails, so the list cannot outlive the gap it describes. An exemption is
+    a permanent licence that the flag's concept does not apply to the verb;
+    a tracked gap belongs in the waiver channel under an open owner.
     """
     contract = registry.get("class_contract", {})
     exemptions = {(e["verb"], e["flag"]): e
@@ -535,6 +683,7 @@ CHECKS = (
     check_meaning_uniformity,
     check_value_space,
     check_synonym_uniformity,
+    check_positional_vocabulary,
     check_class_contract,
     check_long_flags_only,
 )
@@ -547,6 +696,8 @@ UNWAIVABLE_PREFIXES = (
     "obsolete-waiver:", "closed-waiver-issue:", "obsolete-spelling:",
     "obsolete-deviation:", "obsolete-dest:", "obsolete-exemption:",
     "obsolete-collision:", "unreachable-exemption:", "unknown-license:",
+    "unknown-exemption-decision:",
+    "obsolete-positional:",
 )
 
 
@@ -556,7 +707,9 @@ def lint(manifest, registry, *, issue_status=None, req_keys=None):
     Returns (unwaived, waived) where `waived` pairs each suppressed finding
     with the waiver that suppressed it. `issue_status` is an optional
     callable mapping an issue id to its status; when given, a waiver naming
-    a closed issue is itself a finding. It is injected rather than resolved
+    a closed issue is itself a finding, and so is an exemption whose
+    `decided_by` the store does not have (closed is fine -- the field is
+    provenance, not ownership). It is injected rather than resolved
     here so the checks stay hermetic: tests point it at a fixture, the CLI
     points it at the real store.
     """
@@ -589,6 +742,18 @@ def lint(manifest, registry, *, issue_status=None, req_keys=None):
                     clause, "waiver-baseline", f"closed-waiver-issue:{key}",
                     f"the waiver for {key!r} names {waiver['issue']}, which "
                     f"the store does not have"))
+
+    if issue_status is not None:
+        for ex in registry.get("class_contract", {}).get("exemptions", []):
+            if issue_status(ex["decided_by"]) is None:
+                findings.append(Finding(
+                    "surface.verb-class-contract", "class-contract",
+                    f"unknown-exemption-decision:{ex['verb']}:{ex['flag']}",
+                    f"the exemption for {ex['flag']} on `{ex['verb']}` "
+                    f"records {ex['decided_by']} as the decision that "
+                    f"vetted it, which the store does not have. An "
+                    f"exemption's decided_by is provenance, so a closed "
+                    f"decision issue is fine -- a missing one is not"))
 
     unwaived, waived = [], []
     for finding in findings:

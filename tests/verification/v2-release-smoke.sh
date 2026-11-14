@@ -130,7 +130,7 @@ else
     # and failed check [5] against a scratch store while passing against the
     # operator store. Scaffolding with init-store means the two modes
     # exercise the same layout by construction.
-    "$ISSUE_INIT_STORE" "$STORE" --non-interactive >/dev/null \
+    "$ISSUE_INIT_STORE" --store "$STORE" --non-interactive >/dev/null \
         || { echo "FAIL: issue admin init-store failed for $STORE"; exit 1; }
 fi
 

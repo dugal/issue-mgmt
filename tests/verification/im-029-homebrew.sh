@@ -344,7 +344,7 @@ else
         git config --global user.email "$FIXTURE_EMAIL" 2>/dev/null
         git config --global init.defaultBranch main 2>/dev/null
 
-        "$PKG/bin/issue" admin init-store "$IDX_STORE" --non-interactive >/dev/null 2>&1
+        "$PKG/bin/issue" admin init-store --store "$IDX_STORE" --non-interactive >/dev/null 2>&1
         mkdir -p "$IDX_PROJ" && cd "$IDX_PROJ" && git init -q
         "$PKG/bin/issue" admin init-project --repo idx-proj --prefix IDX --non-interactive >/dev/null 2>&1
     ) || fail "installed-layout store scaffold/registration failed"

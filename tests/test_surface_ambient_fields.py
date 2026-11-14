@@ -134,7 +134,8 @@ RECIPES = {
                               "--json"]),),
     "issue admin reindex": ((WRITE, ["admin", "reindex", "--json"]),),
     "issue admin snapshot": ((WRITE, ["admin", "snapshot", "--json"]),),
-    "issue admin init-store": ((WRITE, ["admin", "init-store", "@store2",
+    "issue admin init-store": ((WRITE, ["admin", "init-store", "--store",
+                                        "@store2",
                                         "--non-interactive", "--json"]),),
     "issue admin init-project": ((WRITE, ["admin", "init-project", "--store",
                                           "@store", "--prefix", "PRC",
@@ -192,7 +193,8 @@ class AmbientFieldFixture(unittest.TestCase):
         cls.project.mkdir()
         cls.measured = {}
 
-        cls._run(["admin", "init-store", str(cls.store), "--non-interactive"])
+        cls._run(["admin", "init-store", "--store", str(cls.store),
+                  "--non-interactive"])
         cls._git(cls.project, "init", "--quiet")
         cls._run(["admin", "init-project", "--store", str(cls.store),
                   "--prefix", "PRB", "--non-interactive"], cwd=cls.project)

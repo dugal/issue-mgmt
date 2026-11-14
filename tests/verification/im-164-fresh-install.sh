@@ -150,7 +150,7 @@ git config --global user.name t
 git config --global user.email t@t
 STORE=/tmp/im164-store
 PROJ=/tmp/im164-proj
-issue admin init-store "$STORE" >/dev/null 2>&1
+issue admin init-store --store "$STORE" >/dev/null 2>&1
 [ -d "$STORE/.beads" ] && bad "init-store created a .beads/ index" \
     || ok "init-store creates no .beads/ index"
 mkdir -p "$PROJ" && cd "$PROJ" && git init -q .

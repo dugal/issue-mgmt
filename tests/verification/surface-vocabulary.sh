@@ -241,11 +241,12 @@ echo "[4] an empty baseline is the exit gate's success, not a failure"
 # ---------------------------------------------------------------------------
 
 # Simulate the state this phase drives toward: the waived violations fixed
-# AND their waivers gone. Each waiver key names the flag it is about, so
-# retiring that flag from BOTH sides -- the surface and the declarations
-# describing it -- is a self-consistent stand-in for whatever fix the owning
-# issue lands, without this script having to predict it. It stays valid once
-# the real baseline is empty, because there is then nothing to retire.
+# AND their waivers gone. Each waiver key names the surface element it is
+# about -- a flag, or a (concept, verb) positional pair -- so retiring that
+# element from BOTH sides, the surface and the declarations describing it,
+# is a self-consistent stand-in for whatever fix the owning issue lands,
+# without this script having to predict it. It stays valid once the real
+# baseline is empty, because there is then nothing to retire.
 # COVERS: surface.vocabulary-registry
 OUT=$(cd "$PROJECT_ROOT" && python3 - "$WORK" <<'PY'
 import copy
@@ -261,6 +262,19 @@ registry = copy.deepcopy(s.load_registry())
 
 flags = set()
 for waiver in registry["waivers"]:
+    spelled = re.match(r"positional-spelling:([a-z0-9-]+)@(.+)$",
+                       waiver["key"])
+    if spelled:
+        cid, verb_path = spelled.groups()
+        dests = {row["dest"] for row in registry["positionals"]
+                 if row["verb"] == verb_path and row.get("concept") == cid}
+        registry["positionals"] = [
+            row for row in registry["positionals"]
+            if not (row["verb"] == verb_path and row["dest"] in dests)]
+        entry = next(v for v in manifest["verbs"] if v["path"] == verb_path)
+        entry["positionals"] = [p for p in entry["positionals"]
+                                if p["dest"] not in dests]
+        continue
     found = re.search(r"--[a-z0-9-]+", waiver["key"])
     if found:
         flags.add(found.group(0))

@@ -43,14 +43,26 @@ v=$("$INIT_STORE" --version 2>&1)
 [[ "$v" =~ ^v[0-9] ]] && pass "--version prints v<digits> ($v)" \
     || fail "--version prints v<digits> (got: $v)"
 
-# --- Test 3: missing path argument exits non-zero ---
+# --- Test 3: missing --store argument exits 2 ---
 out=$("$INIT_STORE" 2>&1); rc=$?
-[[ $rc -ne 0 ]] && pass "no path argument fails" \
-    || fail "no path argument fails (rc=$rc)"
+[[ $rc -eq 2 ]] && [[ "$out" == *"--store"* ]] \
+    && pass "missing --store fails with exit 2 naming the flag" \
+    || fail "missing --store fails (rc=$rc out=$out)"
+
+# --- Test 3b: the retired positional spelling exits 2 as unrecognized ---
+# The store root is named --store on this verb exactly as on every other
+# verb that names one; the bare positional was a second shape for the one
+# registered concept and was retired on IM-287.
+# COVERS: surface.one-meaning-per-flag
+out=$("$INIT_STORE" "$WORKDIR/retired-form" 2>&1); rc=$?
+[[ $rc -eq 2 ]] && [[ "$out" == *"unrecognized arguments"* ]] \
+    && [[ ! -e "$WORKDIR/retired-form" ]] \
+    && pass "retired positional form exits 2 as an unrecognized argument" \
+    || fail "retired positional form (rc=$rc out=$out)"
 
 # --- Test 4: green-field scaffold creates all files + initial commit ---
 GREEN="$WORKDIR/green"
-out=$("$INIT_STORE" "$GREEN" 2>&1); rc=$?
+out=$("$INIT_STORE" --store "$GREEN" 2>&1); rc=$?
 if [[ $rc -eq 0 ]]; then
     # COVERS: substrate.init-issue-store
     pass "green-field exits 0"
@@ -95,7 +107,7 @@ fi
 
 # --- Test 8: idempotent re-run never overwrites ---
 sha_before=$(git -C "$GREEN" rev-parse HEAD)
-out=$("$INIT_STORE" "$GREEN" 2>&1); rc=$?
+out=$("$INIT_STORE" --store "$GREEN" 2>&1); rc=$?
 sha_after=$(git -C "$GREEN" rev-parse HEAD)
 if [[ $rc -eq 0 ]] \
    && [[ "$out" == *"present: README.md"* ]] \
@@ -109,7 +121,7 @@ fi
 DIRTY="$WORKDIR/dirty"
 mkdir -p "$DIRTY"
 echo "preexisting" > "$DIRTY/junk.txt"
-out=$("$INIT_STORE" "$DIRTY" 2>&1); rc=$?
+out=$("$INIT_STORE" --store "$DIRTY" 2>&1); rc=$?
 [[ $rc -ne 0 ]] && [[ "$out" == *"not a git repo and is not empty"* ]] \
     && pass "refuses non-empty non-git path" \
     || fail "refuses non-empty non-git path (rc=$rc out=$out)"
@@ -117,7 +129,7 @@ out=$("$INIT_STORE" "$DIRTY" 2>&1); rc=$?
 # --- Test 10: accepts empty existing dir ---
 EMPTY="$WORKDIR/empty"
 mkdir -p "$EMPTY"
-"$INIT_STORE" "$EMPTY" >/dev/null 2>&1 && [[ -f "$EMPTY/README.md" ]] \
+"$INIT_STORE" --store "$EMPTY" >/dev/null 2>&1 && [[ -f "$EMPTY/README.md" ]] \
     && pass "scaffolds into pre-existing empty dir" \
     || fail "scaffolds into pre-existing empty dir"
 
@@ -130,7 +142,7 @@ git -C "$PREGIT" config user.name test
 echo "preexisting" > "$PREGIT/something.txt"
 git -C "$PREGIT" add something.txt
 git -C "$PREGIT" commit -q -m "init"
-out=$("$INIT_STORE" "$PREGIT" 2>&1); rc=$?
+out=$("$INIT_STORE" --store "$PREGIT" 2>&1); rc=$?
 if [[ $rc -eq 0 ]] && [[ -f "$PREGIT/README.md" ]] \
    && [[ -f "$PREGIT/something.txt" ]]; then
     pass "scaffolds into pre-existing git repo, preserves existing content"
@@ -141,7 +153,7 @@ fi
 # --- Test 12: end-to-end -- green store + init-issue-project + new-issue ---
 E2E_STORE="$WORKDIR/e2e-store"
 E2E_REPO=$(mk_repo e2e-repo)
-"$INIT_STORE" "$E2E_STORE" >/dev/null 2>&1
+"$INIT_STORE" --store "$E2E_STORE" >/dev/null 2>&1
 # init-issue-store git-inits the store but does not set an identity; the
 # subsequent auto-commits (init-issue-project, new-issue) need one.
 # Set it repo-locally so the test is hermetic on a box with no global git
@@ -214,7 +226,7 @@ unset ISSUE_STORE_ROOT
 
 # --- Test 15: re-run on a populated live store exits 0 unmodified ---
 LIVE="$WORKDIR/live-store"
-"$INIT_STORE" "$LIVE" >/dev/null 2>&1
+"$INIT_STORE" --store "$LIVE" >/dev/null 2>&1
 git -C "$LIVE" config user.email "$FIXTURE_EMAIL"
 git -C "$LIVE" config user.name test
 mkdir -p "$LIVE/LV"
@@ -239,7 +251,7 @@ git -C "$LIVE" add LV/LV-001.md
 git -C "$LIVE" commit -q -m "seed LV-001"
 sha_before=$(git -C "$LIVE" rev-parse HEAD)
 issue_sha_before=$(shasum "$LIVE/LV/LV-001.md" | cut -d' ' -f1)
-out=$("$INIT_STORE" "$LIVE" 2>&1); rc=$?
+out=$("$INIT_STORE" --store "$LIVE" 2>&1); rc=$?
 sha_after=$(git -C "$LIVE" rev-parse HEAD)
 issue_sha_after=$(shasum "$LIVE/LV/LV-001.md" | cut -d' ' -f1)
 if [[ $rc -eq 0 ]] && [[ "$sha_before" == "$sha_after" ]] \

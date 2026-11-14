@@ -121,11 +121,23 @@ class RealTreeTests(unittest.TestCase):
         obsolete = sorted(set(self.registry["flags"]) - set(uses))
         self.assertEqual(obsolete, [])
 
-    def test_every_waiver_names_an_open_issue(self):
-        """The baseline's owners, read from the store when there is one.
+    def test_every_positional_is_declared(self):
+        uses = surface_lint.positional_uses(self.manifest)
+        declared = {(row["verb"], row["dest"])
+                    for row in self.registry["positionals"]}
+        self.assertEqual(sorted(set(uses) - declared), [])
+
+    def test_registry_declares_no_positional_the_cli_lacks(self):
+        uses = surface_lint.positional_uses(self.manifest)
+        declared = {(row["verb"], row["dest"])
+                    for row in self.registry["positionals"]}
+        self.assertEqual(sorted(declared - set(uses)), [])
+
+    def test_store_backed_issue_checks_pass(self):
+        """Waiver owners open, exemption decisions present, per the store.
 
         Skipped rather than failed without a store: the lint must stay
-        usable in a tree with no store attached, and this is the one check
+        usable in a tree with no store attached, and these are the checks
         that cannot be answered from the repo alone.
         """
         sys.path.insert(0, str(REPO_ROOT / "lib"))
@@ -151,6 +163,12 @@ class RealTreeTests(unittest.TestCase):
         offenders = sorted(f.key for f in unwaived
                            if f.key.startswith("closed-waiver-issue:"))
         self.assertEqual(offenders, [])
+        provenance = sorted(
+            f.key for f in unwaived
+            if f.key.startswith("unknown-exemption-decision:"))
+        self.assertEqual(provenance, [],
+                         "an exemption records a decision issue the store "
+                         "does not have")
 
     def test_lint_is_deterministic(self):
         first, _ = surface_lint.lint(self.manifest, self.registry)
@@ -339,7 +357,8 @@ class GateBitesTests(unittest.TestCase):
         registry = self.registry()
         registry["class_contract"]["exemptions"].append({
             "verb": "issue note", "flag": "--no-reindex",
-            "reason": "fixture: this verb does register it"})
+            "reason": "fixture: this verb does register it",
+            "decided_by": FIXTURE_ISSUE})
         unwaived, _ = self.run_lint(registry=registry)
         self.assertIn("obsolete-exemption:issue note:--no-reindex",
                       keys_of(unwaived))
@@ -348,10 +367,82 @@ class GateBitesTests(unittest.TestCase):
         registry = self.registry()
         registry["class_contract"]["exemptions"].append({
             "verb": "issue show", "flag": "--no-reindex",
-            "reason": "fixture: show is a point-read, never obliged"})
+            "reason": "fixture: show is a point-read, never obliged",
+            "decided_by": FIXTURE_ISSUE})
         unwaived, _ = self.run_lint(registry=registry)
         self.assertIn("unreachable-exemption:issue show:--no-reindex",
                       keys_of(unwaived))
+
+    def test_unregistered_positional_fails(self):
+        """A new positional must be declared, exactly like a new flag."""
+        manifest = self.manifest()
+        pos = copy.deepcopy(verb(manifest, "issue note")["positionals"][1])
+        pos.update(name="extra", dest="extra", metavar="EXTRA")
+        verb(manifest, "issue note")["positionals"].append(pos)
+        unwaived, _ = self.run_lint(manifest=manifest)
+        self.assertIn("unregistered-positional:issue note:extra",
+                      keys_of(unwaived))
+
+    def test_positional_spelling_divergence_fails_per_verb(self):
+        """A concept carried as a flag elsewhere and a positional here.
+
+        Injected on `issue search`'s query operand (synthetically re-pointed
+        at the status-filter concept, which `--status` spells on three
+        verbs) rather than keyed on any live violation -- the three real
+        instances are owned by IM-287 and leave with it, and a gate whose
+        fixture is the defect dies when the defect is fixed (the IM-273 /
+        IM-269 lesson).
+        """
+        registry = self.registry()
+        registry["positionals"].append({
+            "verb": "issue search", "dest": "query",
+            "concept": "status-filter"})
+        unwaived, _ = self.run_lint(registry=registry)
+        found = keys_of(unwaived)
+        self.assertIn("positional-spelling:status-filter@issue search",
+                      found)
+        for key in found:
+            if key.startswith("positional-spelling:"):
+                self.assertEqual(
+                    key, "positional-spelling:status-filter@issue search",
+                    "only the injected divergence should report unwaived; "
+                    "a finding on an untouched verb means the check is not "
+                    "per-row")
+
+    def test_obsolete_positional_row_cannot_be_waived(self):
+        """A row for an operand the surface lost fails, waiver or not."""
+        registry = self.registry()
+        registry["positionals"].append({
+            "verb": "issue show", "dest": "gone",
+            "meaning": "fixture: no such positional"})
+        registry["waivers"].append(fixture_waiver(
+            key="obsolete-positional:issue show:gone",
+            note="fixture: tries to keep a dead row"))
+        unwaived, _ = self.run_lint(registry=registry)
+        self.assertIn("obsolete-positional:issue show:gone",
+                      keys_of(unwaived))
+
+    def test_positional_licence_must_cite_a_real_requirement(self):
+        registry = self.registry()
+        registry["positionals"].append({
+            "verb": "issue search", "dest": "query",
+            "concept": "status-filter",
+            "licensed_by": "cli.made-this-up"})
+        unwaived, _ = self.run_lint(registry=registry)
+        self.assertIn(
+            "unknown-license:status-filter@issue search:cli.made-this-up",
+            keys_of(unwaived))
+
+    def test_licensed_positional_is_silent(self):
+        """A licence citing a documented capability ends the finding."""
+        registry = self.registry()
+        registry["positionals"].append({
+            "verb": "issue search", "dest": "query",
+            "concept": "status-filter",
+            "licensed_by": "cli.search-modes"})
+        unwaived, _ = self.run_lint(registry=registry)
+        self.assertNotIn("positional-spelling:status-filter@issue search",
+                         keys_of(unwaived))
 
     def test_short_flag_fails(self):
         manifest = self.manifest()
@@ -473,17 +564,33 @@ class WaiverBaselineTests(unittest.TestCase):
     def test_an_empty_baseline_lints_clean(self):
         """Zero waivers is a pass -- the state this phase is driving at.
 
-        Each waiver key names the flag it is about, so retiring that flag
-        from BOTH sides -- the surface and the declarations describing it --
-        stands in for whatever fix the owning issue lands, without this test
-        having to predict it. It stays valid once the real baseline is
-        empty: there is then nothing to retire and the committed pair is
-        checked as it stands.
+        Each waiver key names the surface element it is about -- a flag, or
+        a (concept, verb) positional pair -- so retiring that element from
+        BOTH sides, the surface and the declarations describing it, stands
+        in for whatever fix the owning issue lands, without this test having
+        to predict it. It stays valid once the real baseline is empty: there
+        is then nothing to retire and the committed pair is checked as it
+        stands.
         """
         manifest = copy.deepcopy(self.base_manifest)
         registry = copy.deepcopy(self.base_registry)
         flags = set()
         for waiver in registry["waivers"]:
+            spelled = re.match(r"positional-spelling:([a-z0-9-]+)@(.+)$",
+                               waiver["key"])
+            if spelled:
+                cid, verb_path = spelled.groups()
+                dests = {row["dest"] for row in registry["positionals"]
+                         if row["verb"] == verb_path
+                         and row.get("concept") == cid}
+                registry["positionals"] = [
+                    row for row in registry["positionals"]
+                    if not (row["verb"] == verb_path
+                            and row["dest"] in dests)]
+                entry = verb(manifest, verb_path)
+                entry["positionals"] = [p for p in entry["positionals"]
+                                        if p["dest"] not in dests]
+                continue
             found = re.search(r"--[a-z0-9-]+", waiver["key"])
             if found:
                 flags.add(found.group(0))
@@ -519,6 +626,72 @@ class WaiverBaselineTests(unittest.TestCase):
             with self.subTest(key=waiver["key"]):
                 self.assertRegex(waiver["issue"], r"^[A-Z]+-\d+$")
                 self.assertTrue(waiver["clause"].startswith("surface."))
+
+
+class ExemptionProvenanceTests(unittest.TestCase):
+    """An exemption's `decided_by` is provenance: existence, not openness.
+
+    An exemption is a permanent licensed declaration that a flag's concept
+    does not apply to a verb. The decision issue that vetted it closes when
+    the decision is recorded, so a closed `decided_by` is the normal state
+    and only one the store does not have is a finding -- the inverse of the
+    waiver channel, whose owner must stay OPEN because a waiver is a
+    tracked gap (IM-292; the two were confused once, on IM-271).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base_manifest = surface_lint.manifest_from_disk()
+        cls.base_registry = surface_lint.load_registry()
+        cls.req_keys = surface_lint.requirement_keys()
+
+    def lint(self, registry=None, **kw):
+        kw.setdefault("req_keys", self.req_keys)
+        return surface_lint.lint(
+            copy.deepcopy(self.base_manifest),
+            registry if registry is not None
+            else copy.deepcopy(self.base_registry), **kw)
+
+    def provenance_keys(self, findings):
+        return {f.key for f in findings
+                if f.key.startswith("unknown-exemption-decision:")}
+
+    def test_decision_issue_the_store_lacks_fails(self):
+        registry = copy.deepcopy(self.base_registry)
+        ex = registry["class_contract"]["exemptions"][0]
+        ex["decided_by"] = FIXTURE_ISSUE
+        unwaived, _ = self.lint(
+            registry=registry,
+            issue_status=lambda i: None if i == FIXTURE_ISSUE else "open")
+        self.assertIn(
+            f"unknown-exemption-decision:{ex['verb']}:{ex['flag']}",
+            self.provenance_keys(unwaived))
+
+    def test_closed_decision_issue_is_not_a_finding(self):
+        """Every decision issue reads as done; nothing may fire."""
+        unwaived, _ = self.lint(issue_status=lambda i: "done")
+        self.assertEqual(self.provenance_keys(unwaived), set())
+
+    def test_without_issue_status_provenance_is_not_checked(self):
+        """No store resolved means the check downgrades, like the waiver
+        owner check -- the store-backed run is the authoritative one."""
+        unwaived, _ = self.lint(issue_status=None)
+        self.assertEqual(self.provenance_keys(unwaived), set())
+
+    def test_provenance_finding_cannot_be_waived(self):
+        registry = copy.deepcopy(self.base_registry)
+        ex = registry["class_contract"]["exemptions"][0]
+        ex["decided_by"] = FIXTURE_ISSUE
+        key = f"unknown-exemption-decision:{ex['verb']}:{ex['flag']}"
+        registry["waivers"].append(fixture_waiver(
+            key=key, clause="surface.verb-class-contract",
+            note="fixture: tries to hide missing provenance"))
+        unwaived, _ = self.lint(
+            registry=registry,
+            issue_status=lambda i: None if i == FIXTURE_ISSUE else "open")
+        self.assertIn(key, self.provenance_keys(unwaived),
+                      "waiving a provenance finding would let an exemption "
+                      "outlive the record of who granted it")
 
 
 class RegistryIntegrityTests(unittest.TestCase):
@@ -582,6 +755,51 @@ class RegistryIntegrityTests(unittest.TestCase):
         self.registry["concepts"]["result-limit"].pop("meaning")
         self.assertRefused(self.registry, "meaning")
 
+    def test_positional_row_without_verb_refused(self):
+        self.registry["positionals"].append({"dest": "x", "meaning": "x"})
+        self.assertRefused(self.registry, "names no verb/dest")
+
+    def test_positional_row_with_unknown_concept_refused(self):
+        self.registry["positionals"].append({
+            "verb": "issue search", "dest": "query", "concept": "page-size"})
+        self.assertRefused(self.registry, "unknown concept")
+
+    def test_positional_row_saying_nothing_refused(self):
+        self.registry["positionals"].append({
+            "verb": "issue search", "dest": "query"})
+        self.assertRefused(self.registry, "neither a concept nor a meaning")
+
+    def test_positional_licence_without_a_concept_refused(self):
+        self.registry["positionals"].append({
+            "verb": "issue search", "dest": "query",
+            "meaning": "fixture", "licensed_by": "cli.search-modes"})
+        self.assertRefused(self.registry, "names no concept")
+
+    def test_positional_meaning_alongside_a_concept_refused(self):
+        self.registry["positionals"].append({
+            "verb": "issue search", "dest": "query",
+            "concept": "status-filter", "meaning": "fixture"})
+        self.assertRefused(self.registry, "the concept owns the meaning")
+
+    def test_duplicate_positional_row_refused(self):
+        self.registry["positionals"].append(
+            dict(self.registry["positionals"][0]))
+        self.assertRefused(self.registry, "duplicate declaration")
+
+    def test_exemption_without_a_reason_refused(self):
+        self.registry["class_contract"]["exemptions"][0].pop("reason")
+        self.assertRefused(self.registry, "declares no reason")
+
+    def test_exemption_without_a_deciding_issue_refused(self):
+        """A licence records the decision that granted it (IM-292).
+
+        This is what keeps a sixth exemption from absorbing a future real
+        gap behind a plausible free-text sentence: the entry cannot exist
+        without naming the decision issue that vetted it.
+        """
+        self.registry["class_contract"]["exemptions"][0].pop("decided_by")
+        self.assertRefused(self.registry, "no deciding issue")
+
 
 class ClausePartitionTests(unittest.TestCase):
     """Every `surface.*` clause is either checked here or declared unchecked.
@@ -615,6 +833,17 @@ class ClausePartitionTests(unittest.TestCase):
         flag_entry(manifest, "issue index", "--limit")["names"] = [
             "-n", "--limit"]
         more, _ = surface_lint.lint(manifest, self.registry,
+                                    req_keys=self.req_keys)
+        for finding in more:
+            clauses.add(finding.clause)
+        # one-meaning-per-flag likewise has no live instance once the
+        # positional baseline converges (IM-287), so provoke a
+        # positional-spelling divergence the same way.
+        registry = copy.deepcopy(self.registry)
+        registry["positionals"].append({
+            "verb": "issue search", "dest": "query",
+            "concept": "status-filter"})
+        more, _ = surface_lint.lint(self.manifest, registry,
                                     req_keys=self.req_keys)
         for finding in more:
             clauses.add(finding.clause)

@@ -31,7 +31,7 @@ from pathlib import Path
 
 from . import discover
 
-VERSION = "v3.5.0"
+VERSION = "v3.6.0"
 
 # The one place this verb names itself, so the manifest sees exactly one
 # name for it and `surface.self-naming` is checkable (IM-239). Declared
@@ -185,7 +185,7 @@ def _run_smoke(checks, *, json_mode=False):
             )
 
         # --- 1. store scaffold ------------------------------------------
-        if run_cli("admin init-store", store, "--non-interactive").returncode != 0:
+        if run_cli("admin init-store", "--store", store, "--non-interactive").returncode != 0:
             raise _Fail("issue admin init-store: scaffold exited non-zero")
         if not (
             os.path.isfile(os.path.join(store, "INDEX.md"))

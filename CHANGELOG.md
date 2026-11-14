@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+## [v3.6.0] - 2026-11-14
+
+### Added
+- The surface lint reads positionals. The vocabulary registry gains a
+  `positionals` table declaring every positional on the manifest -- either
+  as a registered concept the verb names positionally or as a verb-local
+  operand -- and a new `positional-vocabulary` check enforces completeness
+  in both directions plus the one-shape-per-concept rule: a concept carried
+  as a flag on one verb and a positional on another is a finding unless the
+  row carries a `licensed_by` requirement key. The mapping is explicit by
+  measurement: a dest-keyed check finds zero of the three live instances
+  (`store-root` declares dest `store` against `admin init-store`'s
+  positional `path`). Adopting the check moved the waiver baseline 0 -> 3,
+  all owned by the issue owning the converge-or-license decision, and that
+  decision (below) returned it to 0 in the same release; the `unenforced`
+  entry recording the blind spot is removed.
+
+### Changed
+- `surface.verb-class-contract` licenses declared inapplicability for the
+  per-class flag obligations, in the same form it already licensed the
+  store column: a verb to which an obliged flag's concept does not apply
+  (a `--no-reindex` on the index regenerator, a `--lock-timeout` on a verb
+  that acquires no per-issue lock) satisfies the contract through a
+  registry exemption stating why. Reworded on IM-292 rather than waived,
+  per the IM-250 / IM-251 / IM-254 / IM-284 precedent -- the lint's green
+  verdict had rested on five exemptions the clause's text did not license.
+  The exemption channel also gains its discipline: an exemption is a
+  permanent licensed declaration, distinct from a waiver's tracked gap,
+  and each must name the decision issue that vetted it (`decided_by`,
+  refused by the registry validator when absent). `--check-issues` now
+  verifies that issue exists in the store -- any status, because the field
+  is provenance rather than ownership -- so a future real gap can no
+  longer be absorbed as a sixth exemption behind a plausible free-text
+  sentence alone (how IM-271's defect hid). No CLI surface change; the
+  manifest is byte-identical.
+
+- `issue admin init-store` names its destination `--store ROOT`, the
+  spelling every other verb uses for a store root; the bare positional
+  form exits 2 as an unrecognized argument. DECLARED REMOVAL, shipping as
+  a MINOR with an explicit recorded override on IM-287 (no external
+  consumers, the v2.5.0 / v2.11.0 / v3.5.0 reasoning). The other two
+  measured positional instances are licensed rather than converged, each
+  recorded in the vocabulary registry with the requirement key that
+  documents the form: `issue create "title" type priority` is the
+  documented non-interactive creation form, and
+  `issue transition <id> <state>` is the transition primitive's documented
+  grammar. The shipped CHEATSHEET.md changed, so run
+  `issue admin install-skills` after upgrading.
+
 ## [v3.5.0] - 2026-11-14
 
 ### Changed

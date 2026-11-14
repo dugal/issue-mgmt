@@ -116,7 +116,7 @@ assert_help_documents_json() {
 }
 
 mk_store() {
-    "$ISSUE" admin init-store "$1" --non-interactive >/dev/null 2>&1
+    "$ISSUE" admin init-store --store "$1" --non-interactive >/dev/null 2>&1
 }
 
 ###########################################################################
@@ -129,7 +129,7 @@ assert_help_documents_json init-store
 # Preview run. --dry-run and --json compose; the preview marker is the
 # `dry_run` boolean, the same field name admin reap --json already uses
 # (agreed with IM-259, which owns --dry-run on the remaining verbs).
-"$ISSUE" admin init-store "$WORKDIR/s1" --dry-run --json \
+"$ISSUE" admin init-store --store "$WORKDIR/s1" --dry-run --json \
     >"$WORKDIR/is-dry.out" 2>"$WORKDIR/is-dry.err"
 rc=$?
 [ "$rc" = 0 ] && pass "init-store --dry-run --json exits 0" \
@@ -148,7 +148,7 @@ assert_json_field "init-store --dry-run --json plans all five seeds" \
     || fail "init-store --dry-run created $WORKDIR/s1"
 
 # Real run.
-"$ISSUE" admin init-store "$WORKDIR/s1" --json \
+"$ISSUE" admin init-store --store "$WORKDIR/s1" --json \
     >"$WORKDIR/is-real.out" 2>/dev/null
 # COVERS: output.json-stable
 assert_one_json "init-store --json" "$WORKDIR/is-real.out"
@@ -159,7 +159,7 @@ assert_json_field "init-store --json reports the scaffold it performed" \
 
 # Idempotent convergence re-run: same keys, different values. Shape is a
 # function of argv, never of store state.
-"$ISSUE" admin init-store "$WORKDIR/s1" --json \
+"$ISSUE" admin init-store --store "$WORKDIR/s1" --json \
     >"$WORKDIR/is-again.out" 2>/dev/null
 # COVERS: output.json-stable
 assert_keys "init-store --json (converge)" "$WORKDIR/is-again.out" \
@@ -171,7 +171,7 @@ assert_json_field "init-store --json converge: nothing seeded, nothing committed
 
 # Human mode is untouched by the addition (surface.explicit-output-mode:
 # text is the default, --json the opt-in).
-out=$("$ISSUE" admin init-store "$WORKDIR/s1" 2>/dev/null)
+out=$("$ISSUE" admin init-store --store "$WORKDIR/s1" 2>/dev/null)
 echo "$out" | grep -q "^store: " \
     && pass "init-store without --json still prints the human report" \
     || fail "init-store human report changed: $out"

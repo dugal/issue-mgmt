@@ -13,32 +13,37 @@
     },
     "exemptions": [
       {
+        "decided_by": "IM-246",
         "flag": "--no-reindex",
         "reason": "This verb IS the index regenerator; a flag suppressing its own work would name nothing.",
         "verb": "issue admin reindex"
       },
       {
+        "decided_by": "IM-246",
         "flag": "--lock-timeout",
         "reason": "Takes the INDEX lock, not a per-issue write lock, so it has no per-issue acquisition to bound. Under IM-242 ('the name follows the lock') a bound here would be a third concept, which nothing has asked for.",
         "verb": "issue admin reindex"
       },
       {
+        "decided_by": "IM-246",
         "flag": "--lock-timeout",
         "reason": "The catchup sweep takes only the store-wide commit lock, bounded by --commit-timeout.",
         "verb": "issue admin snapshot"
       },
       {
+        "decided_by": "IM-246",
         "flag": "--no-reindex",
         "reason": "The sweep commits pending store state and runs no index regeneration of its own.",
         "verb": "issue admin snapshot"
       },
       {
+        "decided_by": "IM-246",
         "flag": "--no-reindex",
         "reason": "Migration's index write is part of its two-commit contract (IM-054), not an optional post-step.",
         "verb": "issue admin migrate"
       }
     ],
-    "note": "The `--store` column of surface.verb-class-contract is checked against the four-valued `store` declaration by IM-245 in tests/test_cli_surface.py, not here -- one authority per rule."
+    "note": "The `--store` column of surface.verb-class-contract is checked against the four-valued `store` declaration by IM-245 in tests/test_cli_surface.py, not here -- one authority per rule. An exemption is a permanent licensed declaration that a flag's concept does not apply to a verb -- never a tracked gap, which belongs in `waivers` under an open owner. Each names the decision issue that vetted it in `decided_by` (required; `--check-issues` verifies that issue exists in the store, any status, because the field is provenance rather than ownership). Discipline decided on IM-292."
   },
   "concepts": {
     "add-dep": {
@@ -525,7 +530,7 @@
       "dests": [
         "store"
       ],
-      "meaning": "Override the store root, highest precedence in the resolution chain.",
+      "meaning": "The store root the invocation operates on -- the highest-precedence override in the resolution chain on verbs that resolve a store, and the destination on the scaffolding verb that creates or converges one; which follows from the verb (the IM-236 admissibility rule).",
       "value_space": "one/single/scalar"
     },
     "target-state": {
@@ -750,6 +755,117 @@
       "concept": "help-output"
     }
   },
+  "positionals": [
+    {
+      "dest": "issues_dir",
+      "meaning": "A legacy .issues/ directory to reindex -- a distinct concept from a store root; passing both this and --store is an argument error.",
+      "verb": "issue admin reindex"
+    },
+    {
+      "dest": "files",
+      "meaning": "The issue file(s) to lint.",
+      "verb": "issue admin validate"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue block"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue cancel"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue complete"
+    },
+    {
+      "concept": "issue-type",
+      "dest": "words",
+      "licensed_by": "cli.subcommand-surface",
+      "note": "The fused TITLE TYPE PRIORITY operand is the documented non-interactive creation form (README, shipped CHEATSHEET, skills); the TYPE word carries the issue-type concept list/search spell --type. Licensed on IM-287: respelling the documented form would be the worse surface.",
+      "verb": "issue create"
+    },
+    {
+      "dest": "command",
+      "meaning": "The dep operation: add, remove, or list.",
+      "verb": "issue dep"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue dep"
+    },
+    {
+      "dest": "operand",
+      "meaning": "The dependency-edge target, fused KIND:TARGET or bare TARGET alongside --kind.",
+      "verb": "issue dep"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue edit"
+    },
+    {
+      "dest": "id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue history at"
+    },
+    {
+      "dest": "term",
+      "meaning": "The literal term the pickaxe searches history for.",
+      "verb": "issue history search"
+    },
+    {
+      "dest": "id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue history show"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue note"
+    },
+    {
+      "dest": "text",
+      "meaning": "The note text to append.",
+      "verb": "issue note"
+    },
+    {
+      "dest": "query",
+      "meaning": "The free-text query matched against title and body.",
+      "verb": "issue search"
+    },
+    {
+      "dest": "ids",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue show"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue start"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue transition"
+    },
+    {
+      "concept": "target-state",
+      "dest": "new_state",
+      "licensed_by": "state.canonical-states",
+      "note": "The transition primitive's documented grammar is `issue transition <id> <state>`; the state operand IS the verb. `issue unblock` spells the registered concept --to as an optional return-state selector. Licensed on IM-287 rather than converged: forcing --to onto the primitive would respell the documented form every caller carries.",
+      "verb": "issue transition"
+    },
+    {
+      "dest": "issue_id",
+      "meaning": "The issue id(s) the invocation operates on.",
+      "verb": "issue unblock"
+    }
+  ],
   "schema": 1,
   "short_flags": [
     "-h"
@@ -810,15 +926,6 @@
     {
       "clause": "surface.verb-class-contract",
       "enforced_by": "this lint, except the --store column (IM-245 checks that against the store declaration)",
-      "partial": true
-    },
-    {
-      "clause": "surface.one-meaning-per-flag",
-      "enforced_by": "this lint, over flag registrations only -- `flag_uses()` never reads a verb's positionals",
-      "issues": [
-        "IM-288"
-      ],
-      "note": "IM-236 bound the clause across a concept's read and write uses, and across positionals as well as flags. The flag half is checked here. The positional half is not checked at all: the manifest has recorded positionals since IM-245 and no check reads them, which is why `admin init-store` spelling a store root as the positional `path` (IM-287) went unreported. IM-288 owns the check.",
       "partial": true
     }
   ],

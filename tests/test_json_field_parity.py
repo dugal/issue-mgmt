@@ -162,7 +162,8 @@ class JsonFieldParityBase(unittest.TestCase):
         cls.project = cls.tmp / "project"
         cls.project.mkdir(parents=True)
 
-        cls._run_raw(["admin", "init-store", str(cls.store), "--non-interactive"])
+        cls._run_raw(["admin", "init-store", "--store", str(cls.store),
+                      "--non-interactive"])
         cls._git(cls.project, "init", "--quiet")
         cls._git(cls.project, "config", "user.email", FIXTURE_EMAIL)
         cls._git(cls.project, "config", "user.name", "fixture")

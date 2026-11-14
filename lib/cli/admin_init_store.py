@@ -2,11 +2,11 @@
 issue admin init-store -- scaffold a new issues store / converge an existing one
 
 Synopsis:
-  issue admin init-store <path> [--non-interactive]
+  issue admin init-store --store ROOT [--non-interactive]
                          [--dry-run] [--json]
                          [-h | --help] [--version]
 
-Creates a fresh issues store at <path>: makes the directory, initializes
+Creates a fresh issues store at ROOT: makes the directory, initializes
 a git repo (`-b main`), and seeds the canonical README.md, LAYOUT.md,
 .gitignore, INDEX.md, and ISSUE-TEMPLATE.md scaffolds. On an existing
 store -- green-field or live and populated -- it reports each file as
@@ -23,6 +23,12 @@ copied byte-identically from the Homebrew generic so the seed matches
 the default template that ships with this release.
 
 Options:
+  --store ROOT       Destination store root to scaffold or converge.
+                     Required; the scaffolder never falls through the
+                     store-resolution chain, so the target is always
+                     explicit. (Named the way every verb names a store
+                     root; the bare positional form was retired in favor
+                     of --store.)
   --non-interactive  Never prompt.
   --dry-run          Report every scaffold action that would run and
                      change nothing.
@@ -60,13 +66,13 @@ Exit codes:
   0  success (including idempotent re-run on an existing store)
   1  precondition failed (non-empty non-git path, missing template
      resources)
-  2  argument/usage error (missing <path>)
+  2  argument/usage error (missing --store)
 
 Examples:
-  issue admin init-store ~/issues-store
-  issue admin init-store /tmp/new-store --non-interactive
-  issue admin init-store --dry-run ~/issues-store
-  issue admin init-store --json ~/issues-store
+  issue admin init-store --store ~/issues-store
+  issue admin init-store --store /tmp/new-store --non-interactive
+  issue admin init-store --dry-run --store ~/issues-store
+  issue admin init-store --json --store ~/issues-store
 """
 
 import argparse
@@ -79,7 +85,7 @@ from pathlib import Path
 
 from . import common
 
-VERSION = "v3.5.0"
+VERSION = "v3.6.0"
 
 # The one place this verb names itself. Every diagnostic, usage line,
 # and `prog=` keyword formats through it, so the surface manifest sees
@@ -112,7 +118,8 @@ def build_parser():
         description="Scaffold a new issues store / converge an existing one.",
         add_help=False,
     )
-    p.add_argument("path", nargs="?", help="Destination store root.")
+    p.add_argument("--store", default=None, metavar="ROOT",
+                   help="Destination store root to scaffold or converge.")
     p.add_argument("--non-interactive", action="store_true",
                    help="Never prompt.")
     p.add_argument("--dry-run", action="store_true",
@@ -400,10 +407,10 @@ def main(argv=None):
         print(VERSION)
         sys.exit(0)
 
-    if not args.path:
-        die("missing required <path> argument; see --help", code=2)
+    if not args.store:
+        die("missing required --store ROOT argument; see --help", code=2)
 
-    store = Path(args.path).expanduser().resolve()
+    store = Path(args.store).expanduser().resolve()
 
     prefix = script_prefix()
     template_dir = resolve_store_template_dir(prefix)
@@ -439,8 +446,10 @@ ORDER = 10
 
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "scaffolding"
-# IM-251: the positional <path> IS the store root.
-SURFACE_STORE = "positional"
+# IM-287: the destination is named --store, the spelling every verb uses
+# for a store root. "flag" rather than resolution-chain semantics: the
+# scaffolder requires the flag and never falls through the chain.
+SURFACE_STORE = "flag"
 # IM-254: `unconverted` until every failure path on this verb carries the
 # key=value payload; the set is enumerated, never waived, and only shrinks
 # (conversion work is IM-260).

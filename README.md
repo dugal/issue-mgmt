@@ -74,8 +74,10 @@ query, transition, and reason over it programmatically. Concretely:
   so parallel sessions hand work off atomically instead of by convention.
 - **One vocabulary across the whole surface.** A flag name means one thing on
   every verb; a spelling accepted for a concept on one verb is accepted on
-  every verb that carries it; and every multi-value filter accumulates the
-  same way. So an agent composes a call to a verb it has not used before out
+  every verb that carries it; every multi-value filter accumulates the
+  same way; and the vocabulary binds positionals as well as flags, so a
+  concept does not pick up a second spelling by being a verb's operand. So an
+  agent composes a call to a verb it has not used before out
   of what it learned on a neighboring one, instead of rediscovering per-verb
   exceptions. The surface is recorded in a committed manifest and
   checked against a flag-vocabulary registry by the test suite, so a drift
@@ -126,7 +128,7 @@ issue admin selftest
 
 ```bash
 # 1. Scaffold a store (a git repo that holds your issues, outside any project).
-issue admin init-store ~/issues-store
+issue admin init-store --store ~/issues-store
 
 # 2. Point a project at it and give it an ID prefix. A project must be a git
 #    repository -- issue-mgmt keys the registry on git identity. Starting from

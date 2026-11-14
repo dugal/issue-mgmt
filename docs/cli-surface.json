@@ -11,7 +11,7 @@
   "schema": 2,
   "totals": {
     "flag_names": 62,
-    "flag_registrations": 221,
+    "flag_registrations": 222,
     "verbs": 28
   },
   "verbs": [
@@ -262,6 +262,25 @@
           "type": null
         },
         {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
           "action": "store_true",
           "choices": null,
           "const": true,
@@ -291,20 +310,7 @@
         "passthrough": true
       },
       "path": "issue admin init-store",
-      "positionals": [
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": false,
-          "dest": "path",
-          "metavar": null,
-          "name": "path",
-          "nargs": "?",
-          "type": null
-        }
-      ],
+      "positionals": [],
       "prog": {
         "declared": [
           "issue admin init-store"
@@ -316,7 +322,7 @@
         ]
       },
       "record_fields": [],
-      "store": "positional",
+      "store": "flag",
       "structured_errors": "unconverted",
       "tier": "admin",
       "verb": "init-store",
