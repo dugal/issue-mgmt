@@ -441,8 +441,11 @@ def _require_declaration(module, attr, allowed):
 def _mutex_groups(parser):
     """Mutually exclusive groups, as lists of primary flag names.
 
-    Grouping is part of the surface: `ready`'s `--json` / `--text` pair is
+    Grouping is part of the surface: a pair registered in one group is
     exit 2 when both are given, which a flat flag list cannot express.
+    `ready`'s `--json` / `--text` was the only such pair and IM-270
+    retired `--text`, so no verb declares a group today -- the
+    representation stays so one added later is recorded.
     """
     groups = []
     for group in getattr(parser, "_mutually_exclusive_groups", []):
@@ -458,13 +461,15 @@ def _mutex_groups(parser):
 def _synonym_map(module) -> dict:
     """Locally declared retired spellings: {retired: canonical}.
 
-    Helper-registered synonyms (`--repo` for `--prefix`, `--timeout` for
-    `--commit-timeout`) are attributed automatically from the helper's own
-    synonym list. Locally declared ones cannot be: `dep`'s `--type` shares
-    a dest with `--kind`, but `edit`'s `--dep-type` has a DIFFERENT dest
-    (`dep_type` vs `dep_kind`), so no same-dest heuristic finds it. Those
-    modules declare `SURFACE_SYNONYMS` and the extractor validates both
-    spellings exist.
+    Helper-registered synonyms are attributed automatically from the
+    helper's own synonym list (`--repo` for `--prefix` and `--timeout` for
+    `--commit-timeout`, through v3.4.x). Locally declared ones cannot be:
+    `dep` spelled the dependency kind `--type`, sharing a dest with
+    `--kind`, while `edit` spelled it `--dep-type` with a DIFFERENT dest
+    (`dep_type` vs `dep_kind`), which no same-dest heuristic finds -- so a
+    module declares `SURFACE_SYNONYMS` and the extractor validates both
+    spellings exist, in both directions. IM-270 retired every spelling
+    named here; no module declares the slot today.
     """
     declared = getattr(module, "SURFACE_SYNONYMS", {}) or {}
     out = {}
@@ -483,11 +488,13 @@ def _helper_synonyms(parser, probe) -> dict:
     unused synonym leaves no attribute) and hidden from help (so it is never
     presented as a current form). That triple is the signature.
 
-    Keying on the helper matters: `create --repo` is the repo BASENAME that
-    keys `<store>/.repos` -- a disjoint value space from prefix scoping,
-    registered locally -- so a check over the flag NAME alone would misread
-    it as `--prefix`'s synonym and launder a real one-meaning-per-flag
-    question into a synonym pair.
+    Keying on the helper mattered: `create --repo` is the repo BASENAME
+    that keys `<store>/.repos` -- registered locally, and a disjoint value
+    space from the prefix scoping the read verbs spelled `--repo` through
+    v3.4.x -- so a check over the flag NAME alone would have misread it as
+    `--prefix`'s synonym and laundered a real one-meaning-per-flag question
+    into a synonym pair. IM-270 retired the scoping spelling, so `--repo`
+    now carries that one meaning only.
     """
     canonical = {}
     candidates = []

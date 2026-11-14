@@ -7,7 +7,8 @@
 # Exercises:
 #   - --help / --version
 #   - store mode: grouped board with workflow-ordered ## headers + counts
-#   - --prefix scoping to one prefix (--repo is the retired synonym)
+#   - --prefix scoping: one prefix, a comma list, or repeated
+#     occurrences (the retired --repo spelling exits 2)
 #   - --status restricts which groups render
 #   - bounded default: --limit caps each group and announces suppression
 #   - --json shape {store, prefix, repo, generated_at, groups[{status,count,issues}]}
@@ -93,9 +94,9 @@ HELP_OUTPUT=$("$ISSUE" index --help 2>&1)
 assert_contains "index" "$HELP_OUTPUT" "--help prints the verb banner"
 # COVERS: surface.one-meaning-per-flag
 assert_contains "--prefix" "$HELP_OUTPUT" "--help documents --prefix"
-# The retired --repo prefix-scoping spelling still works but must not be
-# presented as a current form (surface.self-naming); --repo means the repo
-# basename on create / admin init-project / admin migrate.
+# --repo was this verb's prefix-scoping spelling through v3.4.x; IM-270
+# retired it. --repo means the repo basename on create / admin init-project /
+# admin migrate, and nothing else on the surface.
 # COVERS: surface.self-naming
 assert_not_contains "--repo" "$HELP_OUTPUT" "--help does not present the retired --repo"
 assert_contains "--status" "$HELP_OUTPUT" "--help documents --status"
@@ -147,23 +148,49 @@ OUT=$("$ISSUE" index --prefix IM)
 assert_contains "IM-001" "$OUT" "--prefix IM includes IM issues"
 assert_not_contains "DOUG-001" "$OUT" "--prefix IM excludes DOUG"
 
-# The board labels its own scope with the current spelling, whichever flag
-# the caller reached for (surface.self-naming).
+# The board labels its own scope with the current spelling
+# (surface.self-naming).
 # COVERS: surface.self-naming
 assert_contains "(prefix IM)" "$OUT" "board header names the scope 'prefix'"
 assert_not_contains "(repo IM)" "$OUT" "board header does not name the retired 'repo'"
-assert_contains "(prefix IM)" "$("$ISSUE" index --repo IM)" \
-    "retired --repo still reports the scope as 'prefix'"
 
-# The retired spelling is still accepted for one release (surface.stability).
-# The board stamps a per-invocation `generated <ISO-second>` line, so two
-# separate runs differ whenever they straddle a second boundary; compare the
-# board proper, not the stamp.
-board_body() { echo "$1" | grep -v '^generated '; }
-REPO_OUT=$("$ISSUE" index --repo IM)
+# IM-270 retired the --repo prefix-scoping spelling outright: a retired
+# spelling exits 2 as an unknown argument, never warns and never resolves.
+"$ISSUE" index --repo IM >/dev/null 2>&1
 # COVERS: surface.stability
-assert_eq "$(board_body "$OUT")" "$(board_body "$REPO_OUT")" \
-    "retired --repo IM yields the same board as --prefix IM"
+assert_eq "2" "$?" "retired --repo IM is an unknown argument (exit 2)"
+
+# IM-236: --prefix carries ONE value space across every scoping verb --
+# repeatable and comma-separated. This verb took a single PFX through
+# v3.4.x while list / search / the history verbs took a list, so the same
+# scoping expression worked on four verbs and silently did something else
+# on three.
+OUT=$("$ISSUE" index --prefix IM,DOUG)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "--prefix IM,DOUG includes IM issues"
+assert_contains "DOUG-001" "$OUT" "--prefix IM,DOUG includes DOUG issues"
+assert_contains "(prefix DOUG,IM)" "$OUT" \
+    "board header names the whole scope, canonicalized and sorted"
+
+OUT_REPEATED=$("$ISSUE" index --prefix IM --prefix DOUG)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT_REPEATED" \
+    "repeated --prefix accumulates rather than keeping only the last value"
+assert_contains "DOUG-001" "$OUT_REPEATED" \
+    "repeated --prefix includes the last occurrence too"
+assert_contains "(prefix DOUG,IM)" "$OUT_REPEATED" \
+    "the repeated form resolves to the same scope as the comma form"
+
+# A --prefix given but empty after parsing is a usage error on every
+# scoping verb, not a silent widening to the whole store (IM-238's rule:
+# a scope naming nothing is a bad argument, and an unset variable
+# expanding to "" is exactly that).
+ERR=$("$ISSUE" index --prefix "," 2>&1 >/dev/null)
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "2" "$RC" "--prefix ',' exits 2 rather than scoping to everything"
+assert_contains "reason=empty-prefix-scope" "$ERR" \
+    "empty --prefix scope reports a branchable reason"
 
 OUT=$("$ISSUE" index --status open)
 # COVERS: cli.index

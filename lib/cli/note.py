@@ -51,9 +51,10 @@ SURFACE_RECORD_FIELDS = ("date", "note")
 
 _DESCRIPTION = """\
 Append `<date>: <text>` to a level-2 section (default ## Implementation
-Notes). A single positional `-` reads the note text from stdin. Convenience
-wrapper over `issue edit --section NAME --append`; inherits its per-issue
-lock, atomic write, and commit."""
+Notes). --section is repeatable: the same line is appended to each named
+section as one atomic edit. A single positional `-` reads the note text from
+stdin. Convenience wrapper over `issue edit --section NAME --append`;
+inherits its per-issue lock, atomic write, and commit."""
 
 _EPILOG = """\
 Examples:
@@ -61,6 +62,7 @@ Examples:
   echo "drafted SKILL.md" | issue note IM-072 -
   issue note IM-072 "back-dated" --date 2026-05-29
   issue note IM-079 "design decision recorded" --section Design
+  issue note IM-079 "lands in both" --section Design --section Summary
 """
 
 
@@ -77,8 +79,15 @@ def register(subparsers):
                    help="Note text, or '-' to read from stdin.")
     p.add_argument("--date", default=None, metavar="YYYY-MM-DD",
                    help="Override the date prefix (default: today).")
-    p.add_argument("--section", default=_note.DEFAULT_SECTION, metavar="NAME",
-                   help="Target level-2 section (default: Implementation Notes).")
+    # IM-257: repeatable, as on `edit` and `show`. Registered as a plain
+    # store through v3.4.x, so a second --section silently won and the first
+    # was never written -- the shape IM-269 fixed for --status. Default is
+    # resolved in run(), not here: an argparse `append` default is mutated in
+    # place by the first occurrence.
+    p.add_argument("--section", action="append", default=None, metavar="NAME",
+                   dest="sections",
+                   help="Repeatable. Target level-2 section(s) "
+                        "(default: Implementation Notes).")
     common.add_json_flag(p)
     p.add_argument("--no-reindex", action="store_true")
     common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
@@ -129,8 +138,20 @@ def run(args) -> int:
 
     payload = f"{date}: {text}"
 
+    sections = args.sections or [_note.DEFAULT_SECTION]
+    seen = set()
+    for name in sections:
+        if name in seen:
+            # Appending one dated line to one section twice is never the
+            # intent, and apply_edits would do it silently.
+            print(f"{PROG}: --section {name!r} named more than once",
+                  file=sys.stderr)
+            return 2
+        seen.add(name)
+
+    label = ("section " + ", ".join(repr(n) for n in sections))
     try:
-        _EI._check_body_nests(payload, "note", f"section {args.section!r}")
+        _EI._check_body_nests(payload, "note", label)
     except ValueError as e:
         print(f"{PROG}: {e}", file=sys.stderr)
         return 2
@@ -185,7 +206,8 @@ def run(args) -> int:
                 to_stderr=args.json_mode,
             )
 
-    section_actions = [("edit", args.section, "append", payload)]
+    section_actions = [("edit", name, "append", payload)
+                       for name in sections]
 
     try:
         summary = _EI.apply_edits(
@@ -219,7 +241,7 @@ def run(args) -> int:
                 "file": str(issue_file),
                 "id": canonical_id,
                 "date": date,
-                "section": args.section,
+                "sections": list(sections),
                 "note": payload,
                 "changes": summary,
             },

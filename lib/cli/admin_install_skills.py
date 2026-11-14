@@ -19,7 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "v3.4.1"
+VERSION = "v3.5.0"
 
 # The one place this verb names itself (IM-239); `_USAGE` interpolates it.
 PROG = "issue admin install-skills"

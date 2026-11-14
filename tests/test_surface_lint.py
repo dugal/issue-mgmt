@@ -21,6 +21,7 @@ Run:
 
 import copy
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -51,6 +52,34 @@ def keys_of(findings):
     return {f.key for f in findings}
 
 
+# The waiver fixtures below supply their own owner id. Borrowing one from
+# the committed baseline couples a fixture to state it does not control:
+# the baseline is driven to zero by design (IM-289), and a real issue id
+# goes stale the moment that issue closes.
+FIXTURE_ISSUE = "IM-000"
+FIXTURE_FINDING = "unregistered-flag:--cap"
+
+
+def inject_unregistered_flag(manifest):
+    """Add a flag name the registry cannot know about; returns the manifest.
+
+    This is the cheapest REAL finding available, so a fixture needing a
+    waiver that covers something can make its own rather than borrow one
+    from the committed baseline.
+    """
+    entry = copy.deepcopy(flag_entry(manifest, "issue index", "--limit"))
+    entry.update(name="--cap", names=["--cap"], dest="cap")
+    verb(manifest, "issue index")["flags"].append(entry)
+    return manifest
+
+
+def fixture_waiver(key=FIXTURE_FINDING, **kw):
+    waiver = {"clause": "surface.vocabulary-registry", "key": key,
+              "issue": FIXTURE_ISSUE, "note": "fixture"}
+    waiver.update(kw)
+    return waiver
+
+
 class RealTreeTests(unittest.TestCase):
     """What the lint says about the surface as committed."""
 
@@ -65,14 +94,22 @@ class RealTreeTests(unittest.TestCase):
         detail = "\n".join(f"{f.key}: {f.detail}" for f in self.unwaived)
         self.assertEqual(self.unwaived, [], f"unwaived findings:\n{detail}")
 
-    def test_green_only_via_waivers(self):
-        """The baseline is load-bearing, not decoration.
+    def test_every_waived_finding_is_one_the_baseline_declares(self):
+        """The baseline is an accounting of real findings, at any size.
 
-        If this ever reaches zero the registry has stopped describing a
-        surface with known gaps, and the waiver machinery below is
-        measuring nothing.
+        This replaces an assertion that the baseline was NON-EMPTY, which
+        was true when the registry was adopted and is false at the
+        surface-convergence exit gate, where zero waivers is the success
+        condition rather than a defect (IM-289). The waiver machinery is
+        proven by `WaiverBaselineTests` against fixtures that supply their
+        own finding and waiver, so it never needed a live one.
         """
-        self.assertGreater(len(self.waived), 0)
+        declared = {w["key"] for w in self.registry["waivers"]}
+        for finding, waiver in self.waived:
+            with self.subTest(key=finding.key):
+                self.assertIn(finding.key, declared)
+                self.assertEqual(waiver["key"], finding.key)
+                self.assertRegex(waiver["issue"], r"^[A-Z]+-\d+$")
 
     def test_every_flag_name_is_registered(self):
         uses = surface_lint.flag_uses(self.manifest)
@@ -119,21 +156,6 @@ class RealTreeTests(unittest.TestCase):
         first, _ = surface_lint.lint(self.manifest, self.registry)
         second, _ = surface_lint.lint(self.manifest, self.registry)
         self.assertEqual([f.key for f in first], [f.key for f in second])
-
-    def test_transitional_spellings_name_an_owner_and_a_release(self):
-        """surface.stability: a rename is a synonym for at least one release.
-
-        Recording the introducing release is what lets a transitional
-        spelling be reported as retirable instead of modelled as a
-        permanent second spelling (docs/plan.md, Release shape).
-        """
-        records = surface_lint.transitional_spellings(self.registry)
-        self.assertGreater(len(records), 0)
-        for name, cid, record in records:
-            with self.subTest(flag=name, concept=cid):
-                self.assertRegex(record["since"], r"^v\d+\.\d+\.\d+$")
-                self.assertRegex(record["issue"], r"^[A-Z]+-\d+$")
-                self.assertTrue(record.get("superseded"))
 
 
 class GateBitesTests(unittest.TestCase):
@@ -354,22 +376,48 @@ class WaiverBaselineTests(unittest.TestCase):
         cls.base_registry = surface_lint.load_registry()
         cls.req_keys = surface_lint.requirement_keys()
 
-    def lint(self, registry=None, **kw):
+    def lint(self, manifest=None, registry=None, **kw):
         kw.setdefault("req_keys", self.req_keys)
-        return surface_lint.lint(copy.deepcopy(self.base_manifest),
-                                 registry or copy.deepcopy(
-                                     self.base_registry), **kw)
+        return surface_lint.lint(
+            manifest if manifest is not None
+            else copy.deepcopy(self.base_manifest),
+            registry if registry is not None
+            else copy.deepcopy(self.base_registry), **kw)
+
+    def fixture_pair(self):
+        """A manifest carrying one real finding, plus the waiver for it.
+
+        The registry's whole baseline becomes that one waiver, so the
+        owner-side checks below run against a waiver that was demonstrably
+        doing work. Reading `waivers[0]` off the committed registry is how
+        they used to find one, which raises IndexError the moment the
+        baseline reaches zero -- this phase's success condition (IM-289).
+        """
+        manifest = inject_unregistered_flag(copy.deepcopy(self.base_manifest))
+        registry = copy.deepcopy(self.base_registry)
+        registry["waivers"] = [fixture_waiver()]
+        return manifest, registry
+
+    def test_the_fixture_waiver_covers_a_real_finding(self):
+        """Guards the fixture itself: a waiver covering nothing would make
+        every owner-side test below pass for the wrong reason."""
+        manifest, registry = self.fixture_pair()
+        unwaived, waived = self.lint(manifest=manifest, registry=registry)
+        self.assertIn(FIXTURE_FINDING, {f.key for f, _ in waived})
+        self.assertNotIn(f"obsolete-waiver:{FIXTURE_FINDING}",
+                         keys_of(unwaived))
 
     def test_removing_any_single_waiver_turns_the_lint_red(self):
         """IM-246 AC2, proven per waiver rather than claimed once.
 
         This is what makes the baseline an accounting of real findings: if
         any entry could be dropped with the lint staying green, that entry
-        was describing nothing.
+        was describing nothing. The claim is per waiver, so it is vacuous
+        at an empty baseline -- correctly: there is then nothing left to
+        account for, and `test_an_empty_baseline_lints_clean` covers that
+        state instead.
         """
-        waivers = self.base_registry["waivers"]
-        self.assertGreater(len(waivers), 0)
-        for dropped in waivers:
+        for dropped in self.base_registry["waivers"]:
             with self.subTest(waiver=dropped["key"]):
                 registry = copy.deepcopy(self.base_registry)
                 registry["waivers"] = [w for w in registry["waivers"]
@@ -379,61 +427,87 @@ class WaiverBaselineTests(unittest.TestCase):
 
     def test_waiver_matching_no_finding_fails_as_obsolete(self):
         registry = copy.deepcopy(self.base_registry)
-        registry["waivers"].append({
-            "clause": "surface.one-meaning-per-flag",
-            "key": "value-space:--limit@issue index",
-            "issue": "IM-236", "note": "fixture: no such finding"})
+        registry["waivers"].append(fixture_waiver(
+            key="value-space:--limit@issue index",
+            clause="surface.one-meaning-per-flag",
+            note="fixture: deliberately matches no finding"))
         unwaived, _ = self.lint(registry=registry)
         self.assertIn("obsolete-waiver:value-space:--limit@issue index",
                       keys_of(unwaived))
 
+    def owner_status(self, status):
+        """Resolve the fixture's owner to `status`, every other issue open."""
+        return lambda issue_id: (
+            status if issue_id == FIXTURE_ISSUE else "open")
+
     def test_waiver_whose_issue_closed_fails(self):
         """IM-246 AC3. The fix landing is exactly when this must fire."""
-        registry = copy.deepcopy(self.base_registry)
-        owner = registry["waivers"][0]
-        unwaived, _ = self.lint(
-            registry=registry,
-            issue_status=lambda issue_id: (
-                "done" if issue_id == owner["issue"] else "open"))
-        keys = keys_of(unwaived)
-        self.assertIn(f"closed-waiver-issue:{owner['key']}", keys)
+        manifest, registry = self.fixture_pair()
+        unwaived, _ = self.lint(manifest=manifest, registry=registry,
+                                issue_status=self.owner_status("done"))
+        self.assertIn(f"closed-waiver-issue:{FIXTURE_FINDING}",
+                      keys_of(unwaived))
 
     def test_cancelled_counts_as_closed(self):
-        registry = copy.deepcopy(self.base_registry)
-        owner = registry["waivers"][0]
-        unwaived, _ = self.lint(
-            registry=registry,
-            issue_status=lambda issue_id: (
-                "cancelled" if issue_id == owner["issue"] else "open"))
-        self.assertIn(f"closed-waiver-issue:{owner['key']}",
+        manifest, registry = self.fixture_pair()
+        unwaived, _ = self.lint(manifest=manifest, registry=registry,
+                                issue_status=self.owner_status("cancelled"))
+        self.assertIn(f"closed-waiver-issue:{FIXTURE_FINDING}",
                       keys_of(unwaived))
 
     def test_waiver_naming_an_issue_the_store_lacks_fails(self):
-        registry = copy.deepcopy(self.base_registry)
-        owner = registry["waivers"][0]
-        unwaived, _ = self.lint(
-            registry=registry,
-            issue_status=lambda issue_id: (
-                None if issue_id == owner["issue"] else "open"))
-        self.assertIn(f"closed-waiver-issue:{owner['key']}",
+        manifest, registry = self.fixture_pair()
+        unwaived, _ = self.lint(manifest=manifest, registry=registry,
+                                issue_status=self.owner_status(None))
+        self.assertIn(f"closed-waiver-issue:{FIXTURE_FINDING}",
                       keys_of(unwaived))
 
     def test_in_progress_issue_still_owns_its_waiver(self):
-        unwaived, _ = self.lint(issue_status=lambda issue_id: "in-progress")
+        manifest, registry = self.fixture_pair()
+        unwaived, _ = self.lint(manifest=manifest, registry=registry,
+                                issue_status=lambda issue_id: "in-progress")
         self.assertEqual(
             [f.key for f in unwaived
              if f.key.startswith("closed-waiver-issue:")], [])
 
+    def test_an_empty_baseline_lints_clean(self):
+        """Zero waivers is a pass -- the state this phase is driving at.
+
+        Each waiver key names the flag it is about, so retiring that flag
+        from BOTH sides -- the surface and the declarations describing it --
+        stands in for whatever fix the owning issue lands, without this test
+        having to predict it. It stays valid once the real baseline is
+        empty: there is then nothing to retire and the committed pair is
+        checked as it stands.
+        """
+        manifest = copy.deepcopy(self.base_manifest)
+        registry = copy.deepcopy(self.base_registry)
+        flags = set()
+        for waiver in registry["waivers"]:
+            found = re.search(r"--[a-z0-9-]+", waiver["key"])
+            if found:
+                flags.add(found.group(0))
+        for entry in manifest["verbs"]:
+            entry["flags"] = [f for f in entry["flags"]
+                              if not set(f["names"]) & flags]
+        for name in flags:
+            registry["flags"].pop(name, None)
+        for concept in [k for k, c in registry["concepts"].items()
+                        if c["canonical"] in flags]:
+            registry["concepts"].pop(concept)
+        registry["waivers"] = []
+        unwaived, waived = self.lint(manifest=manifest, registry=registry)
+        self.assertEqual(keys_of(unwaived), set())
+        self.assertEqual(waived, [])
+
     def test_the_waiver_checks_cannot_themselves_be_waived(self):
         registry = copy.deepcopy(self.base_registry)
-        registry["waivers"].append({
-            "clause": "surface.vocabulary-registry",
-            "key": "value-space:--limit@issue index",
-            "issue": "IM-236", "note": "fixture: obsolete on purpose"})
-        registry["waivers"].append({
-            "clause": "surface.vocabulary-registry",
-            "key": "obsolete-waiver:value-space:--limit@issue index",
-            "issue": "IM-236", "note": "fixture: tries to hide the above"})
+        registry["waivers"].append(fixture_waiver(
+            key="value-space:--limit@issue index",
+            note="fixture: obsolete on purpose"))
+        registry["waivers"].append(fixture_waiver(
+            key="obsolete-waiver:value-space:--limit@issue index",
+            note="fixture: tries to hide the above"))
         unwaived, _ = self.lint(registry=registry)
         self.assertIn("obsolete-waiver:value-space:--limit@issue index",
                       keys_of(unwaived),
@@ -470,13 +544,38 @@ class RegistryIntegrityTests(unittest.TestCase):
         self.registry["concepts"]["result-limit"]["canonical"] = "--cap"
         self.assertRefused(self.registry, "canonical")
 
+    def _inject_collision(self, **fields):
+        """Declare a synthetic second meaning for `--limit` and return it.
+
+        INJECTED rather than borrowed from whatever the live registry
+        happens to collide on today. Both tests below keyed on `--prefix`'s
+        write-operand override, which IM-236 deleted when it settled that
+        the read and write uses are one concept -- so a test OF THE
+        MECHANISM died with the violation it used as a fixture, the same
+        failure mode IM-269 and IM-239 each hit. A mechanism test that
+        depends on a live collision existing is measuring the collision.
+        """
+        override = {"concept": "page-size", "issue": "IM-000",
+                    "verbs": ["issue list"]}
+        override.update(fields)
+        self.registry["concepts"]["page-size"] = {
+            "canonical": "--page-size",
+            "dests": ["limit"],
+            "meaning": "Synthetic second meaning, injected by this test.",
+            "value_space": "one/single/scalar",
+        }
+        self.registry["flags"]["--page-size"] = {"concept": "page-size"}
+        self.registry["flags"]["--limit"]["overrides"] = [override]
+        return override
+
     def test_collision_without_an_owning_issue_refused(self):
         """A second meaning for one spelling always has an owner."""
-        self.registry["flags"]["--repo"]["overrides"][0].pop("issue")
+        self._inject_collision()
+        self.registry["flags"]["--limit"]["overrides"][0].pop("issue")
         self.assertRefused(self.registry, "no owning issue")
 
     def test_collision_naming_no_verbs_refused(self):
-        self.registry["flags"]["--repo"]["overrides"][0]["verbs"] = []
+        self._inject_collision(verbs=[])
         self.assertRefused(self.registry, "naming no verbs")
 
     def test_concept_without_a_meaning_refused(self):
@@ -565,10 +664,15 @@ class ClausePartitionTests(unittest.TestCase):
         self.assertIn("class SelfNamingTests", source)
 
     def test_store_column_authority_exists(self):
-        """Likewise for the `--store` column IM-245 owns."""
+        """Likewise for the `--store` column IM-245 owns.
+
+        The pointer used to name the authority's waiver dict as well. IM-275
+        closed both gaps and deleted that dict, so naming it here would
+        re-create the drift this test exists to catch -- the authority is the
+        check, not the exemptions it once carried.
+        """
         source = (REPO_ROOT / "tests" / "test_cli_surface.py").read_text(
             encoding="utf-8")
-        self.assertIn("STORE_FLAG_WAIVER", source)
         self.assertIn("test_store_flag_verbs_register_store", source)
 
 

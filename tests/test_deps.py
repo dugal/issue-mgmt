@@ -360,5 +360,61 @@ class TestValidateTarget(unittest.TestCase):
             deps.validate_target("")
 
 
+class TestSplitOperand(unittest.TestCase):
+    """IM-243: one grammar for the (kind, target) pair on both dep ops."""
+
+    def test_fused_operand_splits_into_kind_and_target(self):
+        self.assertEqual(deps.split_operand("blocks:IM-101"),
+                         ("IM-101", "blocks"))
+
+    def test_bare_target_leaves_kind_unset(self):
+        self.assertEqual(deps.split_operand("IM-101"), ("IM-101", None))
+
+    def test_bare_target_takes_kind_from_flag(self):
+        self.assertEqual(deps.split_operand("IM-101", "blocks"),
+                         ("IM-101", "blocks"))
+
+    def test_fused_kind_agreeing_with_flag_is_accepted(self):
+        self.assertEqual(deps.split_operand("blocks:IM-101", "blocks"),
+                         ("IM-101", "blocks"))
+
+    def test_fused_kind_conflicting_with_flag_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            deps.split_operand("blocks:IM-101", "related")
+        message = str(ctx.exception)
+        self.assertIn("conflicting dependency kind", message)
+        self.assertIn("blocks", message)
+        self.assertIn("related", message)
+
+    def test_colon_operand_with_unknown_head_names_the_four_kinds(self):
+        with self.assertRaises(ValueError) as ctx:
+            deps.split_operand("bogus:IM-101")
+        message = str(ctx.exception)
+        self.assertIn("bogus", message)
+        for kind in deps.IM_DEP_KINDS:
+            self.assertIn(kind, message)
+
+    def test_fused_required_rejects_a_kindless_operand(self):
+        with self.assertRaises(ValueError) as ctx:
+            deps.split_operand("IM-101", fused_required=True)
+        self.assertIn("KIND:TARGET", str(ctx.exception))
+
+    def test_fused_required_accepts_a_kind_from_the_flag(self):
+        self.assertEqual(
+            deps.split_operand("IM-101", "blocks", fused_required=True),
+            ("IM-101", "blocks"),
+        )
+
+    def test_malformed_target_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            deps.split_operand("blocks:not_an_id")
+        self.assertIn("invalid dependency target", str(ctx.exception))
+
+    def test_lowercase_target_is_accepted_verbatim(self):
+        # Shape-only here; canonicalization to IM-101 happens at write time.
+        self.assertEqual(deps.split_operand("blocks:im-101"),
+                         ("im-101", "blocks"))
+
+
 if __name__ == "__main__":
     unittest.main()

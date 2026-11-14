@@ -46,30 +46,31 @@ SURFACE_STORE = "flag"
 # key=value payload; the set is enumerated, never waived, and only shrinks
 # (conversion work is IM-260).
 SURFACE_STRUCTURED_ERRORS = "unconverted"
-# IM-245: locally declared retired spellings (IM-241 synonym window). The
-# shared `common.add_*` helpers register their own synonyms and the extractor
-# attributes those automatically; these two are declared inline, so they are
-# declared here too. No same-dest heuristic could find them reliably -- see
-# `edit`, where the pair has two different dests.
-SURFACE_SYNONYMS = {"--kind": ("--type",), "--dep-note": ("--note",)}
+# IM-245: this verb declares no SURFACE_SYNONYMS because it registers no
+# synonym spellings. `--type` and `--note` were its dependency-kind and
+# dependency-note spellings through v3.4.x; IM-270 retired both, and each
+# now exits 2 as an unknown argument.
 
 _DESCRIPTION = """\
 Author and read `depends_on` dependency edges.
 
   issue dep add    ID KIND:TARGET [--dep-note TEXT]
-  issue dep remove ID TARGET [--kind KIND]
+  issue dep remove ID KIND:TARGET | TARGET [--kind KIND]
   issue dep list   ID [--json]
 
 KIND is one of blocks, parent-child, related, discovered-from. TARGET is a
 PREFIX-NNN id (cross-prefix accepted, write-now/resolve-later). A
 `blocks:TARGET` add that would close a cycle is refused (exit 1) before any
-write. Removing the last edge writes `depends_on: []` (never deletes the
-key). `list` acquires no lock."""
+write. Removal reads the kind either way -- fused into the operand or from
+--kind -- and refuses the two spellings disagreeing (exit 2). Removing the
+last edge writes `depends_on: []` (never deletes the key). `list` acquires
+no lock."""
 
 _EPILOG = """\
 Examples:
   issue dep add ABC-123 blocks:XYZ-9
   issue dep add ABC-124 parent-child:ABC-100 --dep-note "spun out of parent"
+  issue dep remove ABC-123 blocks:XYZ-9
   issue dep remove ABC-123 XYZ-9 --kind blocks
   issue dep list ABC-123 --json
 """
@@ -87,21 +88,19 @@ def register(subparsers):
                    help="add | remove | list")
     p.add_argument("issue_id", nargs="?", metavar="ID")
     p.add_argument("operand", nargs="?", metavar="OPERAND",
-                   help="KIND:TARGET (add) or TARGET (remove).")
+                   help="KIND:TARGET (add) or [KIND:]TARGET (remove).")
     # IM-241: the dependency kind and the dependency note are one concept
     # each, spelled the same way on `dep` and on `edit` -- `--kind` and
-    # `--dep-note`. The retired `--type` / `--note` spellings are accepted
-    # for one release and hidden from help (surface.self-naming); they
-    # collided with `--type` = issue type (search/list/create) and
-    # `--note` = closing note (transition/complete).
+    # `--dep-note`. This verb spelled them `--type` / `--note` through
+    # v3.4.x, which collided with `--type` = issue type (search/list/create)
+    # and `--note` = closing note (transition/complete); IM-270 retired both
+    # spellings, so the collisions are gone.
     p.add_argument("--dep-note", default=None, dest="note", metavar="TEXT",
                    help="Note recorded on the new edge.")
-    p.add_argument("--note", default=argparse.SUPPRESS, dest="note",
-                   metavar="TEXT", help=argparse.SUPPRESS)
     p.add_argument("--kind", default=None, dest="dep_type", metavar="KIND",
-                   help="Restrict the removal to edges of this kind.")
-    p.add_argument("--type", default=argparse.SUPPRESS, dest="dep_type",
-                   metavar="KIND", help=argparse.SUPPRESS)
+                   help="Dependency kind, where the operand does not "
+                        "fuse it. On remove, restricts the removal to "
+                        "edges of this kind.")
     common.add_json_flag(p)
     p.add_argument("--no-reindex", action="store_true")
     common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
@@ -219,14 +218,9 @@ def _cmd_add(args) -> int:
     if not args.operand:
         print("issue dep add: missing KIND:TARGET (use -h)", file=sys.stderr)
         return 2
-    kind, sep, target = args.operand.partition(":")
-    if not sep or not kind or not target:
-        print("issue dep add: expected KIND:TARGET (e.g. blocks:XYZ-9)",
-              file=sys.stderr)
-        return 2
     try:
-        deps.validate_kind(kind)
-        deps.validate_target(target)
+        target, kind = deps.split_operand(args.operand, args.dep_type,
+                                          fused_required=True)
     except ValueError as e:
         print(f"issue dep add: {e}", file=sys.stderr)
         return 2
@@ -235,16 +229,18 @@ def _cmd_add(args) -> int:
 
 def _cmd_remove(args) -> int:
     if not args.operand:
-        print("issue dep remove: missing TARGET (use -h)", file=sys.stderr)
+        print("issue dep remove: missing [KIND:]TARGET (use -h)",
+              file=sys.stderr)
         return 2
+    # IM-243: both spellings of the (kind, target) pair are accepted here --
+    # the fused `KIND:TARGET` that `add` takes, and the split
+    # `TARGET --kind KIND` this subcommand took alone through v3.4.x.
     try:
-        deps.validate_target(args.operand)
-        if args.dep_type is not None:
-            deps.validate_kind(args.dep_type)
+        target, kind = deps.split_operand(args.operand, args.dep_type)
     except ValueError as e:
         print(f"issue dep remove: {e}", file=sys.stderr)
         return 2
-    return _do_edit(args, [("remove-dep", args.operand, args.dep_type)])
+    return _do_edit(args, [("remove-dep", target, kind)])
 
 
 def run(args) -> int:

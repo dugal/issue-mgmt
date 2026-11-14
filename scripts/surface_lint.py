@@ -204,8 +204,8 @@ def spellings_of(registry, cid) -> list:
 
     Overrides are collisions, not synonyms, so a spelling that merely
     collides into this concept on some verbs is excluded -- otherwise
-    `--repo` would read as a synonym of the repo-identity concept it
-    collides with.
+    `--prefix` would read as a synonym of the prefix-operand concept it
+    collides with on `admin init-project` / `admin migrate`.
     """
     canonical = registry["concepts"][cid]["canonical"]
     rest = sorted(name for name, decl in registry["flags"].items()
@@ -295,16 +295,24 @@ def check_meaning_uniformity(manifest, registry, findings, **_):
 
     1. Every declared COLLISION -- one spelling overridden to a second
        concept on named verbs -- surfaces as a finding that must be waived
-       to the issue that owns it, and is checked for obsolescence. This is
-       how `--repo` carries both "scope to this prefix" and "the repo
-       basename", and how `--type` still answers to the dependency kind on
-       `dep`.
+       to the issue that owns it, and is checked for obsolescence. This
+       is how `--section` carried both a `NAME=TEXT` seed operand on
+       `create` and a selector elsewhere until IM-257 respelled the
+       operand, and how `--repo` carried both "scope to this prefix" and
+       "the repo basename" and `--type` the dependency kind on `dep`,
+       until IM-270 retired those spellings -- each time the obsolescence
+       half of this check required the override to go with the fix. No
+       override is declared today.
     2. Every DERIVABLE signal of an undeclared second meaning fails. A
        spelling bound to two argparse destinations under one concept is
-       that signal. The proxy is sound but incomplete -- `--prefix` is a
-       write operand on `admin init-project` under the same dest as its
-       scoping use, which no derivation can see -- so the incompleteness is
-       recorded in the registry's `unenforced` table rather than implied.
+       that signal. The proxy is sound but incomplete, in two ways both
+       recorded in the registry's `unenforced` table rather than implied:
+       a second meaning under the SAME dest is invisible to it (`--prefix`
+       was declared that way on `admin init-project` / `admin migrate`
+       until IM-236 settled that the read and write uses are one concept),
+       and a concept spelled positionally on some verb is invisible to
+       every check here, since `flag_uses` reads `verb["flags"]` only
+       (IM-288).
     """
     uses = flag_uses(manifest)
 
@@ -590,30 +598,3 @@ def lint(manifest, registry, *, issue_status=None, req_keys=None):
         else:
             unwaived.append(finding)
     return unwaived, waived
-
-
-def transitional_spellings(registry) -> list:
-    """Registered spellings carried only until their retirement release.
-
-    `surface.stability` permits a rename only as a registered synonym held
-    for at least one release, so these are temporary by construction. The
-    registry records the release that introduced each, which is what lets
-    the lint report them as retirable instead of modelling them as a
-    permanent second spelling (docs/plan.md, Release shape).
-    """
-    out = []
-    for name, decl in sorted(registry["flags"].items()):
-        transitional = decl.get("transitional")
-        if transitional:
-            out.append((name, decl["concept"], transitional))
-        # A spelling can be permanent in its own concept and transitional
-        # only where it collides into a second one: `--note` is a closing
-        # note for good, and the dependency note only until v3.5.0.
-        for override in decl.get("overrides", []):
-            transitional = override.get("transitional")
-            if transitional:
-                record = dict(transitional)
-                record.setdefault("issue", override["issue"])
-                record["verbs"] = list(override["verbs"])
-                out.append((name, override["concept"], record))
-    return sorted(out)

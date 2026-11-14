@@ -227,6 +227,28 @@ OUT=$("$SEARCH" "" --status open --status "blocked,done")
 # COVERS: surface.one-meaning-per-flag
 assert_contains "IM-003" "$OUT" "mixed --status forms hit done IM-003"
 
+# --type and --prefix carry the same multi-value axis (IM-236). --type was
+# the last filter still last-wins; --prefix was already a list here but
+# not repeatable.
+OUT=$("$SEARCH" "" --type bug --type chore)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "repeated --type hits bug IM-001"
+assert_contains "RM-001" "$OUT" "repeated --type hits chore RM-001"
+assert_not_contains "IM-002" "$OUT" "repeated --type excludes feature IM-002"
+OUT=$("$SEARCH" "" --prefix IM --prefix RM)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "repeated --prefix hits IM-001"
+assert_contains "RM-001" "$OUT" "repeated --prefix hits RM-001"
+assert_not_contains "DOUG-001" "$OUT" "repeated --prefix excludes unscoped DOUG"
+
+# An empty scope is a usage error, not a silent widening to the whole store.
+ERR=$("$SEARCH" "" --prefix "," 2>&1 >/dev/null)
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "2" "$RC" "--prefix ',' exits 2 rather than scanning every prefix"
+assert_contains "reason=empty-prefix-scope" "$ERR" \
+    "empty --prefix scope reports a branchable reason"
+
 # ---------------------------------------------------------------------------
 # Section E: --json shape
 # ---------------------------------------------------------------------------

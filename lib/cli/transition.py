@@ -106,8 +106,8 @@ Legal transition matrix (single source of truth):
     active state but not flip directly between terminals.
   - Same-state transitions are no-ops and exit 0.
 
-TTL lease primitive: --claim CLAIMANT acquires a lease and flips
-status to in-progress; --renew extends it; --release clears it preserving
+TTL lease primitive: --claim CLAIMANT (--actor is accepted as a
+synonym) acquires a lease and flips status to in-progress; --renew extends it; --release clears it preserving
 the fencing counter. --lease-ttl overrides the 3600s default;
 --claim-generation is the opt-in caller-side fencing guard."""
 
@@ -151,7 +151,14 @@ def register(subparsers):
     p.add_argument("--branch", default=None, metavar="NAME")
     p.add_argument("--reason", "--summary", "--note", dest="reason",
                    default=None, metavar="TEXT")
-    p.add_argument("--claim", default=None, metavar="CLAIMANT")
+    # IM-243 / surface.vocabulary-registry: the claimant concept is one
+    # synonym set, so every spelling accepted anywhere is accepted
+    # everywhere the concept appears -- `--claim` here and on `start`,
+    # `--actor` on `start` and `ready`. This verb took `--claim` alone
+    # through v3.4.x, so the manual renew/release flows that skip the
+    # `start` wrapper exited 2 on the spelling the read side teaches.
+    p.add_argument("--claim", "--actor", dest="claim", default=None,
+                   metavar="CLAIMANT")
     p.add_argument("--renew", action="store_true")
     p.add_argument("--release", action="store_true")
     p.add_argument(
@@ -664,7 +671,13 @@ def _commit_plan(issue_id, store_root, issue_file, autocommit_enabled,
     issue_rel = issue_file.resolve().relative_to(store_resolved)
     index_paths = [issue_rel, Path(prefix) / "INDEX.md", Path("INDEX.md")]
     if lease_op in ("renew", "release"):
-        return [issue_rel], f"{lease_op} {issue_id}"
+        # The index paths ride along here too, since IM-271 made these two
+        # ops reindex like every other mutation. Omitting them would leave
+        # the regenerated INDEX.md uncommitted in the working tree until
+        # some later mutation's catchup sweep claimed it under a generic
+        # message -- the clean-tree half of
+        # `concurrency.auto-commit-per-mutation`.
+        return index_paths, f"{lease_op} {issue_id}"
     if lease_op == "claim":
         return index_paths, f"claim {issue_id}"
     msg = f"transition {issue_id} {new_state}"
@@ -810,8 +823,15 @@ def _execute_lease(issue_id, op, *, claimant=None, lease_ttl=None,
         lease_op=op, new_state=None, reason=None,
     )
 
-    # Renew/release never change status, so INDEX cannot go stale.
-    reindex_wanted = not no_reindex and op not in ("renew", "release")
+    # Every lease op reindexes, renew and release included. The exclusion
+    # that used to sit here read "renew/release never change status, so
+    # INDEX cannot go stale" -- true of the Status grouping and false of the
+    # row, because `_apply_lease` stamps `updated:` and INDEX renders an
+    # Updated column. Measured on 2026-11-13: a renew left the row showing
+    # the pre-renew date while the file said today. Same cell of
+    # `cli.auto-reindex` as the reaper below it (IM-271); `--no-reindex` is
+    # the way to suppress it, as on every other mutating verb.
+    reindex_wanted = not no_reindex
     reindex_fn = None
     if reindex_wanted:
         def reindex_fn(*, suppress_commit=False):

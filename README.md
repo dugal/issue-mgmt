@@ -72,6 +72,14 @@ query, transition, and reason over it programmatically. Concretely:
   computes the claimable set directly from frontmatter -- open issues whose
   `blocks` dependencies are all done -- across prefixes, with a TTL claim/lease
   so parallel sessions hand work off atomically instead of by convention.
+- **One vocabulary across the whole surface.** A flag name means one thing on
+  every verb; a spelling accepted for a concept on one verb is accepted on
+  every verb that carries it; and every multi-value filter accumulates the
+  same way. So an agent composes a call to a verb it has not used before out
+  of what it learned on a neighboring one, instead of rediscovering per-verb
+  exceptions. The surface is recorded in a committed manifest and
+  checked against a flag-vocabulary registry by the test suite, so a drift
+  fails `make test` rather than being discovered by a caller.
 - **First-class Claude Code skills.** One `/issue-*` slash command per verb, and
   the workflow-side skills consume the exit-code contract directly (retry on a
   concurrent edit, pick another target on a lost race, and so on).
@@ -276,7 +284,7 @@ is lock-free.
 
 | Verb | Purpose |
 |---|---|
-| `issue create` | Create an issue (non-interactive, or interactive from a terminal -- a bare invocation on non-TTY stdin exits 2 naming the non-interactive form); seeds body via `--section`/`--from-file` |
+| `issue create` | Create an issue (non-interactive, or interactive from a terminal -- a bare invocation on non-TTY stdin exits 2 naming the non-interactive form); seeds body via `--set-section`/`--from-file` |
 | `issue show` | Read an issue end-to-end, or only frontmatter / named sections; multi-id batch |
 | `issue transition` | Drive the state machine; convenience verbs `start` / `complete` / `cancel` / `block` / `unblock`; lease flags `--claim` / `--renew` / `--release` |
 | `issue ready` | Readiness computed from frontmatter; `--actor` hides others' leases; `--limit` caps the ready list without silent truncation; `--filtered all` explains what is not claimable |
@@ -284,7 +292,7 @@ is lock-free.
 | `issue note` | Append a date-stamped line to `## Implementation Notes` (or any section) |
 | `issue dep` | Author `depends_on` edges (`add` / `remove` / `list`) |
 | `issue search` | Title + body text search; OR-within / AND-across frontmatter filters |
-| `issue list` | Filter-only enumeration (prefix / status / type) |
+| `issue list` | Filter-only enumeration (prefix / status / type; each filter takes a comma list or repeats, and mixing them unions) |
 | `issue index` | Grouped-by-status board |
 
 **`issue history` (read-only)**

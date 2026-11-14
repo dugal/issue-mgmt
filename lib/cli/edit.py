@@ -56,10 +56,9 @@ SURFACE_STORE = "flag"
 # key=value payload; the set is enumerated, never waived, and only shrinks
 # (conversion work is IM-260).
 SURFACE_STRUCTURED_ERRORS = "unconverted"
-# IM-245: locally declared retired spelling (IM-241 synonym window).
-# `--kind` and `--dep-type` do NOT share a dest (`dep_kind` vs `dep_type`),
-# which is why the extractor cannot infer this pair and the module declares it.
-SURFACE_SYNONYMS = {"--kind": ("--dep-type",)}
+# IM-245: this verb declares no SURFACE_SYNONYMS because it registers no
+# synonym spellings. `--dep-type` was its dependency-kind spelling through
+# v3.4.x; IM-270 retired it, and it now exits 2 as an unknown argument.
 
 _DESCRIPTION = """\
 Edit an issue non-interactively. Dominant paths:
@@ -67,12 +66,15 @@ Edit an issue non-interactively. Dominant paths:
   issue edit ID --set FIELD=VALUE [--set ...]
   issue edit ID --section NAME (--append-file PATH | --replace-file PATH
                                | --append TEXT | --replace TEXT)
-  issue edit ID --add-dep KIND:TARGET | --remove-dep TARGET
+  issue edit ID --add-dep KIND:TARGET | --remove-dep [KIND:]TARGET
 
 --set changes frontmatter (guarded: status/id/created refused; updated is
 auto-stamped). Section body ops and dep ops compose in argv order under one
-lock + snapshot + atomic write + commit. A body whose markdown headers would
-escape the target section is refused (exit 2) before any lock."""
+lock + snapshot + atomic write + commit. A dep op reads the dependency kind
+either way -- fused into its operand or from a following --kind -- and
+refuses the two spellings disagreeing (exit 2). A body whose markdown
+headers would escape the target section is refused (exit 2) before any
+lock."""
 
 _EPILOG = """\
 Structural section ops:
@@ -99,6 +101,7 @@ Examples:
   issue edit IM-023 --section "Implementation Notes" --append "2026-08-01: x"
   issue edit RM-070 --section "Archived Plan Content" --append-file block.md
   issue edit IM-102 --add-dep parent-child:IM-101 --dep-note "spun out"
+  issue edit IM-102 --remove-dep blocks:IM-100
 """
 
 # Flags hidden from the front-page help (design 5.6). Functional, not removed.
@@ -151,13 +154,15 @@ def register(subparsers):
 
     # Dep-edge ops
     _ordered(p, "--add-dep", metavar="KIND:TARGET", dest="add_dep")
-    _ordered(p, "--remove-dep", metavar="TARGET", dest="remove_dep")
+    _ordered(p, "--remove-dep", metavar="[KIND:]TARGET",
+             dest="remove_dep")
     # IM-241: `--kind` is the canonical dependency-kind spelling on both
-    # `edit` and `dep`; `--dep-type` is accepted for one release and
-    # hidden from help (surface.self-naming).
+    # `edit` and `dep`. This verb spelled it `--dep-type` through v3.4.x;
+    # IM-270 retired that spelling.
+    # IM-243: it qualifies either dep op, and either op also accepts the
+    # kind fused into its operand -- one grammar for the (kind, target)
+    # pair, rather than add fusing it and remove splitting it.
     _ordered(p, "--kind", metavar="KIND", dest="dep_kind")
-    _ordered(p, "--dep-type", metavar="KIND", dest="dep_type",
-             help=argparse.SUPPRESS)
     _ordered(p, "--dep-note", metavar="TEXT", dest="dep_note")
 
     p.add_argument("--replace-body-file", default=None, metavar="PATH",

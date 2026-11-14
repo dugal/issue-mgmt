@@ -21,7 +21,6 @@ import sys
 
 import history  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import jsonfields  # noqa: E402
-import idresolve  # noqa: E402
 
 from . import common
 
@@ -137,10 +136,6 @@ def legacy_mode_error(since: str) -> str:
     )
 
 
-def parse_prefix_list(raw: str):
-    return [item.strip() for item in raw.split(",") if item.strip()]
-
-
 def emit_tsv(activities, out):
     for a in activities:
         out.write(
@@ -187,22 +182,6 @@ def run(args) -> int:
             # --limit; here that is the same as not passing the flag.
             limit = None
 
-    prefixes = None
-    if args.prefix is not None:
-        prefixes = parse_prefix_list(args.prefix)
-        if not prefixes:
-            print(
-                f"{PROG}: --prefix is empty after parsing '{args.prefix}'",
-                file=sys.stderr,
-            )
-            return 2
-        for pfx in prefixes:
-            try:
-                history.validate_prefix(pfx.upper())
-            except history.HistoryError as e:
-                print(f"{PROG}: {e}", file=sys.stderr)
-                return 2
-
     json_fields = None
     if jsonfields.json_enabled(args.json_mode):
         try:
@@ -227,26 +206,18 @@ def run(args) -> int:
         )
         return 1
 
-    if prefixes:
-        # Case-fold each scoping prefix to the store's canonical form.
-        known = idresolve._known_prefixes(store_root, anchor)
-        canon = []
-        for pfx in prefixes:
-            resolved = idresolve.resolve_prefix(pfx, known) or pfx.upper()
-            if resolved != pfx:
-                print(f"{PROG}: resolved {pfx} -> {resolved}",
-                      file=sys.stderr)
-            canon.append(resolved)
-        prefixes = canon
-        # IM-238: an absent prefix is an argument error (exit 2), the
-        # same rule every verb taking --prefix holds; it was exit 1 here
-        # through v3.3.x.
-        rc = common.enforce_prefix_scope(
-            prefixes, store_root, anchor, prog=PROG,
-            json_mode=jsonfields.json_enabled(args.json_mode),
-        )
-        if rc is not None:
-            return rc
+    # Parse, refuse an absent scope (IM-238; exit 1 here through v3.3.x),
+    # and case-fold -- one call to the shared resolver (IM-236). This verb
+    # carried its own copy that canonicalized BEFORE enforcing, so the
+    # diagnostic named a case-folded guess at the caller's argument rather
+    # than the argument; the shared order names what was typed.
+    scope, rc = common.resolve_prefix_scope(
+        args.prefix, store_root, anchor, prog=PROG,
+        json_mode=jsonfields.json_enabled(args.json_mode),
+    )
+    if rc is not None:
+        return rc
+    prefixes = sorted(scope) if scope else None
 
     try:
         activities = history.git_activity(

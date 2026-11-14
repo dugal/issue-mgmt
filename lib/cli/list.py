@@ -90,9 +90,10 @@ def register(subparsers):
         help="Repeatable/comma-separated. Match only these frontmatter "
              "status values.",
     )
-    p.add_argument(
-        "--type", default=None, metavar="TYPE[,TYPE...]",
-        help="Match only these frontmatter type values.",
+    common.add_value_set_flag(
+        p, "--type", metavar="TYPE[,TYPE...]",
+        help="Repeatable/comma-separated. Match only these frontmatter "
+             "type values.",
     )
     common.add_json_field_flag(p)
     common.add_store_flag(p)
@@ -120,9 +121,6 @@ def run(args) -> int:
     anchor = common.find_project_anchor()
     store_root = common.resolve_store_root(anchor, args.store)
 
-    def _note(before, after):
-        print(f"issue list: resolved {before} -> {after}", file=sys.stderr)
-
     rc = common.require_store(
         store_root, prog="issue list",
         json_mode=jsonfields.json_enabled(args.json_mode),
@@ -131,19 +129,15 @@ def run(args) -> int:
     if rc is not None:
         return rc
 
-    raw_prefixes = search.parse_csv_set(args.prefix)
-    rc = common.enforce_prefix_scope(
-        raw_prefixes, store_root, anchor, prog="issue list",
+    prefixes, rc = common.resolve_prefix_scope(
+        args.prefix, store_root, anchor, prog="issue list",
         json_mode=jsonfields.json_enabled(args.json_mode),
     )
     if rc is not None:
         return rc
 
     ff = search.FrontmatterFilter(
-        prefixes=common.canonicalize_prefix_set(
-            raw_prefixes, store_root, anchor,
-            emit_note=_note,
-        ),
+        prefixes=prefixes,
         statuses=search.parse_csv_set(args.status),
         types=search.parse_csv_set(args.type),
     )

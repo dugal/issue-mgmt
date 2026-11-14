@@ -16,6 +16,15 @@ the identical `reap <id>` message. Any per-issue failure (lock timeout,
 non-git store, commit rejection) is swallowed -- an auto-reap must never
 break the start/ready operation it precedes.
 
+A reap is a mutation -- it stamps ``updated:`` and commits ``reap <id>``
+-- so the INDEX rows it touches go stale unless the index is regenerated
+(``cli.auto-reindex``). ``reindex_after_reap`` is that regeneration, kept
+here so the manual (`issue admin reap`) and opportunistic (`issue ready`)
+reap paths cannot drift: one pass, one index write, best-effort (IM-271).
+`issue start` deliberately does NOT call it -- its own claim reindexes the
+whole store immediately afterwards, which covers anything the reap
+reclaimed.
+
 Named with a leading underscore so the verb-discovery walk in
 ``lib/cli/__init__`` skips it (it declares no ``VERB``).
 """
@@ -44,14 +53,14 @@ def _append_note_line(body_text, note):
     return frontmatter.edit_section(body_text, NOTES_SECTION, "append", note)
 
 
-def _iter_issue_files(store_root, repo_filter):
+def _iter_issue_files(store_root, prefixes):
     for child in sorted(store_root.iterdir()):
         if not child.is_dir():
             continue
         prefix = child.name
         if not _PREFIX_DIR_RE.match(prefix):
             continue
-        if repo_filter is not None and prefix != repo_filter:
+        if prefixes is not None and prefix not in prefixes:
             continue
         for f in sorted(child.glob(f"{prefix}-*.md")):
             yield prefix, f
@@ -115,13 +124,17 @@ def _reap_one(store_root, prefix, issue_file, issue_id, lock_timeout, now):
     }
 
 
-def auto_reap(store_root, *, repo=None, lock_timeout=None):
+def auto_reap(store_root, *, prefixes=None, lock_timeout=None):
     """Best-effort reap of every expired lease under the store.
 
-    `repo` restricts to one prefix directory. Returns the list of reaped
-    records. Never raises: any per-issue failure is swallowed so the
-    caller (start/ready) proceeds regardless. A None or non-directory
-    store, or a legacy (unmigrated) tree, is a silent no-op.
+    `prefixes` restricts the walk to those prefix directories -- a set, or
+    None for the whole store. It takes a set rather than one prefix because
+    `ready` scopes by `--prefix PFX[,PFX...]` (IM-236) and reaps exactly
+    the scope it is about to read; `start` passes the single prefix of the
+    issue it is claiming. Returns the list of reaped records. Never raises:
+    any per-issue failure is swallowed so the caller proceeds regardless. A
+    None or non-directory store, or a legacy (unmigrated) tree, is a silent
+    no-op.
     """
     if store_root is None:
         return []
@@ -135,7 +148,7 @@ def auto_reap(store_root, *, repo=None, lock_timeout=None):
     now = lease.now_utc()
     reaped = []
     try:
-        candidates = list(_iter_issue_files(store_root, repo))
+        candidates = list(_iter_issue_files(store_root, prefixes))
     except OSError:
         return reaped
     for prefix, path in candidates:
@@ -160,3 +173,23 @@ def auto_reap(store_root, *, repo=None, lock_timeout=None):
         if record is not None:
             reaped.append(record)
     return reaped
+
+
+def reindex_after_reap(store_root, *, to_stderr: bool = False) -> None:
+    """Best-effort whole-store INDEX regeneration after a reap pass.
+
+    Called ONCE per pass, never per reclaimed issue: the regenerator is
+    whole-store, so N calls would be N redundant index writes under the
+    index lock. Honors ``ISSUE_MGMT_NO_AUTOCOMMIT`` the way every other
+    mutating verb does (an outer mutation owns the commit, so the index is
+    written bare). The underlying seam swallows its own failures, which is
+    what keeps the opportunistic reap from ever failing the start/ready
+    operation it precedes.
+    """
+    import reindex
+
+    reindex.reindex_after_mutation(
+        store_root, None,
+        suppress_commit=bool(os.environ.get("ISSUE_MGMT_NO_AUTOCOMMIT")),
+        to_stderr=to_stderr,
+    )

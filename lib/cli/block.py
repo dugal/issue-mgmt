@@ -48,8 +48,10 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("issue_id", nargs="?", metavar="ID")
-    p.add_argument("--reason", default=None, metavar="TEXT",
-                   help="Required. Why work cannot proceed.")
+    p.add_argument("--reason", "--summary", "--note", dest="reason",
+                   default=None, metavar="TEXT",
+                   help="Required. Why work cannot proceed. (--summary / "
+                        "--note are accepted synonyms.)")
     p.add_argument("--claim-generation", type=int, default=None, metavar="N",
                    dest="claim_generation")
     common.add_json_flag(p)

@@ -248,49 +248,67 @@ class TestInterpretSectionActions(unittest.TestCase):
         _, dep_actions = self._interp([("--remove-dep", "IM-101")])
         self.assertEqual(dep_actions, [("remove-dep", "IM-101", None)])
 
-    def test_remove_dep_with_type(self):
+    def test_remove_dep_with_kind(self):
         _, dep_actions = self._interp([
-            ("--remove-dep", "IM-101"), ("--dep-type", "blocks"),
+            ("--remove-dep", "IM-101"), ("--kind", "blocks"),
         ])
         self.assertEqual(dep_actions, [("remove-dep", "IM-101", "blocks")])
 
-    def test_remove_dep_bad_type_raises(self):
+    def test_remove_dep_bad_kind_raises(self):
         with self.assertRaises(ValueError):
             self._interp([
-                ("--remove-dep", "IM-101"), ("--dep-type", "bogus"),
+                ("--remove-dep", "IM-101"), ("--kind", "bogus"),
             ])
 
-    def test_dep_type_without_remove_dep_raises(self):
+    def test_kind_without_a_dep_anchor_raises(self):
         with self.assertRaises(ValueError) as cm:
-            self._interp([("--dep-type", "blocks")])
-        self.assertIn("requires a preceding --remove-dep", str(cm.exception))
+            self._interp([("--kind", "blocks")])
+        # IM-243: --kind qualifies either dep op, so the diagnostic names
+        # both anchors it can follow.
+        self.assertIn("requires a preceding --add-dep or --remove-dep",
+                      str(cm.exception))
 
-    def test_dep_type_twice_raises(self):
-        # IM-241: --dep-type is the retired spelling of --kind. It still
-        # parses, and the diagnostic names the CURRENT form so a caller is
-        # never told to retry with a retired flag (surface.self-naming).
+    # IM-243: the (kind, target) pair is spelled one way on both ops --
+    # fused into the operand or split across --kind.
+    def test_remove_dep_accepts_the_fused_operand(self):
+        _, dep_actions = self._interp([("--remove-dep", "blocks:IM-101")])
+        self.assertEqual(dep_actions, [("remove-dep", "IM-101", "blocks")])
+
+    def test_remove_dep_fused_kind_conflicting_with_kind_raises(self):
         with self.assertRaises(ValueError) as cm:
             self._interp([
-                ("--remove-dep", "IM-101"),
-                ("--dep-type", "blocks"), ("--dep-type", "related"),
+                ("--remove-dep", "blocks:IM-101"), ("--kind", "related"),
             ])
-        self.assertIn("--kind already set", str(cm.exception))
+        self.assertIn("conflicting dependency kind", str(cm.exception))
+
+    def test_remove_dep_unknown_fused_head_raises(self):
+        with self.assertRaises(ValueError) as cm:
+            self._interp([("--remove-dep", "bogus:IM-101")])
+        self.assertIn("invalid dependency kind", str(cm.exception))
+
+    def test_add_dep_accepts_the_split_spelling(self):
+        _, dep_actions = self._interp([
+            ("--add-dep", "IM-101"), ("--kind", "blocks"),
+        ])
+        self.assertEqual(dep_actions, [("add-dep", "IM-101", "blocks", None)])
+
+    def test_add_dep_fused_kind_conflicting_with_kind_raises(self):
+        with self.assertRaises(ValueError) as cm:
+            self._interp([
+                ("--add-dep", "blocks:IM-101"), ("--kind", "related"),
+            ])
+        self.assertIn("conflicting dependency kind", str(cm.exception))
+
+    def test_dep_diagnostic_names_the_op_it_came_from(self):
+        with self.assertRaises(ValueError) as cm:
+            self._interp([("--remove-dep", "bogus:IM-101")])
+        self.assertIn("--remove-dep", str(cm.exception))
 
     def test_kind_twice_raises(self):
         with self.assertRaises(ValueError) as cm:
             self._interp([
                 ("--remove-dep", "IM-101"),
                 ("--kind", "blocks"), ("--kind", "related"),
-            ])
-        self.assertIn("--kind already set", str(cm.exception))
-
-    def test_kind_and_retired_dep_type_are_one_concept(self):
-        # Mixing the two spellings for one anchor is the same collision,
-        # not two independent qualifiers.
-        with self.assertRaises(ValueError) as cm:
-            self._interp([
-                ("--remove-dep", "IM-101"),
-                ("--kind", "blocks"), ("--dep-type", "related"),
             ])
         self.assertIn("--kind already set", str(cm.exception))
 

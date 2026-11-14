@@ -7,8 +7,8 @@
 # Exercises:
 #   - --help documents the filter flags + examples; no positional QUERY
 #   - --version prints a version string
-#   - store mode: list every issue; --prefix scoping (--repo is the retired
-#     synonym); --status and
+#   - store mode: list every issue; --prefix scoping (the retired --repo
+#     spelling now exits 2); --status and
 #     --type filters; comma OR-within-flag; AND-across-flags
 #   - --json emits a top-level array with body_matches always empty
 #   - grep exit convention: 0 with matches, 1 with zero matches
@@ -95,9 +95,9 @@ assert_contains "list" "$HELP_OUTPUT" "--help prints the verb banner"
 assert_contains "--status" "$HELP_OUTPUT" "--help documents --status"
 assert_contains "--type" "$HELP_OUTPUT" "--help documents --type"
 # COVERS: surface.one-meaning-per-flag
-# --repo is prefix scoping's retired spelling: still accepted, never
-# presented as a current form (surface.self-naming). It means the repo
-# basename on create / admin init-project / admin migrate.
+# --repo was prefix scoping's spelling on this verb through v3.4.x; IM-270
+# retired it. It means the repo basename on create / admin init-project /
+# admin migrate, and nothing else on the surface.
 # COVERS: surface.self-naming
 assert_not_contains "--repo" "$HELP_OUTPUT" "--help does not present the retired --repo"
 assert_contains "--json" "$HELP_OUTPUT" "--help documents --json"
@@ -147,10 +147,11 @@ assert_contains "IM-001" "$OUT" "--prefix IM includes IM rows"
 assert_not_contains "DOUG-001" "$OUT" "--prefix IM excludes DOUG"
 assert_not_contains "RM-001"   "$OUT" "--prefix IM excludes RM"
 
-# The retired spelling still resolves for one release (surface.stability).
-REPO_OUT=$("$ISSUE" list --repo IM)
+# IM-270 retired the --repo prefix-scoping spelling outright: a retired
+# spelling exits 2 as an unknown argument, never warns and never resolves.
+"$ISSUE" list --repo IM >/dev/null 2>&1
 # COVERS: surface.stability
-assert_eq "$OUT" "$REPO_OUT" "retired --repo IM yields the same rows as --prefix IM"
+assert_eq "2" "$?" "retired --repo IM is an unknown argument (exit 2)"
 
 # --prefix alias behaves identically, and accepts a comma list (OR-within)
 OUT=$("$ISSUE" list --prefix "IM,DOUG")
@@ -181,6 +182,43 @@ OUT=$("$ISSUE" list --status open --status "blocked,done")
 assert_contains "IM-001"   "$OUT" "mixed --status forms hit open IM-001"
 assert_contains "DOUG-002" "$OUT" "mixed --status forms hit blocked DOUG-002"
 assert_contains "IM-003"   "$OUT" "mixed --status forms hit done IM-003"
+
+# Repeated --type accumulates too. IM-269 converged --status and named
+# --type a one-line adoption of the same helper, leaving it to "its own
+# issue"; nothing owned it once IM-270 retired the --type-on-dep
+# collision, so IM-236 folded it in. Before this, `--type bug --type chore`
+# silently returned only chores.
+OUT=$("$ISSUE" list --type bug --type chore)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "repeated --type hits bug IM-001"
+assert_contains "RM-001" "$OUT" "repeated --type hits chore RM-001"
+assert_not_contains "IM-002" "$OUT" "repeated --type excludes feature IM-002"
+# The comma form is unchanged, and mixing the two resolves to the union.
+OUT=$("$ISSUE" list --type bug,chore)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "comma --type hits bug IM-001"
+assert_contains "RM-001" "$OUT" "comma --type hits chore RM-001"
+OUT=$("$ISSUE" list --type bug --type "chore,feature")
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "mixed --type forms hit bug IM-001"
+assert_contains "RM-001" "$OUT" "mixed --type forms hit chore RM-001"
+assert_contains "IM-002" "$OUT" "mixed --type forms hit feature IM-002"
+
+# --prefix carries the same axis on this verb and every other scoping verb
+# (IM-236); repeated occurrences accumulate rather than last-wins.
+OUT=$("$ISSUE" list --prefix IM --prefix RM)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "IM-001" "$OUT" "repeated --prefix hits IM-001"
+assert_contains "RM-001" "$OUT" "repeated --prefix hits RM-001"
+assert_not_contains "DOUG-001" "$OUT" "repeated --prefix excludes unscoped DOUG"
+
+# An empty scope is a usage error, not a silent widening to the whole store.
+ERR=$("$ISSUE" list --prefix "" 2>&1 >/dev/null)
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "2" "$RC" "--prefix '' exits 2 rather than listing every prefix"
+assert_contains "reason=empty-prefix-scope" "$ERR" \
+    "empty --prefix scope reports a branchable reason"
 
 # AND-across-flags: open IM bugs -> IM-001 only
 OUT=$("$ISSUE" list --prefix IM --status open --type bug)

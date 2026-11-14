@@ -17,7 +17,8 @@
 #     called while the issue was still open -- accidentally testing the
 #     correct order while the README documented a broken one;
 #   - it passed `--repo MYP` where the README documents `--prefix MYP`
-#     (`--repo` is the transitional synonym IM-237 retired and v3.5.0 drops);
+#     (IM-237 made `--prefix` the sole scoping spelling and IM-270 retired
+#     `--repo`, which now exits 2 on every scoping verb);
 #   - it passed `--non-interactive` to init-store/init-project, which the
 #     README does not.
 #

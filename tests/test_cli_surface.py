@@ -19,6 +19,7 @@ Run:
     python3 -m unittest tests.test_cli_surface -v
 """
 
+import argparse
 import json
 import os
 import re
@@ -226,30 +227,32 @@ class DeclarationTests(unittest.TestCase):
                     "a field cannot be both generation metadata and record "
                     "content; the two kinds exist to stay distinguishable")
 
-    # `admin reap` and `admin reindex` resolve a store through the precedence
-    # chain and offer no `--store`, which IM-251 measured as the two real
-    # gaps. Carried as a NAMED waiver rather than as the `# gap:` prose
-    # comments the IM-251 table used: a comment goes silently false the day
-    # the flag is added, and this list is asserted shrink-only below.
-    STORE_FLAG_WAIVER = {
-        "issue admin reap": "IM-251",
-        "issue admin reindex": "IM-251",
-    }
-
     def test_store_flag_verbs_register_store(self):
         """IM-251's contract, derived from the registrations.
 
         `store == "flag"` MEANS the verb resolves a store through the
         precedence chain and therefore must offer `--store`. Checking that
         against the flag list makes the declaration answerable from the
-        manifest; the previous version of this test compared a hand-written
+        manifest; an earlier version of this test compared a hand-written
         table against the hand-written constant, so it could only detect
         that someone had edited the constant.
+
+        UNCONDITIONAL since IM-275, which closed the last two gaps
+        (`admin reap`, `admin reindex`) and deleted the `STORE_FLAG_WAIVER`
+        dict they were carried in rather than leaving an empty mechanism
+        behind. A new gap here is a bug to fix, or evidence that the verb's
+        `store` declaration is wrong -- and the four-valued field already
+        supplies the legitimate ways out (`positional`, `pinned`, `none`),
+        each checkable. Two alternatives were rejected: moving the waiver
+        into `docs/cli-vocabulary.json` would mint a registry waiver the
+        linter cannot match to a finding (it deliberately does not check
+        this column -- one authority per rule), so it would fail as
+        obsolete; and replicating the registry's unowned-waiver resolution
+        here would add a second declaration mechanism, with zero entries to
+        carry, which is the IM-261 class rather than a cure for it.
         """
         for verb in self.manifest["verbs"]:
             if verb["store"] != "flag":
-                continue
-            if verb["path"] in self.STORE_FLAG_WAIVER:
                 continue
             with self.subTest(verb=verb["path"]):
                 self.assertIn(
@@ -258,24 +261,6 @@ class DeclarationTests(unittest.TestCase):
                     f"store through the precedence chain -- so "
                     f"surface.verb-class-contract obliges it to offer "
                     f"--store")
-
-    def test_store_flag_waiver_only_shrinks(self):
-        """A waived verb that gained `--store` must leave the waiver.
-
-        Otherwise the waiver outlives the gap and the check quietly stops
-        covering a verb that now satisfies the contract.
-        """
-        for path, issue in sorted(self.STORE_FLAG_WAIVER.items()):
-            with self.subTest(verb=path):
-                verb = self.by_path[path]
-                self.assertEqual(verb["store"], "flag",
-                                 f"{path} no longer declares store=flag; "
-                                 f"drop it from STORE_FLAG_WAIVER")
-                self.assertNotIn(
-                    "--store", {f["name"] for f in verb["flags"]},
-                    f"{path} now registers --store, so the {issue} waiver is "
-                    f"obsolete: remove the entry rather than leaving a "
-                    f"waiver that covers nothing")
 
     def test_positional_store_verbs_have_a_positional(self):
         """The other side of the four-valued field, equally derivable."""
@@ -298,7 +283,6 @@ class DeclarationTests(unittest.TestCase):
         self.assertNotIn("--store", {f["name"] for f in verb["flags"]},
                          "the fixture verb must lack --store for the check "
                          "under test to have something to catch")
-        self.assertNotIn("issue admin selftest", self.STORE_FLAG_WAIVER)
 
     def test_every_verb_registers_json(self):
         """`surface.verb-class-contract`: `--json` on every class.
@@ -716,13 +700,25 @@ class FlagRepresentationTests(unittest.TestCase):
         self.assertEqual(self.flag("issue transition", "--reason")["names"],
                          ["--reason", "--summary", "--note"])
 
-    def test_helper_registered_synonyms_are_attributed(self):
-        repo = self.flag("issue list", "--repo")
-        self.assertEqual(repo["synonym_of"], "--prefix")
-        self.assertTrue(repo["hidden"])
-        self.assertEqual(
-            self.flag("issue admin snapshot", "--timeout")["synonym_of"],
-            "--commit-timeout")
+    def test_no_flag_is_a_hidden_retired_synonym(self):
+        """IM-270: the surface carries no hidden synonym actions.
+
+        A retired spelling used to be registered as its own SUPPRESS'd
+        action sharing the canonical flag's dest, which is what
+        `synonym_of` records. That pattern existed only to carry a rename
+        through a deprecation window, and IM-284 removed the window from
+        `surface.stability`, so the six spellings it carried were retired
+        with it. A permanent second spelling is an argparse ALIAS on one
+        action instead (the closing-note flag below), which is visible in
+        `names` rather than as a separate entry.
+        """
+        offenders = [
+            (path, flag["name"])
+            for path, verb in self.by_path.items()
+            for flag in verb["flags"]
+            if flag["synonym_of"]
+        ]
+        self.assertEqual(offenders, [])
 
     def test_create_repo_is_not_read_as_a_prefix_synonym(self):
         """`create --repo` is the repo BASENAME -- a disjoint value space, and
@@ -741,26 +737,37 @@ class FlagRepresentationTests(unittest.TestCase):
         leaving the manifest advertising a flag that exits 2.
         """
         mod = verb_module("issue dep")
-        declared = dict(getattr(mod, "SURFACE_SYNONYMS", {}))
-        canonical = sorted(declared)[0]
+        # `--kind` is registered on `dep`; the retired spelling is not, which
+        # is the drift. Synthesized in full because IM-270 left no module
+        # declaring SURFACE_SYNONYMS to extend.
         with patched(mod, "SURFACE_SYNONYMS",
-                     dict(declared, **{canonical: ("--retired-last-cycle",)})):
+                     {"--kind": ("--retired-last-cycle",)}):
             with self.assertRaises(cli_surface.SurfaceError) as ctx:
                 cli_surface.build_manifest()
         message = str(ctx.exception)
         self.assertIn("--retired-last-cycle", message)
         self.assertIn("declaration is dead", message)
 
-    def test_locally_declared_synonyms_are_recorded(self):
-        self.assertEqual(self.flag("issue dep", "--type")["synonym_of"],
-                         "--kind")
-        self.assertEqual(self.flag("issue edit", "--dep-type")["synonym_of"],
-                         "--kind")
-
     def test_mutually_exclusive_grouping_is_represented(self):
-        self.assertEqual(
-            self.by_path["issue ready"]["mutually_exclusive_groups"],
-            [["--json", "--text"]])
+        """The extractor represents grouping, which a flat list cannot.
+
+        Exercised against a synthetic parser because the surface itself no
+        longer has a group: `ready`'s `--json` / `--text` pair was the only
+        one, and IM-270 retired `--text`.
+        """
+        p = argparse.ArgumentParser()
+        group = p.add_mutually_exclusive_group()
+        group.add_argument("--one")
+        group.add_argument("--two")
+        p.add_argument("--loose")
+        self.assertEqual(cli_surface._mutex_groups(p), [["--one", "--two"]])
+
+    def test_surface_carries_no_mutually_exclusive_groups(self):
+        """IM-270: and the real surface now has none to represent."""
+        grouped = {path: verb["mutually_exclusive_groups"]
+                   for path, verb in self.by_path.items()
+                   if verb["mutually_exclusive_groups"]}
+        self.assertEqual(grouped, {})
 
     def test_ordered_section_action_is_visible(self):
         """`edit`'s section-flag grouping lives in its shared action class."""
@@ -993,12 +1000,15 @@ class SelfNamingTests(unittest.TestCase):
         field alone read clean on the two with the worst drift (IM-261
         audit, 5.3).
 
-        The obligation is conditional on purpose. `issue admin reindex`
-        prints no command name at all -- argparse generates its usage and
-        its diagnostics are prefixed `Error:` -- so requiring a `PROG` from
-        it would add a declaration with no consumer, which is the shape this
-        whole issue exists to remove. The condition is computed from the
-        manifest, so a verb that STARTS printing a name is caught.
+        The obligation is conditional on purpose: requiring a `PROG` from a
+        verb that prints no command name would add a declaration with no
+        consumer, which is the shape this whole issue exists to remove. The
+        condition is computed from the manifest, so a verb that STARTS
+        printing a name is caught -- which is not hypothetical:
+        `issue admin reindex` was the cited example of a verb printing no
+        name (argparse generates its usage, its other diagnostics are
+        prefixed `Error:`) until IM-275 gave it a name-prefixed refusal, and
+        this test is what required the `PROG` that came with it.
         """
         for verb in self.manifest["verbs"]:
             prog = verb["prog"]

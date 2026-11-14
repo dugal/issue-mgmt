@@ -382,7 +382,7 @@ if [[ $rc -eq 2 ]] \
    && [[ "$out" == *"error=usage-error"* ]] \
    && [[ "$out" == *"reason=non-interactive-stdin"* ]] \
    && [[ "$out" == *"TITLE TYPE PRIORITY"* ]] \
-   && [[ "$out" == *"--section"* && "$out" == *"--from-file"* ]] \
+   && [[ "$out" == *"--set-section"* && "$out" == *"--from-file"* ]] \
    && [[ "$out" != *"Traceback"* && "$out" != *"EOFError"* ]] \
    && ! ls "$STORE16/IM/"IM-*.md >/dev/null 2>&1; then
     pass "non-TTY stdin: exit 2, names the positional form, no traceback, no write"

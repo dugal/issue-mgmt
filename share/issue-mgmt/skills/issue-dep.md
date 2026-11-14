@@ -14,7 +14,7 @@ Wraps the CLI subcommand that will be exposed as MCP tool `issue.dep` in Phase 2
 
 ```
 /issue-dep add    <id> KIND:TARGET [--dep-note TEXT] [--json] [--no-reindex] [--lock-timeout <seconds>]
-/issue-dep remove <id> TARGET [--kind KIND] [--json] [--no-reindex] [--lock-timeout <seconds>]
+/issue-dep remove <id> [KIND:]TARGET [--kind KIND] [--json] [--no-reindex] [--lock-timeout <seconds>]
 /issue-dep list   <id> [--json]
 ```
 
@@ -22,9 +22,9 @@ Wraps the CLI subcommand that will be exposed as MCP tool `issue.dep` in Phase 2
 
 - `<id>` (required) -- the issue that carries the edge, e.g. `XYZ-064`, `ABC-102`.
 - `KIND:TARGET` (add, required) -- `KIND` is one of `blocks`, `parent-child`, `related`, `discovered-from` (the four dependency kinds). `TARGET` is a `PREFIX-NNN` issue id. Splits on the first colon only (so `parent-child:ABC-101` parses correctly). Cross-prefix targets are accepted write-now / resolve-later -- no store lookup.
-- `TARGET` (remove, required) -- the id whose edge(s) to drop.
+- `[KIND:]TARGET` (remove, required) -- the id whose edge(s) to drop, with the kind optionally fused in exactly as on `add` (`blocks:ABC-101`). Both spellings are accepted on both ops, so the pair is written one way everywhere; a fused kind that contradicts `--kind` is a usage error (exit 2) rather than one silently winning.
 - `--dep-note TEXT` (add, optional) -- a note recorded on the new edge.
-- `--kind KIND` (remove, optional) -- only remove the edge to `TARGET` of this kind (otherwise all edges to `TARGET` are removed).
+- `--kind KIND` (optional) -- the dependency kind, where the operand does not fuse it. On `remove` it scopes the removal to the edge of that kind (otherwise all edges to `TARGET` are removed).
 - `--json` (optional) -- emit a one-shot summary object on stdout.
 - `--no-reindex` (optional, add/remove) -- skip the post-write auto-reindex.
 - `--lock-timeout <seconds>` (optional, add/remove, default 5) -- per-issue advisory-lock timeout.
@@ -33,7 +33,7 @@ Wraps the CLI subcommand that will be exposed as MCP tool `issue.dep` in Phase 2
 
 ```bash
 issue dep add <id> KIND:TARGET [flags...]
-issue dep remove <id> TARGET [--kind KIND] [flags...]
+issue dep remove <id> [KIND:]TARGET [--kind KIND] [flags...]
 issue dep list <id> [--json]
 ```
 

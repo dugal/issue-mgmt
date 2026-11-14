@@ -61,6 +61,16 @@ Two ergonomics landed alongside this sheet. Confirm the exact behavior with
   issue dep add IM-102 blocks:im-84   # writes to: IM-084
   ```
 
+- **Multi-value filters take either form.** `--prefix`, `--status`, and
+  `--type` are repeatable AND comma-separated on every verb that offers
+  them, and mixing the two in one invocation resolves to the union. A
+  repeated occurrence accumulates; it never silently replaces the previous
+  one.
+  ```
+  issue list --prefix IM,DOUG --status open --status blocked
+  issue index --prefix IM --prefix LI
+  ```
+
 - **`--json <fields>` field selection.** The read verbs (`show`,
   `search`, `list`, `index`, `ready`, and the `history` subverbs) accept a
   gh-style comma-separated field list after `--json`: bare `--json` emits
@@ -289,7 +299,10 @@ Two non-empty cases a caller must not read as a zero result:
 
 - `--prefix` naming a prefix the store does not have is an ARGUMENT error
   (exit 2, `error=unknown-prefix`, naming the unknown value and the known
-  set), so a typo is never indistinguishable from an empty scope.
+  set), so a typo is never indistinguishable from an empty scope. So is a
+  `--prefix` that parses to nothing (`--prefix ""`, from an unset variable):
+  exit 2, `reason=empty-prefix-scope`, never a silent widening to the whole
+  store.
 - A store that cannot be used -- none resolved, or a resolved root that is
   absent -- is a precondition failure (exit 1) carrying
   `error=precondition-failed reason=store-unresolvable`, not an empty result.

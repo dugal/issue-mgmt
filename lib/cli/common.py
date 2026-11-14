@@ -22,7 +22,7 @@ import idresolve  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 
 # Single source of the consolidated CLI version. `stamp-version` rewrites
 # this line at release time (directory-wide scan; see docs/releases.md).
-VERSION = "v3.4.1"
+VERSION = "v3.5.0"
 
 # <PREFIX>-NNN, prefix ^[A-Z][A-Z0-9]{1,7}$. Aliased to the single shared
 # grammar in lib/idresolve.py -- do not re-derive it here.
@@ -96,36 +96,27 @@ def add_json_field_flag(p: argparse.ArgumentParser) -> None:
 # this to prefix(es)". `--repo` is the sole spelling for the repo basename
 # that keys `<store>/.repos` (create / admin init-project / admin migrate) --
 # a disjoint value space, so the two names may not be traded. Read verbs
-# accepted `--repo` for prefix scoping through v3.3.x; it is carried here as
-# a hidden synonym on EVERY prefix-scoping verb for one release (uniformly,
-# so the deprecation window itself is not a per-verb exception) and retires
-# in the next MAJOR.
+# spelled prefix scoping `--repo` through v3.4.x; IM-270 retired that
+# spelling, so `--prefix` is the only one this helper registers.
+#
+# IM-236 converged the value space: every scoping verb takes
+# `PFX[,PFX...]`, repeatable, through this one helper. `index` / `ready` /
+# `admin reap` took a single `PFX` through v3.4.x while `list` / `search` /
+# the history verbs took a list, so one flag name carried two value spaces
+# across seven verbs -- the surface.one-meaning-per-flag violation IM-246
+# measured and waived. The two scaffolding verbs that spell `--prefix` as a
+# write operand (`admin init-project` / `admin migrate`) register it
+# locally and stay single-valued: a project is registered under exactly one
+# prefix (registry.basename-prefix-unique), which is the documented
+# capability licensing that deviation in docs/cli-vocabulary.json.
 
-PREFIX_SCOPE_SYNONYMS = ("--repo",)
 
-
-def add_prefix_scope_flag(p: argparse.ArgumentParser, *, multi=True,
-                          help=None,
-                          synonyms=PREFIX_SCOPE_SYNONYMS) -> None:
-    metavar = "PFX[,PFX...]" if multi else "PFX"
-    p.add_argument(
-        "--prefix",
-        default=None,
-        metavar=metavar,
-        dest="prefix",
-        help=help or (
-            "Limit to these prefixes (OR within the flag)." if multi
-            else "Restrict to one prefix (e.g. ABC, XYZ)."
-        ),
+def add_prefix_scope_flag(p: argparse.ArgumentParser, *, help=None) -> None:
+    add_value_set_flag(
+        p, "--prefix", dest="prefix", metavar="PFX[,PFX...]",
+        help=help or "Repeatable/comma-separated. Limit to these prefixes "
+                     "(OR within the flag).",
     )
-    for name in synonyms:
-        p.add_argument(
-            name,
-            default=argparse.SUPPRESS,
-            metavar=metavar,
-            dest="prefix",
-            help=argparse.SUPPRESS,
-        )
 
 
 def add_value_set_flag(p: argparse.ArgumentParser, flag: str, *,
@@ -141,8 +132,10 @@ def add_value_set_flag(p: argparse.ArgumentParser, flag: str, *,
     last-wins on `issue list` / `issue search` -- so the same two-status
     query silently returned one status on two of the three verbs, with
     exit 0. Registering through one helper is what keeps a fourth verb from
-    reintroducing the divergence; `--type` and `--prefix` carry the same
-    axis and should adopt this when their own issues land (IM-236).
+    reintroducing the divergence. IM-236 then brought `--prefix` (via
+    `add_prefix_scope_flag`) and `--type` onto it, so every multi-value
+    filter on the surface accepts both forms and none of them silently
+    drops a repeated occurrence.
     """
     p.add_argument(
         flag, action="append", default=None,
@@ -164,12 +157,10 @@ def add_lock_timeout_flag(p: argparse.ArgumentParser, *, default=None) -> None:
     )
 
 
-def add_commit_timeout_flag(p: argparse.ArgumentParser, *, default=None,
-                            synonyms=()) -> None:
-    # Verbs that take the store-wide commit lock directly. `synonyms` carries
-    # a retired spelling through its one-cycle deprecation window; each is
-    # registered as a separate SUPPRESS'd action so it keeps working without
-    # being presented in --help as a current form (surface.self-naming).
+def add_commit_timeout_flag(p: argparse.ArgumentParser, *, default=None) -> None:
+    # Verbs that take the store-wide commit lock directly. Kept here so every
+    # such verb spells the flag identically. `admin snapshot` spelled it
+    # `--timeout` through v3.4.x; IM-270 retired that spelling.
     p.add_argument(
         "--commit-timeout",
         type=float,
@@ -178,15 +169,6 @@ def add_commit_timeout_flag(p: argparse.ArgumentParser, *, default=None,
         metavar="SECONDS",
         help="Acquisition timeout in seconds for the store-wide commit lock.",
     )
-    for name in synonyms:
-        p.add_argument(
-            name,
-            type=float,
-            default=argparse.SUPPRESS,
-            dest="commit_timeout",
-            metavar="SECONDS",
-            help=argparse.SUPPRESS,
-        )
 
 
 def add_no_reindex_flag(p: argparse.ArgumentParser) -> None:
@@ -348,10 +330,72 @@ def enforce_prefix_scope(prefixes, store_root, anchor, *, prog,
     return errors.EXIT_USAGE
 
 
+def resolve_prefix_scope(raw, store_root, anchor, *, prog, json_mode=False):
+    """Parse, validate, and canonicalize a `--prefix` scope. One rule.
+
+    Returns `(prefixes, rc)`: `prefixes` is the canonicalized set, or None
+    when the flag was absent (accept-all); `rc` is an exit code when the
+    scope is unusable and None otherwise. Callers return `rc` unchanged.
+
+    IM-236: every scoping verb goes through here. `index`, `ready`, and the
+    two history verbs each carried their own copy of this sequence, and the
+    copies diverged in two ways an agent could see -- a shape gate rejecting
+    an ill-formed prefix with prose text on some verbs and nothing on
+    others, and an unresolvable prefix falling back to `value.upper()`
+    rather than passing through. The fallback was already unreachable in
+    store mode (an unresolvable prefix exits 2 at `enforce_prefix_scope`
+    first), and the shape gate is redundant with it: a token that cannot be
+    a prefix is not a prefix this store has, so it surfaces through the one
+    structured `unknown-prefix` payload that names the known set, rather
+    than through a per-verb sentence.
+
+    Order matters and is the `list` / `search` order: refuse an absent
+    scope BEFORE canonicalizing, so the diagnostic names what the caller
+    typed rather than a case-folded guess at it.
+    """
+    import errors as _errors  # noqa: E402  (lazy: keeps import cheap)
+    import search as _search  # noqa: E402
+
+    if raw is None:
+        return None, None
+    prefixes = _search.parse_csv_set(raw)
+    if not prefixes:
+        # Present but empty after parsing (`--prefix ""`, `--prefix ,`).
+        # A usage error on every scoping verb, not accept-all. IM-238's rule
+        # is that a scope naming nothing is a bad argument rather than a
+        # zero-result, because a typo is otherwise indistinguishable from an
+        # unscoped read -- and an unset variable expanding to "" is exactly
+        # that typo. The two history verbs already refused it; `list` and
+        # `search` widened to the whole store, which on `admin reap` would
+        # have meant reaping every prefix instead of the one asked for.
+        shown = raw if isinstance(raw, str) else ",".join(raw)
+        emit_error(
+            _errors.UsageError(
+                "--prefix was given but names no prefix after parsing "
+                f"{shown!r}; drop the flag to scope to the whole store",
+                flag="--prefix",
+                reason="empty-prefix-scope",
+            ),
+            prog=prog,
+            json_mode=json_mode,
+        )
+        return None, _errors.EXIT_USAGE
+    rc = enforce_prefix_scope(
+        prefixes, store_root, anchor, prog=prog, json_mode=json_mode)
+    if rc is not None:
+        return None, rc
+
+    def _note(before, after):
+        print(f"{prog}: resolved {before} -> {after}", file=sys.stderr)
+
+    return canonicalize_prefix_set(
+        prefixes, store_root, anchor, emit_note=_note), None
+
+
 def canonicalize_prefix_set(prefixes, store_root, anchor, *, emit_note=None):
     """Case-fold each scoping prefix to its known canonical form.
 
-    ``--prefix``/``--repo`` on the read verbs scope by prefix directory;
+    ``--prefix`` on the read verbs scopes by prefix directory;
     previously ``--prefix im`` scoped to a non-existent ``im`` dir and
     returned nothing. This maps each raw prefix through
     ``idresolve.resolve_prefix`` against the store's real prefixes. An

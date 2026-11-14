@@ -105,12 +105,11 @@ _POSITION_FLAGS = {"--after", "--before", "--to-position", "--at-end"}
 _DEP_FLAGS = {"--add-dep", "--remove-dep"}
 _DEP_QUALIFIER_FLAGS = {"--kind", "--dep-note"}
 
-# IM-241: retired spelling -> canonical, normalized at the top of the walk
-# so every downstream check AND every error message names the current form
-# (surface.self-naming). `--dep-type` was `edit`'s spelling for the
-# dependency kind through v3.3.x; `--kind` is now canonical on both `edit`
-# and `dep`, which spelled the same operand `--type`.
-_RETIRED_FLAG_SPELLINGS = {"--dep-type": "--kind"}
+# IM-241 / IM-270: no retired spelling reaches this walk any more. `edit`
+# spelled the dependency kind `--dep-type` and `dep` spelled it `--type`
+# through v3.4.x; both were retired with their registrations, so argparse
+# rejects them as unknown arguments before the walk runs and nothing here
+# needs to normalize them. `--kind` is canonical on both verbs.
 
 
 def _check_body_nests(text, op_label, anchor_label):
@@ -160,22 +159,20 @@ def interpret_section_actions(ordered_flags):
         if anchor is None:
             return
         kind = anchor["kind"]
-        if kind == "add-dep":
-            deps.validate_kind(anchor["dep_kind"])
-            deps.validate_target(anchor["name"])
-            dep_actions.append(
-                ("add-dep", anchor["name"], anchor["dep_kind"],
-                 anchor.get("note"))
-            )
-            anchor = None
-            return
-        if kind == "remove-dep":
-            deps.validate_target(anchor["name"])
-            if anchor.get("dep_kind") is not None:
-                deps.validate_kind(anchor["dep_kind"])
-            dep_actions.append(
-                ("remove-dep", anchor["name"], anchor.get("dep_kind"))
-            )
+        if kind in ("add-dep", "remove-dep"):
+            try:
+                target, dep_kind = deps.split_operand(
+                    anchor["name"], anchor.get("dep_kind"),
+                    fused_required=(kind == "add-dep"),
+                )
+            except ValueError as e:
+                raise ValueError(f"--{kind}: {e}") from None
+            if kind == "add-dep":
+                dep_actions.append(
+                    ("add-dep", target, dep_kind, anchor.get("note"))
+                )
+            else:
+                dep_actions.append(("remove-dep", target, dep_kind))
             anchor = None
             return
         if kind == "section":
@@ -215,7 +212,6 @@ def interpret_section_actions(ordered_flags):
             )
 
     for flag, value in ordered_flags:
-        flag = _RETIRED_FLAG_SPELLINGS.get(flag, flag)
         if flag in _ANCHOR_FLAGS:
             _close_anchor()
             if flag == "--section":
@@ -229,21 +225,14 @@ def interpret_section_actions(ordered_flags):
                 actions.append(("remove", value))
             elif flag == "--move-section":
                 anchor = {"kind": "move", "name": value}
-            elif flag == "--add-dep":
-                kind_str, sep, target = value.partition(":")
-                if not sep or not kind_str or not target:
-                    raise ValueError(
-                        "--add-dep expects KIND:TARGET (e.g. "
-                        "blocks:RM-107)"
-                    )
+            elif flag in _DEP_FLAGS:
+                # IM-243: the operand is read at CLOSE time, by the one
+                # shared grammar in deps.split_operand -- both ops accept
+                # the (kind, target) pair fused (`blocks:RM-107`) or split
+                # (`RM-107 --kind blocks`). Deferring it is what lets
+                # --kind arrive after its anchor on either op.
                 anchor = {
-                    "kind": "add-dep",
-                    "name": target,
-                    "dep_kind": kind_str,
-                }
-            elif flag == "--remove-dep":
-                anchor = {
-                    "kind": "remove-dep",
+                    "kind": flag.lstrip("-"),
                     "name": value,
                     "dep_kind": None,
                 }
@@ -251,10 +240,10 @@ def interpret_section_actions(ordered_flags):
 
         if flag in _DEP_QUALIFIER_FLAGS:
             if flag == "--kind":
-                _require_anchor_for(flag, "remove-dep")
+                _require_anchor_for(flag, "add-dep", "remove-dep")
                 if anchor.get("dep_kind") is not None:
                     raise ValueError(
-                        "--kind already set for this --remove-dep"
+                        f"--kind already set for this --{anchor['kind']}"
                     )
                 anchor["dep_kind"] = value
             elif flag == "--dep-note":

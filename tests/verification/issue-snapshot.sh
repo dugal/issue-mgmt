@@ -278,9 +278,8 @@ fi
 
 # --- Test 12: IM-242 lock-timeout vocabulary (name follows the lock) ---
 # `admin snapshot` takes only the store-wide commit lock, so it spells the
-# flag --commit-timeout. The retired --timeout spelling keeps working for one
-# release but must not appear in --help as a current form
-# (surface.self-naming).
+# flag --commit-timeout. It spelled that bound --timeout through v3.4.x;
+# IM-270 retired the spelling, so it appears in neither --help nor argv.
 help_out=$( "$SCRIPT" --help 2>&1 )
 # COVERS: surface.vocabulary-registry
 if [[ "$help_out" == *"--commit-timeout"* ]] \
@@ -297,11 +296,13 @@ mk_store "$STORE_VOCAB"
 rc_new=$?
 "$SCRIPT" --store "$STORE_VOCAB" --timeout 5 >/dev/null 2>&1
 rc_old=$?
+# IM-270 retired --timeout outright: a retired spelling exits 2 as an
+# unknown argument, never warns and never resolves.
 # COVERS: surface.stability
-if [[ $rc_new -eq 0 ]] && [[ $rc_old -eq 0 ]]; then
-    pass "--commit-timeout works; retired --timeout still accepted (synonym window)"
+if [[ $rc_new -eq 0 ]] && [[ $rc_old -eq 2 ]]; then
+    pass "--commit-timeout works; retired --timeout exits 2 as unknown"
 else
-    fail "synonym window (rc_new=$rc_new rc_old=$rc_old)"
+    fail "retired-spelling refusal (rc_new=$rc_new rc_old=$rc_old)"
 fi
 
 # --- Summary ---

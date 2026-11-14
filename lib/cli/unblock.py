@@ -52,8 +52,10 @@ def register(subparsers):
     p.add_argument("--to", default="in-progress", choices=("open", "in-progress"),
                    dest="to_state",
                    help="Active state to land in (default: in-progress).")
-    p.add_argument("--reason", default=None, metavar="TEXT",
-                   help="Optional note recorded in Implementation Notes.")
+    p.add_argument("--reason", "--summary", "--note", dest="reason",
+                   default=None, metavar="TEXT",
+                   help="Optional note recorded in Implementation Notes. "
+                        "(--summary / --note are accepted synonyms.)")
     p.add_argument("--claim-generation", type=int, default=None, metavar="N",
                    dest="claim_generation")
     common.add_json_flag(p)

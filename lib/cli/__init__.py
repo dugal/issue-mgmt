@@ -88,9 +88,12 @@ SURFACE_RECORD_FIELDS         IM-250 / IM-262: ambient-derived output
 SURFACE_SYNONYMS              ``{canonical: (retired, ...)}`` for synonyms
                               declared inline rather than through a
                               ``common.add_*`` helper. Needed where no
-                              heuristic can find the pair -- ``edit``
-                              spells ``--kind`` and ``--dep-type`` with
-                              two DIFFERENT dests.
+                              heuristic can find the pair: ``edit`` spelled
+                              the dependency kind ``--dep-type`` against
+                              ``--kind``'s DIFFERENT dest through v3.4.x.
+                              IM-270 retired every such spelling, so no
+                              module declares this today; the slot stays
+                              for the next inline pair.
 SURFACE_PARSER                A zero-arg builder returning the verb's real
                               ``ArgumentParser``, for a verb whose
                               dispatcher subparser is a

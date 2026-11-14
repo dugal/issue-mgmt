@@ -69,7 +69,6 @@ VALID_JSON_FIELDS = ("id", "title", "prefix")
 
 # Aliased to the single shared grammar in lib/idresolve.py.
 _ID_RE = idresolve.ID_RE
-_PFX_RE = idresolve.PREFIX_RE
 
 CLOSED_STATUSES = ("done", "cancelled")
 BLOCKING_DEP_TYPE = "blocks"
@@ -94,7 +93,7 @@ Examples:
   issue ready
   issue ready --json
   issue ready --prefix ABC
-  issue ready --prefix ABC --actor claude-code-w5 --json id,title
+  issue ready --prefix ABC,XYZ --actor claude-code-w5 --json id,title
   issue ready --prefix ABC --filtered all    # and why the rest are not
 """
 
@@ -116,17 +115,15 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     common.add_prefix_scope_flag(
-        p, multi=False,
-        help="Restrict the ready set to one prefix (e.g. ABC, XYZ).",
+        p, help="Repeatable/comma-separated. Restrict the ready set to "
+                "these prefixes (e.g. ABC or ABC,XYZ).",
     )
     # IM-241 / surface.explicit-output-mode: human-readable text is the
     # default on every verb and --json is the opt-in. `ready` defaulted to
     # JSON with a --text opt-out through v3.3.x -- the surface's only
-    # inverted verb. `--text` stays accepted (and still mutually exclusive
-    # with --json, so a contradictory pair is exit 2) but is hidden from
-    # help: it now names the default, not an opt-out.
-    mode = p.add_mutually_exclusive_group()
-    mode.add_argument(
+    # inverted verb -- and carried `--text` as a hidden spelling of the new
+    # default through v3.4.x. IM-270 retired it; the default needs no flag.
+    p.add_argument(
         "--json", nargs="?", const=True, default=None,
         dest="json_mode", metavar="FIELDS",
         help="Emit a machine-readable JSON document on stdout "
@@ -136,11 +133,14 @@ def register(subparsers):
         "top-level fields; bare --json emits the full shape. Unknown "
         "field name -> exit 2.",
     )
-    mode.add_argument(
-        "--text", action="store_true", dest="text_mode",
-        help=argparse.SUPPRESS,
-    )
-    p.add_argument("--actor", default=None, metavar="ACTOR")
+    # IM-243 / surface.vocabulary-registry: one synonym set for the
+    # claimant concept. `--actor` is this verb's canonical spelling
+    # (the lease FILTER reads as an actor); `--claim` is accepted
+    # because the write side spells it that way on `start` and
+    # `transition`, and acceptance is uniform wherever the concept
+    # appears even where help presents one spelling per verb.
+    p.add_argument("--actor", "--claim", dest="actor", default=None,
+                   metavar="ACTOR")
     p.add_argument(
         "--limit", default=0, type=int, metavar="N",
         help="Cap the ready list -- this verb's primary result rows -- at "
@@ -250,11 +250,11 @@ def _sort_key(record):
     )
 
 
-def compute_ready(records, repo, actor):
+def compute_ready(records, prefixes, actor):
     candidates = sorted(
         (rec for rec in records.values()
          if rec["status"] == READY_SOURCE_STATUS
-         and (repo is None or rec["prefix"] == repo)),
+         and (prefixes is None or rec["prefix"] in prefixes)),
         key=_sort_key,
     )
     ready = []
@@ -335,10 +335,6 @@ def run(args):
     json_stderr = jsonfields.json_enabled(args.json_mode)
     text_mode = not json_stderr
 
-    if args.prefix is not None and not _PFX_RE.match(args.prefix.upper()):
-        print("%s: invalid --prefix '%s' (expected e.g. ABC, XYZ)"
-              % (prog, args.prefix), file=sys.stderr)
-        return errors.EXIT_USAGE
     if args.limit < 0:
         print("%s: invalid --limit %d (expected 0 for unlimited, or a "
               "positive cap)" % (prog, args.limit), file=sys.stderr)
@@ -360,29 +356,29 @@ def run(args):
     if rc is not None:
         return rc
 
-    # Case-fold --prefix to the store's canonical prefix so `--prefix im`
-    # scopes the IM prefix rather than returning nothing.
-    repo = args.prefix
-    if repo is not None:
-        rc = common.enforce_prefix_scope(
-            [repo], store_root, None, prog=prog, json_mode=json_stderr,
-        )
-        if rc is not None:
-            return rc
-        resolved = idresolve.resolve_prefix(
-            repo, idresolve._known_prefixes(store_root, None)
-        ) or repo.upper()
-        if resolved != repo:
-            print("%s: resolved %s -> %s" % (prog, repo, resolved),
-                  file=sys.stderr)
-            repo = resolved
+    # Parse, refuse an absent scope, and case-fold through the one shared
+    # resolver, so `--prefix im` scopes the IM prefix rather than returning
+    # nothing and `--prefix IM,LI` scopes both (IM-236).
+    prefixes, rc = common.resolve_prefix_scope(
+        args.prefix, store_root, None, prog=prog, json_mode=json_stderr,
+    )
+    if rc is not None:
+        return rc
 
     # Auto-reap expired leases before computing the ready set (design 2a).
     # Best-effort; never blocks the readiness read.
-    _reap.auto_reap(store_root, repo=repo)
+    reaped = _reap.auto_reap(store_root, prefixes=prefixes)
+    if reaped:
+        # A reclaim stamps `updated:` and commits, so the INDEX rows it
+        # touched are stale until the index is regenerated -- the same
+        # `cli.auto-reindex` obligation `admin reap` carries (IM-271). Only
+        # when something was actually reaped, and to stderr always: this is
+        # a read verb, so stdout belongs to the ready set. `start` does not
+        # do this because its own claim reindexes immediately afterwards.
+        _reap.reindex_after_reap(store_root, to_stderr=True)
 
     records = sweep_store(store_root)
-    ready, filtered = compute_ready(records, repo, args.actor)
+    ready, filtered = compute_ready(records, prefixes, args.actor)
 
     if args.limit > 0 and len(ready) > args.limit:
         suppressed = len(ready) - args.limit

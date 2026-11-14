@@ -65,6 +65,6 @@ Always pass `--json` on the wrapped call. On a contract error stderr carries a s
 ## Notes
 
 - Invocation is non-interactive: positional args are required so this skill can run unattended.
-- The skill does not edit the new issue's body beyond what the template provides. To add body content, follow with `/issue-edit-dev <id> --section "Implementation Notes" --append "..."`, or seed at create time via `issue create --section NAME=TEXT` / `--from-file PATH`.
+- The skill does not edit the new issue's body beyond what the template provides. To add body content, follow with `/issue-edit-dev <id> --section "Implementation Notes" --append "..."`, or seed at create time via `issue create --set-section NAME=TEXT` / `--from-file PATH`.
 - Issue numbering is monotonic within the prefix; the CLI handles concurrent `issue create` invocations safely via the registry lock.
 - Creating an issue does not claim it. Pick it up with `/issue-start-dev <id>` when work begins.

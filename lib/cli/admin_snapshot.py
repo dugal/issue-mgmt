@@ -93,10 +93,10 @@ def register(subparsers):
     )
     common.add_store_flag(p)
     # IM-242: the flag name follows the lock it bounds. This verb takes only
-    # the store-wide commit lock, so it carries --commit-timeout; the retired
-    # --timeout spelling is accepted (hidden) for one release.
+    # the store-wide commit lock, so it carries --commit-timeout; it spelled
+    # that bound --timeout through v3.4.x, and IM-270 retired the spelling.
     common.add_commit_timeout_flag(
-        p, default=concurrency.DEFAULT_LOCK_TIMEOUT, synonyms=("--timeout",)
+        p, default=concurrency.DEFAULT_LOCK_TIMEOUT
     )
     common.add_json_flag(p)
     common.add_version_flag(p)

@@ -14,20 +14,27 @@ import os
 import sys
 from pathlib import Path
 
-import reindex_core  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import reindex_core  # noqa: E402
 
 from . import common
 
 VERB = "reindex"
 TIER = "admin"
+# IM-239 / surface.self-naming: the one place this verb's own name is
+# written, so a message prefix cannot drift from the dispatcher spelling.
+# Declared because IM-275 gave the verb its first name-prefixed diagnostic;
+# before that it printed no command name at all and carried no PROG.
+PROG = "issue admin reindex"
 SUMMARY = "regenerate INDEX.md from issue-file frontmatter (store or legacy)"
 ORDER = 10
 
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
-# IM-251: resolves the store through the precedence chain with no operand
-# naming it (its positional is a legacy `.issues/` dir, not a store root),
-# so the absent `--store` is a real gap -- IM-251 follow-up work.
+# Resolves the store through the documented precedence chain and names it
+# with `--store`. Its positional is a legacy `.issues/` directory, NOT a
+# store root, which is why `positional` would be the wrong declaration and
+# why IM-251 measured the absent flag as a real gap (added by IM-275).
 SURFACE_STORE = "flag"
 # IM-254: `unconverted` until every failure path on this verb carries the
 # key=value payload; the set is enumerated, never waived, and only shrinks
@@ -41,8 +48,11 @@ No argument: prefer store mode when detectable (ISSUE_STORE_ROOT set or a
 .issues/.migrated-to-store sentinel), otherwise reindex the nearest .issues/
 directory (legacy mode). A positional issues-dir forces a legacy single-dir
 reindex. --all walks the workspace for every .issues/ directory (legacy) and,
-when ISSUE_STORE_ROOT is set and exists, additionally runs one full store
-reindex."""
+when a store root is named (--store, else ISSUE_STORE_ROOT) and exists,
+additionally runs one full store reindex.
+
+--store names a STORE root; the positional names a legacy .issues/ directory.
+They select different modes, so passing both is a usage error."""
 
 _EPILOG = """\
 JSON mode (--json): exactly one object on stdout, shape
@@ -68,7 +78,8 @@ The human summary lines are replaced by the JSON document, not duplicated.
 Examples:
   issue admin reindex                    # auto: store mode or nearest .issues/
   issue admin reindex ~/src/issues/      # explicit legacy dir
-  issue admin reindex --all              # all .issues/ dirs + store (if env-resolved)
+  issue admin reindex --store ~/personal/issues-store
+  issue admin reindex --all              # all .issues/ dirs + the named store
   issue admin reindex --json             # machine-readable counts
 """
 
@@ -91,8 +102,10 @@ def register(subparsers):
         "--all",
         action="store_true",
         dest="do_all",
-        help="Walk the workspace for every .issues/ dir (+ store if env-resolved).",
+        help="Walk the workspace for every .issues/ dir (+ the store, when "
+             "one is named by --store or ISSUE_STORE_ROOT).",
     )
+    common.add_store_flag(p)
     common.add_json_flag(p)
     common.add_version_flag(p)
     p.set_defaults(_run=run)
@@ -127,6 +140,19 @@ def _emit_json(mode, targets) -> None:
 def run(args) -> int:
     json_mode = bool(getattr(args, "json_mode", False))
 
+    # The positional and --store select different MODES (a legacy .issues/
+    # directory versus a store root), so one invocation naming both has no
+    # single meaning -- refuse it rather than silently preferring one
+    # (IM-275).
+    if args.issues_dir is not None and args.store:
+        print(
+            f"{PROG}: --store names a store root and the positional "
+            f"issues-dir names a legacy .issues/ directory -- pass one or "
+            f"the other, not both",
+            file=sys.stderr,
+        )
+        return errors.EXIT_USAGE
+
     def report(result, collected):
         # Human mode prints the summary line as it always did; JSON mode
         # accumulates the structured record and prints nothing here, so
@@ -135,7 +161,7 @@ def run(args) -> int:
         if not json_mode:
             print(result["summary"])
 
-    # --all: every .issues/ dir (legacy) + store when env-resolved.
+    # --all: every .issues/ dir (legacy) + the named store, if any.
     if args.do_all:
         base = _workspace_root()
         targets = []
@@ -150,10 +176,14 @@ def run(args) -> int:
                 except FileNotFoundError as e:
                     print(f"Error: {e}", file=sys.stderr)
                     return 1
-        store_env = os.environ.get("ISSUE_STORE_ROOT")
-        if store_env and Path(store_env).is_dir():
+        # --store overrides the env for the store half of the sweep; the
+        # sentinel is deliberately not consulted here, as it never was.
+        named_store = args.store or os.environ.get("ISSUE_STORE_ROOT")
+        if named_store and Path(named_store).expanduser().is_dir():
             try:
-                report(_reindex_store(store_env), targets)
+                report(
+                    _reindex_store(Path(named_store).expanduser()), targets
+                )
             except FileNotFoundError as e:
                 print(f"Error: {e}", file=sys.stderr)
                 return 1
@@ -181,8 +211,9 @@ def run(args) -> int:
 
     # No arg: prefer store mode when detectable.
     anchor = common.find_project_anchor()
-    store_root = common.resolve_store_root(anchor, None)
+    store_root = common.resolve_store_root(anchor, args.store)
     if store_root is not None:
+        store_root = store_root.expanduser()
         try:
             report(_reindex_store(store_root), targets)
         except FileNotFoundError as e:

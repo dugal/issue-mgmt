@@ -285,6 +285,63 @@ else
     fail "IM-166: ragged Done rows: $BAD_CELLS"
 fi
 
+# ---------------------------------------------------------------------------
+echo "[I] IM-275: --store names the store root"
+# ---------------------------------------------------------------------------
+# `store: "flag"` in the surface manifest MEANS the verb resolves a store
+# through the precedence chain, which obliges it to offer --store
+# (surface.verb-class-contract). It did not until IM-275, so the only way to
+# aim this verb at a store was the env var or a sentinel.
+rm -f "$STORE/IM/INDEX.md" "$STORE/INDEX.md"
+RC=0
+# A directory with no sentinel and no env, so only --store can resolve it.
+( cd "$WORKDIR" && "$REINDEX" --store "$STORE" >/dev/null 2>&1 ) || RC=$?
+# COVERS: surface.verb-class-contract
+assert_eq 0 "$RC" "--store resolves the store with no env and no sentinel"
+# COVERS: substrate.store-root-resolution
+assert_file_contains "IM-100" "$STORE/IM/INDEX.md" \
+    "--store wrote the per-prefix INDEX.md"
+
+# --store outranks the env, per the documented precedence.
+OTHER="$WORKDIR/store-other"
+mkdir -p "$OTHER/IM"
+(
+    cd "$OTHER"
+    git init -q
+    git config user.email "$FIXTURE_EMAIL"
+    git config user.name test
+    printf 'other-proj:IM\n' > .repos
+    git add .repos
+    git commit -q -m "init store"
+)
+make_issue "$OTHER/IM/IM-500.md" IM-500 open
+rm -f "$OTHER/IM/INDEX.md" "$OTHER/INDEX.md"
+RC=0
+( cd "$WORKDIR" && ISSUE_STORE_ROOT="$STORE" "$REINDEX" --store "$OTHER" \
+    >/dev/null 2>&1 ) || RC=$?
+assert_eq 0 "$RC" "--store with a competing env var exits 0"
+# COVERS: substrate.store-root-resolution
+assert_file_contains "IM-500" "$OTHER/IM/INDEX.md" \
+    "--store outranks ISSUE_STORE_ROOT"
+
+# --all's store half honors --store too.
+rm -f "$OTHER/IM/INDEX.md" "$OTHER/INDEX.md"
+RC=0
+OUT=$( cd "$EMPTY" && ISSUE_MGMT_ROOT="$EMPTY" "$REINDEX" --all \
+    --store "$OTHER" 2>&1 ) || RC=$?
+assert_eq 0 "$RC" "--all --store exits 0"
+assert_file_contains "IM-500" "$OTHER/IM/INDEX.md" \
+    "--all reindexed the --store-named store"
+
+# The positional is a legacy .issues/ dir and --store is a store root: two
+# modes, so naming both has no single meaning and is refused pre-write.
+RC=0
+ERR=$( "$REINDEX" "$LEG2/.issues" --store "$STORE" 2>&1 >/dev/null ) || RC=$?
+# COVERS: output.exit-codes
+assert_eq 2 "$RC" "positional + --store is a usage error"
+assert_contains "pass one or the other" "$ERR" \
+    "the two-mode refusal names the conflict"
+
 echo
 echo "============================================="
 echo "admin-reindex: PASS: $PASS  FAIL: $FAIL"

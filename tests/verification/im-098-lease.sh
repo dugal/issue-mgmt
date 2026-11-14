@@ -17,6 +17,9 @@
 #   - reaper --prefix case-folds through the shared resolver (IM-277):
 #     `--prefix im` resolves IM, announces on stderr, keeps --json stdout
 #     a single document; an absent prefix stays exit 2 naming the known set
+#   - reaper honors cli.auto-reindex (IM-271): one index write per PASS,
+#     refreshing the Updated cell of every reclaimed row; --no-reindex
+#     suppresses it; --store aims the reaper with no env and no sentinel
 #   - claim on blocked issue exits 7 (error=not-claimable)
 #   - claim on missing issue exits 7 (reason=not-found)
 #   - edit-issue --claim-generation guard (exit 5 mismatch / exit 0 match)
@@ -38,6 +41,7 @@ PROJECT_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TRANSITION="$(resolve_cli transition-issue)"
 EDIT="$(resolve_cli edit-issue)"
 REAP="$(resolve_cli issue-reap-expired-claims)"
+REINDEX="$(resolve_cli reindex-issues)"
 CONCURRENCY_PY="$PROJECT_ROOT/lib/concurrency.py"  # Tier 2: stack-coupled test adversary; see docs/design/concurrency-test-hook.md
 
 PASS=0
@@ -259,6 +263,21 @@ echo
 echo "[E] --renew extends lease_until only; --lease-ttl override"
 # ---------------------------------------------------------------------------
 BEFORE_UNTIL=$(grep '^lease_until:' "$STORE/IM/IM-201.md")
+# Backdate IM-201's rendered Updated cell so the renew below has an index
+# row to refresh. A renew stamps `updated:`, which IS rendered, so a renew
+# on a later day than the last regeneration leaves the row behind -- the
+# IM-271 defect, which through v3.4.x this verb carried by design (its
+# reindex was suppressed because renew "never changes status").
+python3 - "$STORE/IM/INDEX.md" "$STORE/INDEX.md" <<'PYEOF'
+import re, sys
+for path in sys.argv[1:]:
+    text = open(path).read()
+    text = re.sub(r"(?m)^(\| IM-201 \|.*\| )\d{4}-\d{2}-\d{2}( \|)$",
+                  r"\g<1>2026-05-12\g<2>", text)
+    open(path, "w").write(text)
+PYEOF
+git -C "$STORE" add -A
+git -C "$STORE" commit -q -m "test: backdate IM-201's rendered Updated cell"
 OUT=$(ISSUE_STORE_ROOT="$STORE" "$TRANSITION" IM-201 --renew --lease-ttl 7200 --json)
 RC=$?
 assert_eq "0" "$RC" "renew exits 0"
@@ -272,8 +291,26 @@ if [ "$BEFORE_UNTIL" != "$AFTER_UNTIL" ]; then
 else
     fail "renew did not change lease_until"
 fi
+# Still ONE commit per user-visible action: the index write rides inside
+# the lease mutation's own `renew <id>` commit (the reindex runs under the
+# store lock with the commit suppressed), so IM-271 added an index write
+# here without adding a commit.
 LASTMSG=$(git -C "$STORE" log -1 --format=%s)
 assert_eq "renew IM-201" "$LASTMSG" "store commit message is 'renew <id>'"
+# COVERS: concurrency.auto-commit-per-mutation
+assert_contains "IM/INDEX.md" \
+    "$(git -C "$STORE" show --name-only --format= HEAD)" \
+    "the renew commit carries the regenerated INDEX.md"
+
+# IM-271's second instance: a renew stamps `updated:` too, so it carries the
+# same cli.auto-reindex obligation. The exclusion that used to suppress the
+# reindex here reasoned from the Status GROUPING ("renew never changes
+# status") and overlooked the row's own Updated cell.
+ROW=$(grep -F '| IM-201 |' "$STORE/IM/INDEX.md")
+FM=$(sed -n 's/^updated: //p' "$STORE/IM/IM-201.md")
+# COVERS: cli.auto-reindex
+assert_contains "$FM" "$ROW" \
+    "renew refreshes the row's Updated cell to match the frontmatter"
 
 # ---------------------------------------------------------------------------
 echo
@@ -345,8 +382,14 @@ assert_file_contains "expired lease for carol reaped" "$STORE/IM/IM-202.md" \
     "reaper note appended to Implementation Notes"
 assert_file_contains "  assignee: claude" "$STORE/IM/IM-203.md" \
     "valid lease untouched by the reaper"
+# The per-issue commit message is `reap <id>`; since IM-271 the pass's own
+# index regeneration commits after it, so look for the message in the pass
+# rather than at HEAD.
+REAPMSG=$(git -C "$STORE" log -3 --format=%s | grep -c '^reap IM-202$')
+assert_eq "1" "$REAPMSG" "store commit message is 'reap <id>'"
 LASTMSG=$(git -C "$STORE" log -1 --format=%s)
-assert_eq "reap IM-202" "$LASTMSG" "store commit message is 'reap <id>'"
+assert_eq "reindex INDEX.md" "$LASTMSG" \
+    "the reap pass's index regeneration commits last (IM-271)"
 
 # Idempotent second run: nothing to reap
 OUT=$(ISSUE_STORE_ROOT="$STORE" "$REAP")
@@ -370,6 +413,39 @@ assert_contains "resolved im -> IM" "$ERR" \
 # Already-canonical input is silent (the sibling surfaces' contract).
 ERR=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix IM --dry-run 2>&1 >/dev/null)
 assert_eq "" "$ERR" "reaper --prefix IM emits no canonicalization note"
+
+# IM-236: the scope is a LIST here as on every other scoping verb. The
+# reaper took a single PFX through v3.4.x, which mattered more here than on
+# a read verb: the blast radius of getting the scope wrong is a write.
+# A two-prefix store of its own, so the shared fixture's known-prefix set
+# (asserted verbatim further down) is left alone.
+MULTI_STORE="$TMPDIR_ROOT/store-multi"
+mk_store "$MULTI_STORE"
+mkdir -p "$MULTI_STORE/LI"
+make_issue "$MULTI_STORE/IM/IM-401.md" "IM-401" "open"
+make_issue "$MULTI_STORE/LI/LI-401.md" "LI-401" "open"
+# The second prefix is LI rather than DOUG because the lowercase half of
+# the case-folding assertion has to spell the prefix out, and the
+# lower-case form of the workspace prefix is the bare personal username the
+# publish leak gate exists to catch (IM-218 class). A fixture value, but
+# the gate cannot tell a fixture from a leak, and it is right not to try.
+ISSUE_STORE_ROOT="$MULTI_STORE" "$REAP" --prefix im,li --dry-run >/dev/null 2>&1
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "0" "$RC" "reaper --prefix im,li (a list) resolves and exits 0"
+ISSUE_STORE_ROOT="$MULTI_STORE" "$REAP" --prefix IM --prefix LI --dry-run >/dev/null 2>&1
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "0" "$RC" "reaper repeated --prefix accumulates and exits 0"
+
+# An empty scope is a usage error, never a silent widening to every prefix
+# -- on this verb that widening would reap the whole store.
+ERR=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix "" --dry-run 2>&1 >/dev/null)
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "2" "$RC" "reaper --prefix '' exits 2 rather than reaping everything"
+assert_contains "reason=empty-prefix-scope" "$ERR" \
+    "reaper empty --prefix scope reports a branchable reason"
 
 # The note is on stderr, so --json stdout stays exactly one document.
 OUT=$(ISSUE_STORE_ROOT="$STORE" "$REAP" --prefix im --dry-run --json 2>/dev/null)
@@ -645,6 +721,203 @@ assert_file_contains "reason=lease-expired" "$ERR_FILE" \
     "transition guard stderr carries reason=lease-expired"
 assert_file_contains "status: in-progress" "$STORE/IM/IM-212.md" \
     "guarded transition after release did not write"
+
+# ---------------------------------------------------------------------------
+echo
+echo "[Q] the claimant concept is one synonym set across the lease surface"
+# ---------------------------------------------------------------------------
+# surface.vocabulary-registry's synonym half (IM-243): a spelling accepted
+# for a concept on any verb is accepted for that concept on every verb where
+# the concept appears. The claimant is one concept across `start`
+# (--claim/--actor), `transition`, and the `ready` lease filter; `transition`
+# took --claim alone and `ready` --actor alone through v3.4.x, so the manual
+# renew/release flows that skip the `start` wrapper exited 2 on the spelling
+# the read side teaches. Help text still presents one canonical spelling per
+# verb, which the rule permits.
+make_issue "$STORE/IM/IM-213.md" "IM-213" "open"
+OUT=$(ISSUE_STORE_ROOT="$STORE" "$TRANSITION" IM-213 --actor dora \
+    --no-reindex --json 2>"$ERR_FILE")
+RC=$?
+assert_eq "0" "$RC" "transition accepts --actor as a claimant spelling"
+# COVERS: surface.vocabulary-registry
+assert_eq "dora" "$(json_field "$OUT" claim.assignee)" \
+    "transition --actor names the same claimant --claim would"
+assert_file_contains "  assignee: dora" "$STORE/IM/IM-213.md" \
+    "transition --actor writes the claim block"
+
+# The canonical spelling each verb PRESENTS is unchanged: --claim on the
+# write side, --actor on the read filter (`ready --claim`'s own acceptance
+# is asserted in issue-ready.sh, against the claim fixture that lives
+# there). argparse prints only the first option string in the usage block,
+# which is where that is readable.
+READY="$(resolve_cli issue-ready)"
+USAGE=$(ISSUE_STORE_ROOT="$STORE" "$TRANSITION" --help 2>&1 | sed -n '1,6p')
+assert_contains "[--claim CLAIMANT]" "$USAGE" \
+    "transition usage presents --claim as the canonical spelling"
+USAGE=$(ISSUE_STORE_ROOT="$STORE" "$READY" --help 2>&1 | sed -n '1,6p')
+assert_contains "[--actor ACTOR]" "$USAGE" \
+    "ready usage presents --actor as the canonical spelling"
+
+# ---------------------------------------------------------------------------
+echo
+echo "[R] the reaper reindexes (cli.auto-reindex) and takes --store"
+# ---------------------------------------------------------------------------
+# IM-271: reap writes issue files and stamps `updated:`, so every reclaimed
+# row's Updated cell in INDEX.md went stale until some later mutation or
+# catchup sweep happened to rewrite it. `cli.auto-reindex` is unconditional
+# for a mutating verb, and reap neither reindexed nor offered the
+# --no-reindex that would suppress a reindex it does not do.
+#
+# The fixture makes the staleness observable deterministically: the issue
+# files carry `updated: 2026-05-12`, the index is regenerated from that, and
+# then the claim (--no-reindex) and the reap both stamp today -- so a
+# post-reap index still showing 2026-05-12 is the defect.
+REAP_STORE="$TMPDIR_ROOT/store-reap-reindex"
+mk_store "$REAP_STORE"
+make_issue "$REAP_STORE/IM/IM-220.md" "IM-220" "open"
+make_issue "$REAP_STORE/IM/IM-221.md" "IM-221" "open"
+# IM-275: --store resolves the store with no env var and no sentinel. Before
+# it, `store: "flag"` was declared in the manifest with no flag to back it.
+RC=0
+( cd "$TMPDIR_ROOT" && "$REINDEX" --store "$REAP_STORE" >/dev/null 2>&1 ) || RC=$?
+# COVERS: surface.verb-class-contract
+assert_eq "0" "$RC" "reindex --store resolves the reap fixture store"
+assert_file_contains "2026-05-12" "$REAP_STORE/IM/INDEX.md" \
+    "index starts on the fixture's own updated date"
+
+for ID in IM-220 IM-221; do
+    ISSUE_STORE_ROOT="$REAP_STORE" "$TRANSITION" "$ID" --claim mallory \
+        --no-reindex >/dev/null
+done
+python3 - "$REAP_STORE/IM/IM-220.md" "$REAP_STORE/IM/IM-221.md" <<'PYEOF'
+import re, sys
+for path in sys.argv[1:]:
+    text = open(path).read()
+    text = re.sub(r"(?m)^lease_until: .*$",
+                  "lease_until: 2020-01-01T00:00:00Z", text)
+    open(path, "w").write(text)
+PYEOF
+git -C "$REAP_STORE" add -A
+git -C "$REAP_STORE" commit -q -m "test: backdate reap-fixture leases"
+
+TODAY=$(date +%Y-%m-%d)
+BEFORE=$(git -C "$REAP_STORE" rev-list --count HEAD)
+# --store again, this time on the reaper itself.
+OUT=$( cd "$TMPDIR_ROOT" && "$REAP" --store "$REAP_STORE" 2>/dev/null )
+RC=$?
+# COVERS: surface.verb-class-contract
+assert_eq "0" "$RC" "reap --store resolves the store with no env"
+assert_contains "Reaped 2 expired claim(s)." "$OUT" "both claims reaped"
+
+ROW=$(grep -F '| IM-220 |' "$REAP_STORE/IM/INDEX.md")
+FM=$(sed -n 's/^updated: //p' "$REAP_STORE/IM/IM-220.md")
+# COVERS: cli.auto-reindex
+assert_contains "$FM" "$ROW" \
+    "reaped row's Updated cell matches the issue frontmatter"
+assert_eq "$TODAY" "$FM" "the reap stamped today's date on the issue"
+if grep -F '| IM-221 |' "$REAP_STORE/IM/INDEX.md" | grep -qF "2026-05-12"; then
+    fail "IM-271: IM-221's row still carries the pre-reap Updated date"
+else
+    pass "IM-271: the second reclaimed row was refreshed too"
+fi
+
+# One index write per PASS, not per reclaimed issue: the regenerator is
+# whole-store, so N reclaims must still produce exactly one reindex commit.
+AFTER=$(git -C "$REAP_STORE" rev-list --count HEAD)
+REIDX=$(git -C "$REAP_STORE" log --format=%s "-$((AFTER-BEFORE))" \
+    | grep -c '^reindex INDEX.md$')
+# COVERS: cli.auto-reindex
+assert_eq "1" "$REIDX" "a two-issue reap pass wrote the index once"
+
+# Gate-bites: --no-reindex suppresses it, which is also what proves the
+# assertions above are measuring the reindex rather than something else.
+make_issue "$REAP_STORE/IM/IM-222.md" "IM-222" "open"
+( cd "$TMPDIR_ROOT" && "$REINDEX" --store "$REAP_STORE" >/dev/null 2>&1 )
+ISSUE_STORE_ROOT="$REAP_STORE" "$TRANSITION" IM-222 --claim mallory \
+    --no-reindex >/dev/null
+python3 - "$REAP_STORE/IM/IM-222.md" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+text = re.sub(r"(?m)^lease_until: .*$",
+              "lease_until: 2020-01-01T00:00:00Z", text)
+open(sys.argv[1], "w").write(text)
+PYEOF
+git -C "$REAP_STORE" add -A
+git -C "$REAP_STORE" commit -q -m "test: backdate IM-222 lease"
+BEFORE=$(git -C "$REAP_STORE" rev-list --count HEAD)
+ISSUE_STORE_ROOT="$REAP_STORE" "$REAP" --no-reindex >/dev/null 2>&1
+AFTER=$(git -C "$REAP_STORE" rev-list --count HEAD)
+REIDX=$(git -C "$REAP_STORE" log --format=%s "-$((AFTER-BEFORE))" \
+    | grep -c '^reindex INDEX.md$')
+# COVERS: cli.auto-reindex
+assert_eq "0" "$REIDX" "reap --no-reindex writes no index"
+if grep -F '| IM-222 |' "$REAP_STORE/IM/INDEX.md" | grep -qF "2026-05-12"; then
+    pass "reap --no-reindex left the row as the caller asked"
+else
+    fail "reap --no-reindex refreshed the row anyway"
+fi
+
+# A pass that reaps nothing reindexes nothing -- there is no mutation to
+# follow, so the no-op pass stays a pure read.
+BEFORE=$(git -C "$REAP_STORE" rev-list --count HEAD)
+ISSUE_STORE_ROOT="$REAP_STORE" "$REAP" >/dev/null 2>&1
+AFTER=$(git -C "$REAP_STORE" rev-list --count HEAD)
+assert_eq "$BEFORE" "$AFTER" "a reap pass with nothing to reap makes no commit"
+
+# `issue ready` carries the same obligation on the path it owns: its
+# opportunistic reap (workflow.auto-reap) is a mutation, so the rows it
+# reclaims are stale until the index is regenerated. `start` is deliberately
+# NOT in this list -- its own claim reindexes the whole store immediately
+# afterwards, so a second write would be redundant.
+READY_BIN="$(resolve_cli issue-ready)"
+make_issue "$REAP_STORE/IM/IM-223.md" "IM-223" "open"
+( cd "$TMPDIR_ROOT" && "$REINDEX" --store "$REAP_STORE" >/dev/null 2>&1 )
+ISSUE_STORE_ROOT="$REAP_STORE" "$TRANSITION" IM-223 --claim mallory \
+    --no-reindex >/dev/null
+python3 - "$REAP_STORE/IM/IM-223.md" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+text = re.sub(r"(?m)^lease_until: .*$",
+              "lease_until: 2020-01-01T00:00:00Z", text)
+open(sys.argv[1], "w").write(text)
+PYEOF
+git -C "$REAP_STORE" add -A
+git -C "$REAP_STORE" commit -q -m "test: backdate IM-223 lease"
+BEFORE=$(git -C "$REAP_STORE" rev-list --count HEAD)
+ISSUE_STORE_ROOT="$REAP_STORE" "$READY_BIN" --prefix IM >/dev/null 2>&1
+AFTER=$(git -C "$REAP_STORE" rev-list --count HEAD)
+REIDX=$(git -C "$REAP_STORE" log --format=%s "-$((AFTER-BEFORE))" \
+    | grep -c '^reindex INDEX.md$')
+# COVERS: cli.auto-reindex
+assert_eq "1" "$REIDX" "ready's opportunistic reap reindexes once"
+if grep -F '| IM-223 |' "$REAP_STORE/IM/INDEX.md" | grep -qF "2026-05-12"; then
+    fail "IM-271: ready reaped IM-223 but left its row stale"
+else
+    pass "IM-271: ready's reap refreshed the reclaimed row"
+fi
+
+# A `ready` run with nothing to reap stays a pure read: no commit at all.
+BEFORE=$(git -C "$REAP_STORE" rev-list --count HEAD)
+ISSUE_STORE_ROOT="$REAP_STORE" "$READY_BIN" --prefix IM >/dev/null 2>&1
+AFTER=$(git -C "$REAP_STORE" rev-list --count HEAD)
+assert_eq "$BEFORE" "$AFTER" "ready with nothing to reap makes no commit"
+
+# --dry-run writes nothing at all, index included.
+ISSUE_STORE_ROOT="$REAP_STORE" "$TRANSITION" IM-220 --claim mallory \
+    --no-reindex >/dev/null
+python3 - "$REAP_STORE/IM/IM-220.md" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+text = re.sub(r"(?m)^lease_until: .*$",
+              "lease_until: 2020-01-01T00:00:00Z", text)
+open(sys.argv[1], "w").write(text)
+PYEOF
+git -C "$REAP_STORE" add -A
+git -C "$REAP_STORE" commit -q -m "test: backdate IM-220 lease again"
+BEFORE=$(git -C "$REAP_STORE" rev-list --count HEAD)
+ISSUE_STORE_ROOT="$REAP_STORE" "$REAP" --dry-run >/dev/null 2>&1
+AFTER=$(git -C "$REAP_STORE" rev-list --count HEAD)
+assert_eq "$BEFORE" "$AFTER" "reap --dry-run makes no commit of any kind"
 
 # ---------------------------------------------------------------------------
 echo

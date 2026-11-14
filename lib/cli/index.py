@@ -30,14 +30,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timezone
 
 import errors  # noqa: E402
 import frontmatter  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import jsonfields  # noqa: E402
-import idresolve  # noqa: E402
 import reindex_core  # noqa: E402  (STATUS_ORDER / STATUS_LABELS)
 import search  # noqa: E402
 
@@ -65,8 +63,6 @@ SURFACE_GENERATION_FIELDS = ("generated_at",)
 # generated_at) and the per-group metadata (status, count) intact.
 VALID_JSON_FIELDS = ("id", "title", "priority", "file")
 
-_PFX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
-
 # Same deterministic ordering within a group as issue-ready:
 # priority (high > medium > low > other), then created, then id.
 _PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2}
@@ -78,16 +74,18 @@ Render the issue store as a board grouped by status. Read-only: no locks
 acquired; computed live from store frontmatter, so the view is always fresh.
 
 Groups appear in workflow order (In Progress, Open, Blocked, Done,
-Cancelled). --prefix restricts to one prefix; --status restricts to the named
-statuses. Each group is capped at --limit entries (default 20; pass
---limit 0 for the full group); suppressed rows are announced, never hidden
-silently.
+Cancelled). --prefix restricts to the named prefixes and --status to the
+named statuses; both are repeatable and comma-separated. Each group is
+capped at --limit entries (default 20; pass --limit 0 for the full group);
+suppressed rows are announced, never hidden silently.
 
 Store mode only -- run inside a migrated project or set ISSUE_STORE_ROOT.
 
 --json emits {store, prefix, repo, generated_at,
-              groups[{status, count, issues}]}. `repo` duplicates `prefix`
-              and is retained only for compatibility.
+              groups[{status, count, issues}]}. `prefix` echoes the
+              canonicalized scope (several prefixes join sorted with
+              commas, null when unscoped); `repo` duplicates it and is
+              retained only for compatibility.
 It accepts an optional comma-separated field list (e.g. --json id,title) that
 projects each per-issue object under groups[].issues to those top-level
 fields, in the order given, leaving the wrapper and per-group metadata
@@ -103,7 +101,7 @@ Examples:
   issue index
   issue index --prefix ABC
   issue index --status open,in-progress
-  issue index --prefix ABC --status open --limit 0
+  issue index --prefix ABC,XYZ --status open --limit 0
   issue index --json
   issue index --prefix ABC --json id,title
 """
@@ -118,8 +116,8 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     common.add_prefix_scope_flag(
-        p, multi=False,
-        help="Restrict the board to one prefix (e.g. ABC, XYZ).",
+        p, help="Repeatable/comma-separated. Restrict the board to these "
+                "prefixes (e.g. ABC or ABC,XYZ).",
     )
     p.add_argument(
         "--status", action="append", default=None,
@@ -168,10 +166,9 @@ def _parse_status_filter(values):
     return wanted or None
 
 
-def _collect(store_root, repo):
+def _collect(store_root, prefixes):
     """Group issue records by status. Records carry id/title/priority/created/file."""
     groups = {s: [] for s in reindex_core.STATUS_ORDER}
-    prefixes = {repo} if repo else None
     for path in search.enumerate_issue_files(store_root, None, prefixes):
         try:
             fm_lines, _body = frontmatter.read_issue(path)
@@ -195,9 +192,9 @@ def _collect(store_root, repo):
     return groups
 
 
-def _render_text(store_root, repo, generated_at, groups, statuses, limit):
+def _render_text(store_root, scope_label, generated_at, groups, statuses, limit):
     out = []
-    scope = " (prefix %s)" % repo if repo else ""
+    scope = " (prefix %s)" % scope_label if scope_label else ""
     out.append("Issues board -- %s%s" % (store_root, scope))
     out.append("generated %s" % generated_at)
     for status in statuses:
@@ -221,7 +218,8 @@ def _render_text(store_root, repo, generated_at, groups, statuses, limit):
     return "\n".join(out) + "\n"
 
 
-def _render_json(store_root, repo, generated_at, groups, statuses, limit, fields):
+def _render_json(store_root, scope_label, generated_at, groups, statuses,
+                 limit, fields):
     group_list = []
     for status in statuses:
         rows = groups.get(status, [])
@@ -245,8 +243,8 @@ def _render_json(store_root, repo, generated_at, groups, statuses, limit, fields
         # `prefix` is the canonical key (IM-237); `repo` is retained because
         # surface.stability forbids removing a shipped --json field. Both
         # carry the same value.
-        "prefix": repo,
-        "repo": repo,
+        "prefix": scope_label,
+        "repo": scope_label,
         "generated_at": generated_at,
         "groups": group_list,
     }
@@ -254,13 +252,6 @@ def _render_json(store_root, repo, generated_at, groups, statuses, limit, fields
 
 
 def run(args) -> int:
-    if args.prefix is not None and not _PFX_RE.match(args.prefix.upper()):
-        print(
-            "issue index: invalid --prefix '%s' (expected e.g. ABC, XYZ)"
-            % args.prefix,
-            file=sys.stderr,
-        )
-        return 2
     if args.limit < 0:
         print(
             "issue index: invalid --limit %d (expected 0 for unlimited, or a "
@@ -295,33 +286,32 @@ def run(args) -> int:
     if rc is not None:
         return rc
 
-    repo = args.prefix
-    if repo is not None:
-        rc = common.enforce_prefix_scope(
-            [repo], store_root, anchor, prog="issue index",
-            json_mode=jsonfields.json_enabled(args.json_mode),
-        )
-        if rc is not None:
-            return rc
-        resolved = idresolve.resolve_prefix(
-            repo, idresolve._known_prefixes(store_root, anchor)
-        ) or repo.upper()
-        if resolved != repo:
-            print(f"issue index: resolved {repo} -> {resolved}",
-                  file=sys.stderr)
-            repo = resolved
+    prefixes, rc = common.resolve_prefix_scope(
+        args.prefix, store_root, anchor, prog="issue index",
+        json_mode=jsonfields.json_enabled(args.json_mode),
+    )
+    if rc is not None:
+        return rc
+    # One label for both renderings. The board is one document whatever its
+    # scope, so a multi-prefix scope renders as the canonicalized set joined
+    # in sorted order -- and a single-prefix scope renders exactly as it did
+    # through v3.4.x, which is what keeps the shipped `prefix` / `repo`
+    # --json fields readable by anything written against them.
+    scope_label = ",".join(sorted(prefixes)) if prefixes else None
 
     statuses = wanted if wanted is not None else list(reindex_core.STATUS_ORDER)
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    groups = _collect(store_root, repo)
+    groups = _collect(store_root, prefixes)
 
     if jsonfields.json_enabled(args.json_mode):
         sys.stdout.write(
-            _render_json(store_root, repo, generated_at, groups, statuses, args.limit, fields)
+            _render_json(store_root, scope_label, generated_at, groups,
+                         statuses, args.limit, fields)
         )
     else:
         sys.stdout.write(
-            _render_text(store_root, repo, generated_at, groups, statuses, args.limit)
+            _render_text(store_root, scope_label, generated_at, groups,
+                         statuses, args.limit)
         )
 
     # IM-238: one zero-result rule for every enumeration read -- 0 = at

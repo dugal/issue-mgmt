@@ -10,8 +10,8 @@
   "generated_by": "scripts/cli-surface",
   "schema": 2,
   "totals": {
-    "flag_names": 64,
-    "flag_registrations": 230,
+    "flag_names": 62,
+    "flag_registrations": 221,
     "verbs": 28
   },
   "verbs": [
@@ -710,14 +710,33 @@
           "type": "float"
         },
         {
-          "action": "store",
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "no_reindex",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--no-reindex",
+          "names": [
+            "--no-reindex"
+          ],
+          "nargs": 0,
+          "source": "common.add_no_reindex_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
           "default_suppressed": false,
           "dest": "prefix",
           "hidden": false,
-          "metavar": "PFX",
+          "metavar": "PFX[,PFX...]",
           "mutex_group": null,
           "name": "--prefix",
           "names": [
@@ -733,18 +752,18 @@
           "choices": null,
           "const": null,
           "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX",
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
           "mutex_group": null,
-          "name": "--repo",
+          "name": "--store",
           "names": [
-            "--repo"
+            "--store"
           ],
           "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
+          "source": "common.add_store_flag",
+          "synonym_of": null,
           "type": null
         },
         {
@@ -855,6 +874,25 @@
           "type": null
         },
         {
+          "action": "store",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": false,
+          "dest": "store",
+          "hidden": false,
+          "metavar": "ROOT",
+          "mutex_group": null,
+          "name": "--store",
+          "names": [
+            "--store"
+          ],
+          "nargs": null,
+          "source": "common.add_store_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
           "action": "version",
           "choices": null,
           "const": null,
@@ -898,7 +936,9 @@
         }
       ],
       "prog": {
-        "declared": [],
+        "declared": [
+          "issue admin reindex"
+        ],
         "dispatcher": "issue admin reindex",
         "message_prefixes": [],
         "usage_names": []
@@ -1084,25 +1124,6 @@
           "source": "common.add_store_flag",
           "synonym_of": null,
           "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "commit_timeout",
-          "hidden": true,
-          "metavar": "SECONDS",
-          "mutex_group": null,
-          "name": "--timeout",
-          "names": [
-            "--timeout"
-          ],
-          "nargs": null,
-          "source": "common.add_commit_timeout_flag",
-          "synonym_of": "--commit-timeout",
-          "type": "float"
         },
         {
           "action": "version",
@@ -1358,7 +1379,9 @@
           "mutex_group": null,
           "name": "--reason",
           "names": [
-            "--reason"
+            "--reason",
+            "--summary",
+            "--note"
           ],
           "nargs": null,
           "source": "local",
@@ -1552,7 +1575,9 @@
           "mutex_group": null,
           "name": "--reason",
           "names": [
-            "--reason"
+            "--reason",
+            "--summary",
+            "--note"
           ],
           "nargs": null,
           "source": "local",
@@ -1955,13 +1980,13 @@
           "const": null,
           "default": [],
           "default_suppressed": false,
-          "dest": "sections",
+          "dest": "set_sections",
           "hidden": false,
           "metavar": "NAME=TEXT",
           "mutex_group": null,
-          "name": "--section",
+          "name": "--set-section",
           "names": [
-            "--section"
+            "--set-section"
           ],
           "nargs": null,
           "source": "local",
@@ -2169,25 +2194,6 @@
           "choices": null,
           "const": null,
           "default": null,
-          "default_suppressed": true,
-          "dest": "note",
-          "hidden": true,
-          "metavar": "TEXT",
-          "mutex_group": null,
-          "name": "--note",
-          "names": [
-            "--note"
-          ],
-          "nargs": null,
-          "source": "local",
-          "synonym_of": "--dep-note",
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
           "default_suppressed": false,
           "dest": "store",
           "hidden": false,
@@ -2200,25 +2206,6 @@
           "nargs": null,
           "source": "common.add_store_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "dep_type",
-          "hidden": true,
-          "metavar": "KIND",
-          "mutex_group": null,
-          "name": "--type",
-          "names": [
-            "--type"
-          ],
-          "nargs": null,
-          "source": "local",
-          "synonym_of": "--kind",
           "type": null
         },
         {
@@ -2499,25 +2486,6 @@
           "type": null
         },
         {
-          "action": "OrderedFlagAction",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": false,
-          "dest": "dep_type",
-          "hidden": true,
-          "metavar": "KIND",
-          "mutex_group": null,
-          "name": "--dep-type",
-          "names": [
-            "--dep-type"
-          ],
-          "nargs": null,
-          "source": "local",
-          "synonym_of": "--kind",
-          "type": null
-        },
-        {
           "action": "help",
           "choices": null,
           "const": null,
@@ -2697,7 +2665,7 @@
           "default_suppressed": false,
           "dest": "remove_dep",
           "hidden": false,
-          "metavar": "TARGET",
+          "metavar": "[KIND:]TARGET",
           "mutex_group": null,
           "name": "--remove-dep",
           "names": [
@@ -3001,7 +2969,7 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
@@ -3017,25 +2985,6 @@
           "nargs": null,
           "source": "common.add_prefix_scope_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX[,PFX...]",
-          "mutex_group": null,
-          "name": "--repo",
-          "names": [
-            "--repo"
-          ],
-          "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
           "type": null
         },
         {
@@ -3302,7 +3251,7 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
@@ -3318,25 +3267,6 @@
           "nargs": null,
           "source": "common.add_prefix_scope_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX[,PFX...]",
-          "mutex_group": null,
-          "name": "--repo",
-          "names": [
-            "--repo"
-          ],
-          "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
           "type": null
         },
         {
@@ -3633,14 +3563,14 @@
           "type": "int"
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
           "default_suppressed": false,
           "dest": "prefix",
           "hidden": false,
-          "metavar": "PFX",
+          "metavar": "PFX[,PFX...]",
           "mutex_group": null,
           "name": "--prefix",
           "names": [
@@ -3649,25 +3579,6 @@
           "nargs": null,
           "source": "common.add_prefix_scope_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX",
-          "mutex_group": null,
-          "name": "--repo",
-          "names": [
-            "--repo"
-          ],
-          "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
           "type": null
         },
         {
@@ -3799,7 +3710,7 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
@@ -3815,25 +3726,6 @@
           "nargs": null,
           "source": "common.add_prefix_scope_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX[,PFX...]",
-          "mutex_group": null,
-          "name": "--repo",
-          "names": [
-            "--repo"
-          ],
-          "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
           "type": null
         },
         {
@@ -3875,7 +3767,7 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
@@ -3928,9 +3820,7 @@
           "issue list"
         ],
         "dispatcher": "issue list",
-        "message_prefixes": [
-          "issue list"
-        ],
+        "message_prefixes": [],
         "usage_names": []
       },
       "record_fields": [],
@@ -4039,12 +3929,12 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
-          "default": "Implementation Notes",
+          "default": null,
           "default_suppressed": false,
-          "dest": "section",
+          "dest": "sections",
           "hidden": false,
           "metavar": "NAME",
           "mutex_group": null,
@@ -4163,7 +4053,8 @@
           "mutex_group": null,
           "name": "--actor",
           "names": [
-            "--actor"
+            "--actor",
+            "--claim"
           ],
           "nargs": null,
           "source": "local",
@@ -4221,7 +4112,7 @@
           "dest": "json_mode",
           "hidden": false,
           "metavar": "FIELDS",
-          "mutex_group": 0,
+          "mutex_group": null,
           "name": "--json",
           "names": [
             "--json"
@@ -4251,14 +4142,14 @@
           "type": "int"
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
           "default_suppressed": false,
           "dest": "prefix",
           "hidden": false,
-          "metavar": "PFX",
+          "metavar": "PFX[,PFX...]",
           "mutex_group": null,
           "name": "--prefix",
           "names": [
@@ -4267,25 +4158,6 @@
           "nargs": null,
           "source": "common.add_prefix_scope_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX",
-          "mutex_group": null,
-          "name": "--repo",
-          "names": [
-            "--repo"
-          ],
-          "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
           "type": null
         },
         {
@@ -4304,25 +4176,6 @@
           ],
           "nargs": null,
           "source": "common.add_store_flag",
-          "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store_true",
-          "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
-          "dest": "text_mode",
-          "hidden": true,
-          "metavar": null,
-          "mutex_group": 0,
-          "name": "--text",
-          "names": [
-            "--text"
-          ],
-          "nargs": 0,
-          "source": "local",
           "synonym_of": null,
           "type": null
         },
@@ -4348,12 +4201,7 @@
       ],
       "generation_fields": [],
       "module": "cli.ready",
-      "mutually_exclusive_groups": [
-        [
-          "--json",
-          "--text"
-        ]
-      ],
+      "mutually_exclusive_groups": [],
       "parser": {
         "add_help": true,
         "kind": "argparse",
@@ -4437,7 +4285,7 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
@@ -4453,25 +4301,6 @@
           "nargs": null,
           "source": "common.add_prefix_scope_flag",
           "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": true,
-          "dest": "prefix",
-          "hidden": true,
-          "metavar": "PFX[,PFX...]",
-          "mutex_group": null,
-          "name": "--repo",
-          "names": [
-            "--repo"
-          ],
-          "nargs": null,
-          "source": "common.add_prefix_scope_flag",
-          "synonym_of": "--prefix",
           "type": null
         },
         {
@@ -4535,7 +4364,7 @@
           "type": null
         },
         {
-          "action": "store",
+          "action": "append",
           "choices": null,
           "const": null,
           "default": null,
@@ -5059,7 +4888,8 @@
           "mutex_group": null,
           "name": "--claim",
           "names": [
-            "--claim"
+            "--claim",
+            "--actor"
           ],
           "nargs": null,
           "source": "local",
@@ -5442,7 +5272,9 @@
           "mutex_group": null,
           "name": "--reason",
           "names": [
-            "--reason"
+            "--reason",
+            "--summary",
+            "--note"
           ],
           "nargs": null,
           "source": "local",

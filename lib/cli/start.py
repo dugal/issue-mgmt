@@ -112,7 +112,7 @@ def run(args):
         anchor = common.find_project_anchor()
         store_root = common.resolve_store_root(anchor, args.store)
         if store_root is not None:
-            _reap.auto_reap(store_root.expanduser(), repo=parsed[0],
+            _reap.auto_reap(store_root.expanduser(), prefixes={parsed[0]},
                             lock_timeout=args.lock_timeout)
 
     return transition._execute_lease(

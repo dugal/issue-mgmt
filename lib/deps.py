@@ -224,3 +224,63 @@ def validate_target(target):
             "invalid dependency target %r (expected a PREFIX-NNN issue id)"
             % (target,)
         )
+
+
+def split_operand(operand, kind=None, *, fused_required=False):
+    """Parse a dependency operand into `(target, kind_or_None)`.
+
+    One grammar for both halves of the authoring surface (IM-243). The
+    edge-authoring verbs encoded the (kind, target) pair two ways within
+    one verb through v3.4.x -- `dep add ID KIND:TARGET` fused it, while
+    `dep remove ID TARGET --kind KIND` split it, so an agent that learned
+    the add form and tried `dep remove ID blocks:XYZ-9` got a failed
+    lookup for a target literally named `blocks:XYZ-9`. Removal now
+    accepts BOTH spellings and this function is the one place either is
+    read.
+
+    Rules:
+      - A colon-free operand is the target; `kind` (from `--kind`) rides
+        through unchanged, so the split form is untouched.
+      - A colon-headed operand whose head is one of the four dependency
+        kinds is the fused form, and its head becomes the kind.
+      - A colon-headed operand whose head is NOT a kind is an error
+        naming the four kinds -- never a target silently containing a
+        colon, which is not a valid id shape anyway.
+      - A fused kind plus a conflicting `--kind` is an error; a fused kind
+        plus a MATCHING `--kind` is accepted (the caller said one thing
+        twice).
+
+    `fused_required=True` is the add side, where the kind is mandatory and
+    the split form was never accepted.
+
+    Raises ValueError with a stderr-ready message (CLI exit 2, the
+    argv/usage contract) for every rejection; the caller prefixes its own
+    name. Validates both components, so a successful return needs no
+    further `validate_kind` / `validate_target` call.
+    """
+    head, sep, tail = operand.partition(":")
+    if sep and head in IM_DEP_KINDS:
+        if kind is not None and kind != head:
+            raise ValueError(
+                "conflicting dependency kind: operand says %r, --kind says "
+                "%r -- pass the kind once" % (head, kind)
+            )
+        target, kind = tail, head
+    elif sep:
+        raise ValueError(
+            "invalid dependency kind %r in %r (expected one of: %s) -- a "
+            "colon-free operand is read as a bare target" % (
+                head, operand, ", ".join(IM_DEP_KINDS))
+        )
+    else:
+        target = operand
+
+    if fused_required and kind is None:
+        raise ValueError(
+            "expected KIND:TARGET (e.g. blocks:XYZ-9), where KIND is one "
+            "of: %s" % ", ".join(IM_DEP_KINDS)
+        )
+    if kind is not None:
+        validate_kind(kind)
+    validate_target(target)
+    return target, kind

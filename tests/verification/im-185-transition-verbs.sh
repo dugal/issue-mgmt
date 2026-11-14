@@ -367,6 +367,95 @@ RC=0; ISSUE_STORE_ROOT="$STORE" "$ISSUE" complete IM-001 --claim-generation -1 2
 # COVERS: output.exit-codes
 assert_eq 2 "$RC" "complete with a negative --claim-generation exits 2"
 
+echo "== [J] closing-note synonyms: all three spellings on all five transition verbs =="
+# surface.vocabulary-registry's synonym half: a spelling accepted for a
+# concept on any verb is accepted for that concept on EVERY verb where the
+# concept appears. The closing note is one concept across `transition`,
+# `complete`, `cancel`, `block`, and `unblock`; help text still presents one
+# canonical spelling per verb (--summary on `complete`, --reason on the other
+# four), which the rule explicitly permits.
+SEQ=100
+for SPELL in --summary --note --reason; do
+    # `transition` primitive: in-progress -> done
+    ID="IM-$SEQ"; SEQ=$((SEQ+1))
+    make_issue "$ID" in-progress
+    RC=0
+    ISSUE_STORE_ROOT="$STORE" "$ISSUE" transition "$ID" done "$SPELL" "note via $SPELL" \
+        >/dev/null 2>&1 || RC=$?
+    assert_eq 0 "$RC" "transition accepts $SPELL"
+    # COVERS: surface.vocabulary-registry
+    assert_file_contains "$TODAY: status: in-progress -> done -- note via $SPELL" \
+        "$STORE/IM/$ID.md" "transition records the note given as $SPELL"
+
+    # `complete`
+    ID="IM-$SEQ"; SEQ=$((SEQ+1))
+    make_issue "$ID" in-progress
+    RC=0
+    ISSUE_STORE_ROOT="$STORE" "$ISSUE" complete "$ID" "$SPELL" "note via $SPELL" \
+        >/dev/null 2>&1 || RC=$?
+    assert_eq 0 "$RC" "complete accepts $SPELL"
+    # COVERS: surface.vocabulary-registry
+    assert_file_contains "$TODAY: status: in-progress -> done -- note via $SPELL" \
+        "$STORE/IM/$ID.md" "complete records the note given as $SPELL"
+
+    # `cancel`: open -> cancelled
+    ID="IM-$SEQ"; SEQ=$((SEQ+1))
+    make_issue "$ID" open
+    RC=0
+    ISSUE_STORE_ROOT="$STORE" "$ISSUE" cancel "$ID" "$SPELL" "note via $SPELL" \
+        >/dev/null 2>&1 || RC=$?
+    assert_eq 0 "$RC" "cancel accepts $SPELL"
+    # COVERS: surface.vocabulary-registry
+    assert_file_contains "$TODAY: status: open -> cancelled -- note via $SPELL" \
+        "$STORE/IM/$ID.md" "cancel records the note given as $SPELL"
+
+    # `block`: open -> blocked. The mandatory reason is satisfiable through
+    # ANY of the three spellings -- they share one dest, so the requirement
+    # is on the value, never on the token the caller reached for.
+    ID="IM-$SEQ"; SEQ=$((SEQ+1))
+    make_issue "$ID" open
+    RC=0
+    ISSUE_STORE_ROOT="$STORE" "$ISSUE" block "$ID" "$SPELL" "note via $SPELL" \
+        >/dev/null 2>&1 || RC=$?
+    assert_eq 0 "$RC" "block accepts $SPELL as its mandatory reason"
+    # COVERS: surface.vocabulary-registry
+    assert_file_contains "$TODAY: status: open -> blocked -- note via $SPELL" \
+        "$STORE/IM/$ID.md" "block records the reason given as $SPELL"
+
+    # `unblock`: blocked -> in-progress
+    ID="IM-$SEQ"; SEQ=$((SEQ+1))
+    make_issue "$ID" blocked
+    RC=0
+    ISSUE_STORE_ROOT="$STORE" "$ISSUE" unblock "$ID" "$SPELL" "note via $SPELL" \
+        >/dev/null 2>&1 || RC=$?
+    assert_eq 0 "$RC" "unblock accepts $SPELL"
+    # COVERS: surface.vocabulary-registry
+    assert_file_contains "$TODAY: status: blocked -> in-progress -- note via $SPELL" \
+        "$STORE/IM/$ID.md" "unblock records the note given as $SPELL"
+done
+
+# The canonical spelling each verb PRESENTS is unchanged and is part of the
+# contract: help text names one per verb, and an agent reading `--help` is
+# told the canonical form rather than the whole set.
+# argparse prints only the FIRST option string in the usage block, so the
+# usage line is where the canonical presentation is readable.
+for VERB in transition cancel block unblock; do
+    USAGE=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" "$VERB" --help 2>&1 | sed -n '1,4p')
+    # COVERS: state.complete-summary-flag
+    assert_contains "[--reason TEXT]" "$USAGE" \
+        "$VERB usage presents --reason as the canonical spelling"
+    if echo "$USAGE" | grep -qF -- "[--summary TEXT]"; then
+        fail "$VERB usage presents --summary rather than --reason"
+    else
+        pass "$VERB usage does not present a synonym as canonical"
+    fi
+done
+USAGE=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" complete --help 2>&1 | sed -n '1,4p')
+# COVERS: state.complete-summary-flag
+assert_contains "[--summary TEXT]" "$USAGE" \
+    "complete usage presents --summary as the canonical spelling"
+
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

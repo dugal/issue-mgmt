@@ -22,15 +22,13 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
 
 import concurrency  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import errors  # noqa: E402
 import frontmatter  # noqa: E402
-import idresolve  # noqa: E402
 import lease  # noqa: E402
 
-from . import common
+from . import _reap, common
 
 VERB = "reap"
 TIER = "admin"
@@ -39,8 +37,9 @@ ORDER = 40
 
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
-# IM-251: resolves via the precedence chain with no operand naming it, so
-# the absent `--store` is a real gap -- IM-251 follow-up work.
+# Resolves the store through the documented precedence chain and names it
+# with `--store` (IM-251 measured the absent flag as a real gap; IM-275
+# added it).
 SURFACE_STORE = "flag"
 # IM-254: `unconverted` until every failure path on this verb carries the
 # key=value payload; the set is enumerated, never waived, and only shrinks
@@ -72,7 +71,8 @@ Exit codes:
 Examples:
   issue admin reap
   issue admin reap --dry-run
-  issue admin reap --prefix IM --json
+  issue admin reap --prefix IM,LI --json
+  issue admin reap --store ~/personal/issues-store --no-reindex
 """
 
 
@@ -91,41 +91,18 @@ def register(subparsers):
         help="Print what would be reaped without writing.",
     )
     common.add_prefix_scope_flag(
-        p, multi=False,
-        help="Restrict the walk to one prefix directory.",
+        p, help="Repeatable/comma-separated. Restrict the walk to these "
+                "prefix directories.",
     )
+    common.add_store_flag(p)
     common.add_json_flag(p)
     common.add_lock_timeout_flag(
         p, default=concurrency.DEFAULT_LOCK_TIMEOUT
     )
+    common.add_no_reindex_flag(p)
     common.add_version_flag(p)
     p.set_defaults(_run=run)
     return p
-
-
-# also in the flat issue-reap-expired-claims binary -- keep in sync
-def _find_project_anchor():
-    cwd = Path.cwd().resolve()
-    for d in [cwd, *cwd.parents]:
-        if (d / ".issues").is_dir():
-            return d / ".issues"
-    workspace = os.environ.get("ISSUE_MGMT_ROOT")
-    if workspace:
-        return Path(workspace) / ".issues"
-    parent = cwd.parent
-    if (parent / ".issues").is_dir():
-        return parent / ".issues"
-    return cwd / ".issues"
-
-
-def _resolve_store_root():
-    env = os.environ.get("ISSUE_STORE_ROOT")
-    if env:
-        return Path(env)
-    sentinel = _find_project_anchor() / ".migrated-to-store"
-    if sentinel.is_file():
-        return Path(sentinel.read_text(encoding="utf-8").strip())
-    return None
 
 
 def _append_note_line(body_text, note):
@@ -139,25 +116,31 @@ def _append_note_line(body_text, note):
     return frontmatter.edit_section(body_text, NOTES_SECTION, "append", note)
 
 
-def _iter_issue_files(store_root, repo_filter):
-    """Yield (prefix, path) for every issue file under the store."""
+def _iter_issue_files(store_root, prefixes):
+    """Yield (prefix, path) for every issue file under the store.
+
+    `prefixes` is the canonicalized `--prefix` scope (a set) or None for
+    the whole store. PREFIX_DIR_RE still gates the DIRECTORY names found on
+    disk -- that is what it describes -- but it no longer gates the
+    caller's argument, which the shared resolver owns (IM-277, IM-236).
+    """
     for child in sorted(store_root.iterdir()):
         if not child.is_dir():
             continue
         prefix = child.name
         if not PREFIX_DIR_RE.match(prefix):
             continue
-        if repo_filter is not None and prefix != repo_filter:
+        if prefixes is not None and prefix not in prefixes:
             continue
         for f in sorted(child.glob(f"{prefix}-*.md")):
             yield prefix, f
 
 
-def _scan_expired(store_root, repo_filter, now):
+def _scan_expired(store_root, prefixes, now):
     """Unlocked scan pass: list candidates whose claim is present and expired.
     The per-issue reap re-verifies under the lock before writing."""
     candidates = []
-    for prefix, path in _iter_issue_files(store_root, repo_filter):
+    for prefix, path in _iter_issue_files(store_root, prefixes):
         try:
             fm_lines, _body = frontmatter.read_issue(path)
         except (OSError, ValueError) as e:
@@ -239,22 +222,14 @@ def _reap_one(store_root, prefix, issue_file, issue_id, lock_timeout, now):
 
 
 def run(args) -> int:
-    # IM-277: the shape gate is case-insensitive. PREFIX_DIR_RE describes an
-    # on-disk prefix DIRECTORY (always upper-case), so matching the raw
-    # argument against it rejected `--prefix im` -- a value every other
-    # scoping surface resolves. Canonical casing is resolved from the store
-    # below, through the one shared resolver (cli.id-canonicalization); only
-    # a shape invalid even upper-cased is a usage error here.
-    if (args.prefix is not None
-            and not PREFIX_DIR_RE.match(args.prefix.upper())):
-        print(
-            f"issue admin reap: invalid prefix {args.prefix!r} "
-            f"(must match {PREFIX_DIR_RE.pattern})",
-            file=sys.stderr,
-        )
-        return 2
-
-    store_root = _resolve_store_root()
+    # The one documented precedence chain, now including `--store`
+    # (IM-275): --store -> ISSUE_STORE_ROOT -> sentinel. The local copies
+    # this verb carried resolved the same order minus the flag.
+    store_root = common.resolve_store_root(
+        common.find_project_anchor(), args.store
+    )
+    if store_root is not None:
+        store_root = store_root.expanduser()
     if store_root is None:
         print(
             "issue admin reap: store mode required -- set ISSUE_STORE_ROOT "
@@ -271,32 +246,20 @@ def run(args) -> int:
         )
         return 1
 
-    # IM-238: an absent --prefix scope is an argument error (exit 2), the
-    # same rule every verb taking --prefix holds.
-    rc = common.enforce_prefix_scope(
-        [args.prefix] if args.prefix else None, store_root, None,
-        prog="issue admin reap", json_mode=bool(getattr(args, "json_mode", False)),
+    # IM-238 (an absent scope is an argument error, exit 2), IM-277 (the
+    # scope case-folds, so `--prefix im` reaps the IM prefix), and IM-236
+    # (the scope is a list, as it is on every other scoping verb) are all
+    # one call to the shared resolver. The announcement goes to stderr so
+    # --json stdout stays one clean document.
+    prefixes, rc = common.resolve_prefix_scope(
+        args.prefix, store_root, None, prog="issue admin reap",
+        json_mode=bool(getattr(args, "json_mode", False)),
     )
     if rc is not None:
         return rc
 
-    # IM-277: case-fold --prefix to the store's canonical prefix through the
-    # one shared resolver, so `--prefix im` scopes the IM prefix rather than
-    # matching no prefix directory at all. Same entry point, announcement
-    # wording, and stream as `index` / `ready` / the history verbs; the note
-    # goes to stderr so --json stdout stays one clean document.
-    repo = args.prefix
-    if repo is not None:
-        resolved = idresolve.resolve_prefix(
-            repo, idresolve._known_prefixes(store_root, None)
-        ) or repo.upper()
-        if resolved != repo:
-            print(f"issue admin reap: resolved {repo} -> {resolved}",
-                  file=sys.stderr)
-            repo = resolved
-
     now = lease.now_utc()
-    candidates = _scan_expired(store_root, repo, now)
+    candidates = _scan_expired(store_root, prefixes, now)
 
     reaped = []
     if args.dry_run:
@@ -327,6 +290,14 @@ def run(args) -> int:
                 return errors.EXIT_PRECONDITION
             if record is not None:
                 reaped.append(record)
+
+        # One index write per PASS, not per reclaimed issue: a reap stamps
+        # `updated:`, so every reclaimed row goes stale in INDEX.md, and the
+        # regenerator is whole-store (IM-271). Best-effort, and skipped
+        # entirely when nothing was reaped -- a no-op pass has nothing to
+        # reindex. `--dry-run` writes nothing, so it never reindexes.
+        if reaped and not args.no_reindex:
+            _reap.reindex_after_reap(store_root, to_stderr=args.json_mode)
 
     if args.json_mode:
         json.dump(

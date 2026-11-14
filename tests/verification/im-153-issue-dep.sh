@@ -156,11 +156,11 @@ depcount=$( echo "$jout" | python3 -c 'import json,sys; print(len(json.load(sys.
 # COVERS: cli.dep-authoring
 assert_eq 2 "$depcount" "A6: --json list carries both edges"
 
-# --- A7: remove one edge by --type; the other survives ---------------
-( cd "$REPO_A" && "$DEP" remove DOUG-064 RM-107 --type blocks >/dev/null 2>&1 )
+# --- A7: remove one edge by --kind; the other survives ---------------
+( cd "$REPO_A" && "$DEP" remove DOUG-064 RM-107 --kind blocks >/dev/null 2>&1 )
 n=$( grep -c '^  - to:' "$FILE_A" )
 # COVERS: cli.dep-authoring
-assert_eq 1 "$n" "A7: --type-scoped remove drops exactly one edge"
+assert_eq 1 "$n" "A7: --kind-scoped remove drops exactly one edge"
 
 # --- A8: removing the last edge writes depends_on: [] ----------------
 ( cd "$REPO_A" && "$DEP" remove DOUG-064 IM-102 >/dev/null 2>&1 )
@@ -362,10 +362,10 @@ assert_eq 2 "$?" "D4: dep add with no KIND:TARGET exits 2"
 # COVERS: cli.dep-authoring
 assert_eq 2 "$?" "D5: dep remove with no TARGET exits 2"
 
-# --- D6: remove with an invalid --type exits 2 -----------------------
-( cd "$REPO_A" && "$DEP" remove DOUG-080 RM-107 --type nope >/dev/null 2>&1 )
+# --- D6: remove with an invalid --kind exits 2 -----------------------
+( cd "$REPO_A" && "$DEP" remove DOUG-080 RM-107 --kind nope >/dev/null 2>&1 )
 # COVERS: cli.dep-authoring
-assert_eq 2 "$?" "D6: dep remove with an invalid --type exits 2"
+assert_eq 2 "$?" "D6: dep remove with an invalid --kind exits 2"
 
 # --- D7: add --json emits a parseable mutation summary ---------------
 jout=$( cd "$REPO_A" && "$DEP" add DOUG-080 blocks:RM-107 --json 2>/dev/null )
@@ -379,6 +379,104 @@ assert_contains "\"id\": \"DOUG-080\"" "$jout" "D7: add --json carries the issue
 ( cd "$REPO_A" && "$DEP" add DOUG-999 blocks:RM-107 >/dev/null 2>&1 )
 # COVERS: cli.dep-authoring
 assert_eq 1 "$?" "D8: dep add on a missing issue exits 1"
+
+# --- D9: the retired --type / --note spellings are unknown arguments -
+# IM-270 retired both. --type is the issue type (list / search / create)
+# and --note the closing note (transition / complete); each meant the
+# dependency kind and the dependency note on this verb through v3.4.x, and
+# a retired spelling exits 2 rather than resolving.
+( cd "$REPO_A" && "$DEP" remove DOUG-080 RM-107 --type blocks >/dev/null 2>&1 )
+# COVERS: surface.stability
+assert_eq 2 "$?" "D9: retired --type is an unknown argument (exit 2)"
+( cd "$REPO_A" && "$DEP" add DOUG-080 blocks:RM-107 --note x >/dev/null 2>&1 )
+# COVERS: surface.stability
+assert_eq 2 "$?" "D9: retired --note is an unknown argument (exit 2)"
+# `edit` spelled the same dependency-kind concept --dep-type, retired with
+# them, so one concept now has exactly one spelling on both verbs.
+( cd "$REPO_A" && "$EDIT" DOUG-080 --remove-dep RM-107 --dep-type blocks \
+    >/dev/null 2>&1 )
+# COVERS: surface.stability
+assert_eq 2 "$?" "D9: retired --dep-type is an unknown argument (exit 2)"
+
+# --- E: one grammar for the (kind, target) pair on both ops (IM-243) --
+# `add` fused the pair into KIND:TARGET while `remove` split it across
+# TARGET --kind KIND through v3.4.x, so an agent that learned the add form
+# and tried `dep remove ID blocks:RM-107` got a failed lookup for a target
+# literally named "blocks:RM-107". Both ops now read either spelling.
+write_issue "$STORE_A" DOUG DOUG-081
+git -C "$STORE_A" add -A >/dev/null 2>&1
+git -C "$STORE_A" commit -q -m "seed section E"
+FILE_A81="$STORE_A/DOUG/DOUG-081.md"
+
+( cd "$REPO_A" && "$DEP" add DOUG-081 blocks:RM-107 >/dev/null 2>&1 )
+( cd "$REPO_A" && "$DEP" add DOUG-081 related:RM-107 >/dev/null 2>&1 )
+( cd "$REPO_A" && "$DEP" remove DOUG-081 blocks:RM-107 >/dev/null 2>&1 )
+rc=$?
+# COVERS: cli.dep-authoring
+assert_eq 0 "$rc" "E1: dep remove accepts the fused KIND:TARGET operand"
+# COVERS: surface.one-meaning-per-flag
+assert_eq 1 "$( grep -c '^  - to:' "$FILE_A81" )" \
+    "E1: the fused operand scoped the removal to the blocks edge"
+# COVERS: cli.dep-authoring
+assert_contains "type: related" "$( grep -E '^    type:' "$FILE_A81" )" \
+    "E1: the related edge to the same target survived"
+
+# The split spelling is unchanged, and `add` now reads it too -- the
+# mirror-image of the reported failure (an agent that learned remove's
+# split form and tried it on add).
+( cd "$REPO_A" && "$DEP" add DOUG-081 RM-108 --kind blocks >/dev/null 2>&1 )
+rc=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq 0 "$rc" "E2: dep add accepts the split TARGET --kind KIND spelling"
+# COVERS: cli.dep-authoring
+assert_contains "to: RM-108" "$( grep -E '^  - to:' "$FILE_A81" )" \
+    "E2: the split spelling authored the same edge"
+
+# A fused kind plus a CONFLICTING --kind is a usage error; the caller said
+# two different things and the CLI does not pick one.
+out=$( cd "$REPO_A" && "$DEP" remove DOUG-081 blocks:RM-108 --kind related 2>&1 )
+rc=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq 2 "$rc" "E3: fused kind conflicting with --kind exits 2"
+# COVERS: surface.one-meaning-per-flag
+assert_contains "conflicting dependency kind" "$out" \
+    "E3: the diagnostic names the conflict"
+# COVERS: cli.dep-authoring
+assert_contains "to: RM-108" "$( grep -E '^  - to:' "$FILE_A81" )" \
+    "E3: the refused removal wrote nothing"
+
+# A fused kind AGREEING with --kind is accepted -- one thing said twice.
+( cd "$REPO_A" && "$DEP" remove DOUG-081 blocks:RM-108 --kind blocks \
+    >/dev/null 2>&1 )
+# COVERS: surface.one-meaning-per-flag
+assert_eq 0 "$?" "E4: fused kind agreeing with --kind is accepted"
+
+# A colon-headed operand whose head is not a dependency kind stays an
+# error naming the four kinds -- never a target silently containing a colon.
+out=$( cd "$REPO_A" && "$DEP" remove DOUG-081 nope:RM-107 2>&1 )
+rc=$?
+# COVERS: cli.dep-authoring
+assert_eq 2 "$rc" "E5: an unknown fused head exits 2"
+# COVERS: cli.dep-authoring
+assert_contains "discovered-from" "$out" "E5: the diagnostic names the four kinds"
+
+# Both spellings reach the `edit` engine too -- `dep` is a thin wrapper
+# over it, so the grammar is one surface, not two.
+( cd "$REPO_A" && "$EDIT" DOUG-081 --remove-dep related:RM-107 >/dev/null 2>&1 )
+rc=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq 0 "$rc" "E6: edit --remove-dep accepts the fused operand"
+# COVERS: cli.dep-authoring
+assert_eq "depends_on: []" "$( grep '^depends_on' "$FILE_A81" )" \
+    "E6: the fused removal retracted the last edge"
+( cd "$REPO_A" && "$EDIT" DOUG-081 --add-dep RM-109 --kind blocks \
+    >/dev/null 2>&1 )
+# COVERS: surface.one-meaning-per-flag
+assert_eq 0 "$?" "E6: edit --add-dep accepts the split spelling"
+out=$( cd "$REPO_A" && "$EDIT" DOUG-081 --add-dep blocks:RM-109 --kind related 2>&1 )
+rc=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq 2 "$rc" "E6: edit refuses a conflicting kind (exit 2)"
 
 echo
 echo "im-153-issue-dep: $PASS passed, $FAIL failed, $SKIP skipped"

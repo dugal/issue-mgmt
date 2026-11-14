@@ -4,8 +4,11 @@ Port of the flat bash ``new-issue.sh`` onto the consolidated dispatcher.
 The data path is unchanged: same store/legacy resolution,
 same ``<store>/.repos`` registry lookup + ``.prefix`` cross-validation, same
 template-resolution order, same ID assignment, same
-store-mutation commit (``create <id>``), and the same ``--section
-NAME=TEXT`` / ``--from-file`` body seeding and ``--json`` shape.
+store-mutation commit (``create <id>``), and the same fused
+``NAME=TEXT`` / ``--from-file`` body seeding and ``--json`` shape.
+The seeding flag is spelled ``--set-section`` since IM-257; it was
+``--section`` through v3.4.x, which collided with the section SELECTOR
+that spelling carries on ``edit`` / ``note`` / ``show``.
 Only two things move: bash -> Python, and the post-write reindex switches
 from subprocessing the sibling ``reindex-issues`` to the in-process seam
 (``reindex.reindex_after_mutation`` -> ``reindex_core``), killing the
@@ -14,8 +17,9 @@ sibling-subprocess failure class on this surface.
 Exit codes match the flat binary: 0 success; 1 precondition (unregistered
 repo, prefix mismatch, non-git store mode without ``--repo``, unreadable
 ``--from-file``, missing template, invalid type/priority, wrong positional
-count); 2 argument/usage (``--section``/``--from-file`` mutual exclusion,
-malformed ``--section``, and -- since IM-248 -- the zero-positional form
+count); 2 argument/usage (``--set-section``/``--from-file`` mutual
+exclusion, malformed ``--set-section``, and -- since IM-248 -- the
+zero-positional form
 with a non-TTY stdin, which used to exit 1 through an unhandled
 ``EOFError`` traceback out of the prompt). The store-commit-lock path
 surfaces the 3-7 loser-side contract unchanged.
@@ -79,15 +83,17 @@ from cwd."""
 
 _EPILOG = """\
 Body seeding:
-  --section NAME=TEXT   (repeatable) replace ## NAME's body with TEXT, or
-                        append a new ## NAME section if absent.
+  --set-section NAME=TEXT
+                        (repeatable) set ## NAME's body to TEXT, or append a
+                        new ## NAME section if absent. Same fused-pair shape
+                        as `issue edit --set FIELD=VALUE`, one plane over.
   --from-file PATH      use PATH verbatim as the issue body ('-' = stdin);
-                        mutually exclusive with --section.
+                        mutually exclusive with --set-section.
 
 Examples:
   issue create "Fix embedding bug" bug high
   issue create --repo issue-mgmt "Add CLI" feature medium
-  issue create "Spike: design X" spike medium --section "Summary=Pitch."
+  issue create "Spike: design X" spike medium --set-section "Summary=Pitch."
   cat draft.md | issue create "Decision: ADR-001" decision low --from-file -
   issue create "Json out" feature low --json
 """
@@ -113,20 +119,27 @@ def register(subparsers):
         metavar="NAME",
         help="Override the repo identity used for the registry lookup.",
     )
+    # IM-257: the fused NAME=TEXT operand is spelled `--set-section`, not
+    # `--section`. `--section` names an EXISTING section on `edit` / `note` /
+    # `show`; carrying that spelling here made one flag mean two things, which
+    # `surface.one-meaning-per-flag` forbids. The grammar is unchanged -- a
+    # repeatable fused pair, the shape `issue edit --set FIELD=VALUE` already
+    # carries on the frontmatter plane.
     p.add_argument(
-        "--section",
+        "--set-section",
         action="append",
         default=[],
         metavar="NAME=TEXT",
-        dest="sections",
-        help="Repeatable. Seed/replace a body section at creation time.",
+        dest="set_sections",
+        help="Repeatable. Set a body section's content at creation time.",
     )
     p.add_argument(
         "--from-file",
         default="",
         metavar="PATH",
         dest="from_file",
-        help="Use PATH ('-' = stdin) verbatim as the body (excludes --section).",
+        help="Use PATH ('-' = stdin) verbatim as the body "
+             "(excludes --set-section).",
     )
     common.add_json_flag(p)
     common.add_store_flag(p)
@@ -301,22 +314,25 @@ def _stdin_is_tty() -> bool:
 def run(args) -> int:
     # --- argument shape / body-input validation (new-issue.sh order) ---
     section_pairs = []
-    for spec in args.sections:
+    for spec in args.set_sections:
         if "=" not in spec:
             print(
-                f"Error: --section requires NAME=TEXT format (got '{spec}')",
+                f"Error: --set-section requires NAME=TEXT format "
+                f"(got '{spec}')",
                 file=sys.stderr,
             )
             return 2
         name, _, text = spec.partition("=")
         if not name:
-            print("Error: --section NAME must be non-empty", file=sys.stderr)
+            print(
+                "Error: --set-section NAME must be non-empty", file=sys.stderr
+            )
             return 2
         section_pairs.append((name, text))
 
     if section_pairs and args.from_file:
         print(
-            "Error: --section and --from-file are mutually exclusive",
+            "Error: --set-section and --from-file are mutually exclusive",
             file=sys.stderr,
         )
         return 2
@@ -336,7 +352,7 @@ def run(args) -> int:
                 "stdin is not a TTY, so the interactive prompt for title, "
                 "type and priority cannot be answered -- pass them "
                 f"positionally instead ({PROG} TITLE TYPE PRIORITY), "
-                "seeding the body with --section NAME=TEXT or "
+                "seeding the body with --set-section NAME=TEXT or "
                 "--from-file PATH if wanted",
                 reason="non-interactive-stdin",
             ),

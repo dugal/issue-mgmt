@@ -120,10 +120,6 @@ def main(argv=None):
             "unwaived": [f.as_dict() for f in unwaived],
             "waived": [dict(f.as_dict(), issue=w["issue"])
                        for f, w in waived],
-            "transitional": [
-                {"flag": name, "concept": cid, **record}
-                for name, cid, record in
-                surface_lint.transitional_spellings(registry)],
             "totals": {"unwaived": len(unwaived), "waived": len(waived)},
         }, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")

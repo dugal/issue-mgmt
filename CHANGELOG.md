@@ -2,6 +2,339 @@
 
 ## [Unreleased]
 
+## [v3.5.0] - 2026-11-14
+
+### Changed
+- The six transitional flag spellings Leg 2 superseded are retired. Each
+  exits 2 as an unknown argument on every verb that used to accept it -- a
+  retired spelling never warns and never resolves:
+
+  | Concept | Retired | Canonical | Verbs |
+  |---|---|---|---|
+  | prefix scoping | `--repo` | `--prefix` | `list`, `search`, `index`, `ready`, `history search`, `history activity`, `admin reap` |
+  | dependency kind | `--type` | `--kind` | `dep` |
+  | dependency kind | `--dep-type` | `--kind` | `edit` |
+  | dependency note | `--note` | `--dep-note` | `dep` |
+  | readiness text output | `--text` | (the default) | `ready` |
+  | store-commit lock bound | `--timeout` | `--commit-timeout` | `admin snapshot` |
+
+  DECLARED REMOVAL, shipping as a MINOR with an explicit recorded override
+  on IM-270, per the declaration half of `surface.stability` -- the same
+  single-consumer reasoning v2.5.0 used for its exit-code renumber and
+  v2.11.0 for deleting the whole bd CLI surface. The window half of that
+  clause came out in IM-284, which is why the retirement needs no second
+  version; it was always legal under single-consumer reasoning.
+  `--repo` survives with its one remaining meaning, the repo basename that
+  keys `<store>/.repos` on `create` / `admin init-project` /
+  `admin migrate`; `--text` named the default rather than a capability, so
+  its removal takes no behavior with it.
+
+  Two live `surface.one-meaning-per-flag` collisions go with the spellings:
+  `--note` meant the closing note on `complete` / `transition` AND the
+  dependency note on `dep`, and `--type` the issue type on `list` /
+  `search` AND the dependency kind on `dep`. Each spelling now carries one
+  meaning everywhere it appears. The surface also carries no hidden synonym
+  action at all any more -- that registration pattern existed only to serve
+  a deprecation window -- so `ready`'s `--json` / `--text` mutually
+  exclusive group, the last one on the surface, is gone; a permanent second
+  spelling is an argparse alias on one action instead (the closing-note
+  flag).
+
+  The waiver baseline shrinks from 22 findings to 15. Three were IM-270's
+  own; the other four belonged to IM-236 and went obsolete here, because a
+  waiver matching no finding is itself a finding and must leave in the same
+  change as the fix. Measured rather than predicted: the fourth
+  (`meaning-collision:--repo:repo-identity`) was expected to survive for
+  IM-236 to close, but retiring the prefix-scoping spelling leaves `--repo`
+  one meaning and dissolves the collision outright, so IM-236 now carries
+  four waivers rather than five. `docs/cli-vocabulary.json` carries no
+  `transitional` records, and `surface_lint.transitional_spellings` --
+  which reported them as retirable under a rule that no longer exists -- is
+  removed with them. (IM-270)
+- `surface.stability` no longer requires a rename to ship as a registered
+  synonym for at least one release before the superseded spelling may be
+  retired. A synonym window exists to protect callers written against an
+  earlier release; `issue-mgmt` has exactly one consumer, who is also the
+  author of every change, so the window protected nobody while it
+  demonstrably cost a release cycle -- it forced the v3.4.0 -> v3.5.0
+  two-step and was the sole reason v3.5.0 existed as a version at all. A
+  rename and the retirement of its superseded spelling may now land in one
+  version. The declaration half of the clause is untouched and is the half
+  that has actually caught things: a removal or re-meaning is never
+  UNDECLARED, and still ships with an explicit recorded override on its
+  owning issue rather than being inferred from the diff. Waiving the
+  sentence was rejected on the same ground as the three Leg 3 rewords
+  (IM-250, IM-251, IM-254) -- a waiver for intended behavior never shrinks,
+  while the baseline is shrink-only -- so the sentence comes out instead.
+  Consequences carried by the rest of the release: the six `transitional`
+  records in `docs/cli-vocabulary.json` existed to prove a window had been
+  served and are retired with the spellings they describe (IM-270), IM-236
+  closes whole rather than splitting a third time, and IM-257's `--section`
+  convergence lands without a synonym cycle. The clause stays `[planned]`:
+  what survives is a human discipline that the manifest diff test cannot
+  measure, since an undeclared removal turns it red exactly as a declared
+  one does, and that gap is now owned (IM-285). No CLI behavior changes and
+  `docs/cli-surface.json` is byte-identical. (IM-284)
+
+- `--prefix` carries one value space on every verb that scopes by it:
+  repeatable AND comma-separated, through one shared registration. `index`,
+  `ready`, and `admin reap` took a single `PFX` while `list`, `search`,
+  `history search`, and `history activity` took `PFX[,PFX...]`, so the same
+  scoping expression worked on four verbs and silently did something else
+  on three. `--type` on `list` / `search` joins the same axis: it was the
+  last multi-value filter still last-wins, so `issue list --type bug --type
+  chore` returned only chores with exit 0. A repeated occurrence now
+  accumulates everywhere, and mixing the repeated and comma forms in one
+  invocation resolves to the union. Unwaived ride-along: IM-269 converged
+  `--status` for exactly this failure and called `--type` a one-line
+  adoption of the same helper, and nothing owned it once IM-270 retired the
+  `--type`-on-`dep` collision. (IM-236)
+- The `--prefix` meaning collision is resolved by deciding the two uses are
+  ONE concept rather than by renaming the write operand. `--prefix` means
+  the project prefix to operate on -- the scope a read verb filters by, and
+  the prefix `admin init-project` / `admin migrate` register a project
+  under -- and whether a verb reads or writes follows from the verb.
+  Admissibility is not meaning: a read verb refuses a prefix the store does
+  not have while `admin init-project` exists to create one, exactly as an
+  issue id must exist for `show` and must not for `create`. The registry had
+  declared a write-operand override since IM-254 and the lint derives
+  nothing there (both uses bind one argparse dest, which the dest proxy
+  cannot see), so clearing it is a correction of the declaration -- the same
+  shape IM-270 found for `--repo`. `prefix-operand` is merged into
+  `prefix-scope`, with the two scaffolding verbs declared as a value-space
+  deviation licensed by `registry.basename-prefix-unique`: a project is
+  registered under exactly one prefix. No CLI spelling changes on that
+  half. The rule it rests on was written into
+  `surface.one-meaning-per-flag` rather than left on the issue -- one
+  concept keeps one spelling across every verb that carries it, whether the
+  verb reads the value or writes it, and the obligation binds positionals
+  as well as flags. **The waiver baseline shrinks from 15 findings to
+  11.** (IM-236)
+- One prefix-scope resolver, so the four ways the five inline copies
+  diverged are gone (`common.resolve_prefix_scope`). Two are caller-visible.
+  A `--prefix` value that cannot be a prefix now reports through the one
+  structured `unknown-prefix` payload naming the unknown value and the known
+  set, rather than through a per-verb sentence -- four verbs carried a prose
+  shape gate, two carried none, and `admin reap` matched the raw argument
+  against a prefix-DIRECTORY regex. And the refusal of an absent scope now
+  runs BEFORE case-folding on every verb, so the diagnostic names what the
+  caller typed; the two history verbs folded first and reported an
+  unresolvable value in a casing nobody wrote. The unresolvable-input
+  fallback converges on pass-through (the inline copies used
+  `value.upper()`), which in store mode was already unreachable. (IM-236)
+- A `--prefix` given but empty after parsing is a usage error on every
+  scoping verb -- exit 2, `error=usage-error reason=empty-prefix-scope` --
+  rather than a silent widening to the whole store. `list` and `search`
+  accepted `--prefix ""` as accept-all; the two history verbs refused it,
+  and the stricter behavior is the one that generalizes, because IM-238
+  already settled that a scope naming nothing is a bad argument (an unset
+  variable expanding to `""` is indistinguishable from an unscoped read).
+  On `admin reap` the old widening would have reaped every prefix in the
+  store instead of the one asked for. DECLARED re-meaning on `list` /
+  `search`, shipping as a MINOR with the override recorded on IM-236, per
+  the declaration half of `surface.stability`. (IM-236)
+- The closing note is accepted under all three of its spellings on all five
+  transition verbs: `--summary`, `--note`, and `--reason` on `transition`,
+  `complete`, `cancel`, `block`, and `unblock`. `cancel` / `block` /
+  `unblock` took `--reason` only, so `issue cancel IM-1 --summary "..."`
+  exited 2 for a spelling that worked one verb over -- six rejected
+  spellings for a concept the registry already carries as ONE synonym set,
+  against `surface.vocabulary-registry`: a spelling accepted for a concept
+  on any verb is accepted for that concept on every verb where the concept
+  appears, so an agent need not re-learn the token per verb. Purely
+  additive -- nothing is removed and nothing is re-meant, and the three
+  spellings share one argparse dest exactly as they already did on
+  `complete` and `transition`.
+
+  The per-verb CANONICAL spelling is deliberately unchanged, which the
+  clause explicitly permits ("help text may present one canonical spelling
+  per verb"): `--summary` on `complete`, where the note IS a completion
+  summary, and `--reason` on the other four, where it is a reason. Checked
+  rather than assumed, per the issue's own open question: there is no
+  semantic reason a `cancel` or `block` note should be narrower than a
+  `complete` summary -- all five append one free-text clause to the same
+  `## Implementation Notes` audit line through one dest -- so the split is
+  presentation and not meaning. `block`'s mandatory reason is therefore a
+  requirement on the VALUE, never on the token the caller reached for, and
+  any of the three spellings satisfies it. The usage block is where that
+  presentation is readable (argparse prints only the first option string
+  there), which is what the new assertions key on.
+
+  **The waiver baseline shrinks from 11 findings to 5.** (IM-258)
+- Filed from the decision, both out of IM-236's scope so the phase's
+  zero-waiver exit gate stays its own: `admin init-store` spells the store
+  root as the positional `path` while 25 verbs spell the same registry
+  concept `--store` (IM-287), and the lint never checks positionals against
+  the vocabulary registry at all -- `flag_uses` reads `verb["flags"]` only
+  -- which is why that instance went unreported since adoption (IM-288).
+  The second is recorded in the registry's `unenforced` table, so the gap
+  between what the clause now says and what is mechanically checked stays
+  visible.
+
+- The claimant is accepted under both its spellings everywhere the concept
+  appears: `issue transition` now takes `--actor` beside `--claim`, and
+  `issue ready` takes `--claim` beside `--actor`. `start` already accepted
+  both; the write primitive took `--claim` alone and the read filter
+  `--actor` alone, so the spelling an agent meets most in read flows exited
+  2 exactly where the lease surface gets manual -- the renew and release
+  flows that skip the `start` wrapper. Purely additive, two option strings
+  on one argparse dest each. The canonical presentation per verb is
+  unchanged and is what `--help` shows: `--claim` on the write side,
+  `--actor` on the read filter.
+- The (kind, target) pair of a dependency edge has one spelling on both
+  ops and on both verbs. `dep add ID KIND:TARGET` fused the pair while
+  `dep remove ID TARGET --kind KIND` split it, so an agent that learned the
+  add form and tried `dep remove ID blocks:XYZ-9` got a failed lookup for a
+  target literally named `blocks:XYZ-9` -- two encodings of one concept
+  inside one verb. Removal now accepts the fused operand and `add` accepts
+  the split one, on `dep` and on `edit --add-dep` / `--remove-dep` alike.
+  Fixing only the reported direction was rejected: it would leave the
+  mirror-image failure standing for an agent that learned removal's split
+  form and reached for it on `add`, which is the same trap one op over.
+
+  One grammar in one place (`deps.split_operand`), so neither surface can
+  drift from the other: a colon-free operand is the target, a colon-headed
+  operand whose head is one of the four dependency kinds is the fused form,
+  and a colon-headed operand whose head is NOT a kind is refused naming the
+  four kinds rather than being read as a target that happens to contain a
+  colon. A fused kind contradicting `--kind` is an argument error (exit 2,
+  no write) instead of one of the two silently winning; a fused kind
+  agreeing with `--kind` is accepted, the caller having said one thing
+  twice. `--kind` consequently qualifies either dep op on `edit`, where it
+  was accepted only after `--remove-dep`, and the diagnostic for a
+  misqualified `--kind` names both anchors it can follow.
+
+  **The waiver baseline shrinks from 5 findings to 3.** (IM-243)
+- `issue admin reap` now regenerates `INDEX.md`, and registers the
+  `--no-reindex` that suppresses it. A reap writes issue files and stamps
+  `updated:`, which `INDEX.md` renders, so every reclaimed row's Updated
+  cell went stale until some later mutation or catchup sweep happened to
+  rewrite it -- while `cli.auto-reindex` is unconditional for a mutating
+  verb, and the reaper neither reindexed nor offered the flag that would
+  suppress a reindex it did not do. ONE index write per pass rather than
+  one per reclaimed issue: the regenerator is whole-store, so N reclaims
+  would be N redundant writes under the index lock. A pass that reaps
+  nothing writes nothing, and `--dry-run` still writes nothing at all.
+
+  The same obligation now applies wherever a reap happens.
+  `issue ready`'s opportunistic reap (`workflow.auto-reap`) reindexes when
+  it actually reclaimed something, best-effort and with the notice on
+  stderr, since a read verb's stdout is its result. `issue start` is
+  deliberately exempt: its own claim reindexes the whole store immediately
+  afterwards, so a second write there would be redundant. The regeneration
+  is one shared helper (`_reap.reindex_after_reap`) so the manual and
+  opportunistic paths cannot drift. (IM-271)
+- `issue transition --renew` and `--release` reindex too. Measured while
+  fixing the reaper, and the same defect: both stamp `updated:`, but their
+  reindex was suppressed on the reasoning that they "never change status,
+  so INDEX cannot go stale" -- true of the Status grouping and false of the
+  row, because the Updated cell is rendered. A renew on a later day than
+  the last regeneration left the row showing the old date. The index write
+  rides inside the existing `renew <id>` / `release <id>` commit, so this
+  adds an index write without adding a commit, and the regenerated
+  `INDEX.md` is committed with the mutation rather than left dirty for a
+  later catchup sweep (`concurrency.auto-commit-per-mutation`). (IM-271)
+- `--store ROOT` is accepted by `issue admin reap` and
+  `issue admin reindex`, the last two verbs that declared `store=flag` in
+  the surface manifest -- which MEANS the verb resolves a store through the
+  documented precedence chain -- while offering no flag to name one. Both
+  honor the same precedence as the other 24 (`--store` ->
+  `ISSUE_STORE_ROOT` -> sentinel), and `admin reindex`'s positional keeps
+  naming a legacy `.issues/` directory: the two select different modes, so
+  an invocation passing both is an argument error (exit 2) rather than one
+  silently winning. `admin reindex --all` honors `--store` for the store
+  half of its sweep.
+
+  The `--store` obligation under `surface.verb-class-contract` is now
+  checked UNCONDITIONALLY: `tests/test_cli_surface.py`'s `STORE_FLAG_WAIVER`
+  dict is deleted rather than emptied, because the two verbs in it were its
+  only entries and a waiver mechanism with nothing to carry is one more
+  declaration to go stale. It was also the one waiver list the registry's
+  unowned-waiver check could not see, which is how it came to name a closed
+  decision issue as its owner. Moving it into `docs/cli-vocabulary.json`
+  was rejected: the linter matches every registry waiver against a finding
+  from its own six checks, and it deliberately does not check this column
+  (one authority per rule), so such a waiver would fail as obsolete. A
+  future gap here is a bug to fix, or evidence the verb's `store`
+  declaration is wrong -- `positional`, `pinned`, and `none` are the
+  legitimate ways out, each checkable. (IM-275)
+
+- `issue create` spells its body-seeding operand `--set-section NAME=TEXT`.
+  The grammar is unchanged -- still a repeatable fused pair, still
+  replace-or-append against the template -- only the spelling moves, and
+  `--section` is now the section SELECTOR and nothing else, on `edit` /
+  `note` / `show` alike. One flag meant two things before: an operand
+  carrying a name AND its body here, a selector naming an existing section
+  there, so an agent transferring it between verbs failed in one direction
+  with an error that taught it nothing about the other.
+
+  DECLARED REMOVAL, shipping as a MINOR with the override recorded on
+  IM-257, same basis as IM-270 above. `issue create --section` is exit 2,
+  unrecognized argument -- deliberately loud, because the one thing worse
+  than refusing it is accepting it: `--section "Summary=x"` under a
+  selector reading would have seeded a section named `Summary=x`.
+
+  The new spelling is not a new pattern. The surface had exactly two fused
+  repeatable pairs, `edit --set FIELD=VALUE` and this one, and the first is
+  named the way every comparable tool names it (`docker --env KEY=VAL`,
+  `kubectl --from-literal=KEY=VAL`, `git -c key=value`, `make VAR=value`):
+  the flag states the operation, the value carries the pair. None of them
+  spells that operand the way a selector is spelled elsewhere. So this is
+  `--set` one plane over -- frontmatter there, body here -- and the
+  alternatives considered (an anchor plus a content qualifier on `create`,
+  which would have pulled `edit`'s op vocabulary onto a verb with no prior
+  content to operate on, and renaming `edit --body`) were rejected for
+  adding words and ways to say one thing rather than removing them.
+  (IM-257)
+
+- `issue note --section` is repeatable, as it already was on `edit` and
+  `show`. The same dated line is appended to every named section in ONE
+  atomic edit -- one lock, one write, one `note <id>` commit -- and naming
+  the same section twice is exit 2 rather than a line appended twice.
+  Registered as a plain store through v3.4.x, so a second `--section`
+  silently won and the first was never written: the shape IM-269 fixed for
+  `--status` on `list` / `search`. `--json` reports `sections` (a list)
+  where it reported `section` (a string); the old field had no real
+  coverage, because the assertion standing in for it also matched the
+  `section` key inside each `changes.section_actions` record and so passed
+  against whatever the top-level field happened to be. (IM-257)
+
+### Fixed
+
+- The two surface-lint gates no longer assert that the waiver baseline is
+  NON-EMPTY. Test-side only; no user-facing behavior changes. Six
+  assertions across `tests/verification/surface-vocabulary.sh` and
+  `tests/test_surface_lint.py` read the baseline as proof the registry
+  described something real -- `totals.waived > 0`, `assertGreater(len(
+  waivers), 0)`, and four fixtures taking their owner id from
+  `registry["waivers"][0]` -- so they failed, two of them by raising, at
+  the exact moment the `surface-convergence` exit gate succeeds. Measured
+  at a zero baseline before the fix: 5 PASS / 2 FAIL for the script, and 2
+  failures plus 3 errors for the module.
+
+  Each fixture now supplies BOTH halves it needs -- a real finding (an
+  unregistered flag name injected into a manifest copy) and the waiver
+  covering it, owned by a synthetic id -- so the owner-side checks run
+  against a waiver that was demonstrably doing work rather than against
+  whichever live waiver happened to be first, and a new guard asserts that
+  the fixture waiver is not itself obsolete. The `waived > 0` assertion
+  becomes a statement of internal consistency instead: every waived row
+  names an owner and a waiver the registry declares, which holds at any
+  baseline size. Both gates gained a zero-baseline case that retires each
+  waived finding's flag from the surface AND the declarations describing
+  it, standing in for whatever fix the owning issue lands without
+  predicting it. The script's shape assertions moved into one file so that
+  case runs the same code the live payload is checked with.
+
+  Two findings worth recording. The claim that both section [3] bite tests
+  read `waivers[0]` was wrong by one: the obsolete-waiver test was already
+  baseline-independent, and only the closed-owner test raised. And the
+  `unenforced`-table partition test was checked for the same assumption and
+  did NOT have it -- `surface.one-meaning-per-flag` and
+  `surface.verb-class-contract` are both already listed there, so the
+  partition still accounts for every clause once their findings are gone.
+  (IM-289)
+
 ## [v3.4.1] - 2026-11-12
 
 ### Fixed

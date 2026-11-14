@@ -346,13 +346,19 @@ assert_contains "ZZZ" "$OUT_ERR" "absent-prefix error names the prefix"
 OUT_ERR=$("$SEARCH_HISTORY" "MAGIC_TOKEN" --prefix 1x 2>&1 >/dev/null)
 RC=$?
 assert_eq "2" "$RC" "--prefix 1x (bad shape) -> exit 2"
-assert_contains "invalid prefix" "$OUT_ERR" "bad-shape error names 'invalid prefix'"
+# IM-236: see the note in activity-issues.sh -- one structured payload for
+# every unusable --prefix scope, on every verb that takes the flag.
+# COVERS: surface.one-meaning-per-flag
+assert_contains "error=unknown-prefix" "$OUT_ERR" \
+    "bad-shape --prefix reports the structured unknown-prefix payload"
 
 # Bad prefix shape among valid ones
 OUT_ERR=$("$SEARCH_HISTORY" "MAGIC_TOKEN" --prefix IM,bad-shape 2>&1 >/dev/null)
 RC=$?
 assert_eq "2" "$RC" "--prefix IM,bad-shape -> exit 2 (any bad entry fails)"
-assert_contains "invalid prefix" "$OUT_ERR" "mixed-shape error names 'invalid prefix'"
+# COVERS: surface.one-meaning-per-flag
+assert_contains "error=unknown-prefix" "$OUT_ERR" \
+    "one bad entry in a --prefix list reports unknown-prefix"
 
 # Empty --prefix value after parsing
 OUT_ERR=$("$SEARCH_HISTORY" "MAGIC_TOKEN" --prefix "," 2>&1 >/dev/null)

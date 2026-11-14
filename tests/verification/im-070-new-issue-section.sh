@@ -67,15 +67,15 @@ mk_project() {
 STORE="$(mk_store store)"
 PROJ="$(mk_project proj PA "$STORE")"
 
-# --- Test 1: --section replaces an existing template section ---------
+# --- Test 1: --set-section replaces an existing template section ---------
 cd "$PROJ"
-"$NEW_ISSUE" --section "Summary=Replaced summary body." \
+"$NEW_ISSUE" --set-section "Summary=Replaced summary body." \
     "Section replace" feature low >/dev/null 2>&1
 ID1="PA-001"
 F1="$STORE/PA/$ID1.md"
 # COVERS: cli.create-seeded-body
 if grep -qF "Replaced summary body." "$F1"; then
-    pass "Test 1: --section replaces existing template section body"
+    pass "Test 1: --set-section replaces existing template section body"
 else
     fail "Test 1: replaced summary body not found in $F1"
 fi
@@ -86,26 +86,26 @@ else
     fail "Test 1: ## Implementation Notes missing from $F1"
 fi
 
-# --- Test 2: --section appends an unknown section --------------------
-"$NEW_ISSUE" --section "Design=Multi line\nblock" \
+# --- Test 2: --set-section appends an unknown section --------------------
+"$NEW_ISSUE" --set-section "Design=Multi line\nblock" \
     "Section append" feature low >/dev/null 2>&1
 ID2="PA-002"
 F2="$STORE/PA/$ID2.md"
 # Append: the new section heading and body must be present
 if grep -qE '^## Design$' "$F2" && grep -qF 'Multi line\nblock' "$F2"; then
-    pass "Test 2: --section appends an unknown section with body"
+    pass "Test 2: --set-section appends an unknown section with body"
 else
     fail "Test 2: Design section or body missing in $F2"
 fi
 
-# --- Test 3: multiple --section flags ----------------------------------
-"$NEW_ISSUE" --section "Summary=S body" --section "Acceptance Criteria=A body" \
+# --- Test 3: multiple --set-section flags ----------------------------------
+"$NEW_ISSUE" --set-section "Summary=S body" --set-section "Acceptance Criteria=A body" \
     "Multi sections" feature low >/dev/null 2>&1
 ID3="PA-003"
 F3="$STORE/PA/$ID3.md"
 if grep -qF "S body" "$F3" && grep -qE '^## Acceptance Criteria$' "$F3" \
         && grep -qF "A body" "$F3"; then
-    pass "Test 3: multiple --section flags compose"
+    pass "Test 3: multiple --set-section flags compose"
 else
     fail "Test 3: not all sections populated in $F3"
 fi
@@ -146,14 +146,14 @@ else
     fail "Test 5: stdin body not present in $F5"
 fi
 
-# --- Test 6: --section + --from-file -> exit 2 ------------------------
+# --- Test 6: --set-section + --from-file -> exit 2 ------------------------
 set +e
-out6=$("$NEW_ISSUE" --section "Summary=X" --from-file "$FIXTURE" \
+out6=$("$NEW_ISSUE" --set-section "Summary=X" --from-file "$FIXTURE" \
     "Both flags" feature low 2>&1)
 rc6=$?
 set -e
 if [[ "$rc6" -eq 2 ]] && echo "$out6" | grep -qi "mutually exclusive"; then
-    pass "Test 6: --section + --from-file exits 2 with mutual-exclusion message"
+    pass "Test 6: --set-section + --from-file exits 2 with mutual-exclusion message"
 else
     fail "Test 6: rc=$rc6 out=$out6"
 fi
@@ -170,7 +170,8 @@ else
 fi
 
 # --- Test 8: --json carries sections_applied and from_file -----------
-JSON8=$("$NEW_ISSUE" --json --section "Summary=J body" --section "Design=Other" \
+JSON8=$("$NEW_ISSUE" --json --set-section "Summary=J body" \
+    --set-section "Design=Other" \
     "Json sections" feature low 2>/dev/null)
 ID8="PA-006"
 F8="$STORE/PA/$ID8.md"
@@ -215,8 +216,8 @@ else
     fail "Test 9: $parsed9 (raw: $JSON9)"
 fi
 
-# --- Test 10: --section with empty TEXT yields empty body ------------
-"$NEW_ISSUE" --section "Summary=" "Empty section" feature low >/dev/null 2>&1
+# --- Test 10: --set-section with empty TEXT yields empty body ------------
+"$NEW_ISSUE" --set-section "Summary=" "Empty section" feature low >/dev/null 2>&1
 ID10="PA-008"
 F10="$STORE/PA/$ID10.md"
 # Summary body should be present but empty (heading kept, no body text)
@@ -225,7 +226,7 @@ if grep -qE '^## Summary$' "$F10"; then
     # a blank line, then another `## ` heading (no content between).
     awk '/^## Summary$/{found=1; next} found && /^## /{exit} found && NF{has_content=1} END{exit has_content}' "$F10"
     if [[ $? -eq 0 ]]; then
-        pass "Test 10: --section NAME= produces empty Summary body"
+        pass "Test 10: --set-section NAME= produces empty Summary body"
     else
         fail "Test 10: Summary body should be empty in $F10"
     fi
@@ -233,15 +234,37 @@ else
     fail "Test 10: ## Summary heading missing in $F10"
 fi
 
-# --- Test 11: bad --section format (no =) exits 2 --------------------
+# --- Test 11: bad --set-section format (no =) exits 2 --------------------
 set +e
-out11=$("$NEW_ISSUE" --section "NoEqualsHere" "Bad section" feature low 2>&1)
+out11=$("$NEW_ISSUE" --set-section "NoEqualsHere" "Bad section" feature low 2>&1)
 rc11=$?
 set -e
 if [[ "$rc11" -eq 2 ]] && echo "$out11" | grep -qi "NAME=TEXT"; then
-    pass "Test 11: --section without = exits 2"
+    pass "Test 11: --set-section without = exits 2"
 else
     fail "Test 11: rc=$rc11 out=$out11"
+fi
+
+# --- Test 12a: the retired `--section` spelling is refused -----------
+# IM-257: `--section` is the SELECTOR on edit/note/show. Before the rename
+# this verb spelled its fused operand the same way, so the whole point of
+# the refusal is that it is LOUD: argparse rejects the unknown argument
+# rather than seeding a section literally named "Summary=x".
+set +e
+out12a=$("$NEW_ISSUE" --section "Summary=x" "Retired spelling" feature low 2>&1)
+rc12a=$?
+set -e
+# COVERS: surface.one-meaning-per-flag
+if [[ "$rc12a" -eq 2 ]] && echo "$out12a" | grep -q "unrecognized arguments"; then
+    pass "Test 12a: retired --section spelling exits 2 as an unknown argument"
+else
+    fail "Test 12a: rc=$rc12a out=$out12a"
+fi
+# And nothing was created under the literal pair as a section name.
+if grep -rqF "Summary=x" "$STORE/PA" 2>/dev/null; then
+    fail "Test 12a: a section named 'Summary=x' was seeded anyway"
+else
+    pass "Test 12a: no section seeded from the refused argument"
 fi
 
 # --- Test 12: missing --from-file path exits 1 -----------------------

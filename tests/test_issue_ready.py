@@ -186,9 +186,9 @@ class TestBlocksGating(IssueReadyBase):
         self.write_issue("DOUG-001", status="open")
         self.write_issue("IM-001", deps=[("DOUG-001", "blocks")])
         self.write_issue("IM-002")
-        # --repo IM: the open cross-prefix blocker is itself a valid
+        # --prefix IM: the open cross-prefix blocker is itself a valid
         # candidate store-wide, so scope the ready set to IM.
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(self.ready_ids(payload), ["IM-002"])
         self.assertEqual(payload["filtered_out"], [{
             "id": "IM-001",
@@ -213,7 +213,7 @@ class TestBlocksGating(IssueReadyBase):
         self.write_issue("DOUG-001", status="in-progress")
         self.write_issue("IM-001", deps=[("DOUG-001", "blocks")])
         self.write_issue("IM-002")  # ready filler keeps exit 0
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(self.filtered_ids(payload), ["IM-001"])
         self.assertEqual(
             payload["filtered_out"][0]["reason"],
@@ -224,7 +224,7 @@ class TestBlocksGating(IssueReadyBase):
         # Conservative: an unverifiable dep is not ready.
         self.write_issue("IM-001", deps=[("DOUG-404", "blocks")])
         self.write_issue("IM-002")  # ready filler keeps exit 0
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(self.filtered_ids(payload), ["IM-001"])
         self.assertEqual(
             payload["filtered_out"][0]["reason"],
@@ -238,7 +238,7 @@ class TestBlocksGating(IssueReadyBase):
             ("DOUG-001", "parent-child"),
             ("DOUG-001", "discovered-from"),
         ])
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(self.ready_ids(payload), ["IM-001"])
         self.assertEqual(payload["filtered_out"], [])
 
@@ -251,7 +251,7 @@ class TestBlocksGating(IssueReadyBase):
         self.write_issue("IM-004", deps=[
             ("DOUG-001", "blocks"), ("DOUG-002", "blocks"),
         ])
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(self.ready_ids(payload), ["IM-001", "IM-002"])
         self.assertEqual(self.filtered_ids(payload), ["IM-003", "IM-004"])
 
@@ -306,20 +306,20 @@ class TestOrdering(IssueReadyBase):
         self.assertEqual(self.ready_ids(payload), ["IM-001", "IM-002"])
 
 
-class TestRepoFilter(IssueReadyBase):
-    def test_repo_restricts_to_prefix(self):
+class TestPrefixFilter(IssueReadyBase):
+    def test_prefix_restricts_to_prefix(self):
         self.write_issue("IM-001")
         self.write_issue("DOUG-001")
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(self.ready_ids(payload), ["IM-001"])
 
-    def test_repo_excluded_candidates_not_in_filtered_out(self):
+    def test_prefix_excluded_candidates_not_in_filtered_out(self):
         self.write_issue("IM-001")
         self.write_issue("DOUG-001", deps=[("MT-999", "blocks")])
-        payload = self.run_json("--repo", "IM")
+        payload = self.run_json("--prefix", "IM")
         self.assertEqual(payload["filtered_out"], [])
 
-    def test_no_repo_returns_all_prefixes(self):
+    def test_no_prefix_returns_all_prefixes(self):
         self.write_issue("IM-001")
         self.write_issue("DOUG-001")
         payload = self.run_json()
@@ -327,38 +327,44 @@ class TestRepoFilter(IssueReadyBase):
             sorted(self.ready_ids(payload)), ["DOUG-001", "IM-001"]
         )
 
-    def test_cross_prefix_blocker_resolved_under_repo(self):
-        # --repo scopes candidates but blocker status is still resolved
+    def test_cross_prefix_blocker_resolved_under_prefix(self):
+        # --prefix scopes candidates but blocker status is still resolved
         # against the whole store.
         self.write_issue("DOUG-001", status="open")
         self.write_issue("IM-001", deps=[("DOUG-001", "blocks")])
-        payload = self.run_json("--repo", "IM", expect_exit=1)
+        payload = self.run_json("--prefix", "IM", expect_exit=1)
         self.assertEqual(self.ready_ids(payload), [])
         self.assertEqual(self.filtered_ids(payload), ["IM-001"])
 
-    def test_lowercase_repo_prefix_resolves_case_insensitively(self):
-        # `--repo im` now case-folds to the IM prefix instead of
+    def test_lowercase_prefix_resolves_case_insensitively(self):
+        # `--prefix im` now case-folds to the IM prefix instead of
         # erroring, and announces the normalization on stderr.
         self.write_issue("IM-001")
-        r = self.run_cli("--repo", "im")
+        r = self.run_cli("--prefix", "im")
         self.assertEqual(r.returncode, 0)
         self.assertIn("resolved im -> IM", r.stderr)
 
-    def test_malformed_repo_prefix_usage_error(self):
+    def test_malformed_prefix_usage_error(self):
         # A prefix that cannot be a valid prefix even upper-cased (leading
         # digit) is still an exit-2 usage error (canonicalization applies only to
-        # provably-valid case variants, never malformed input).
+        # provably-valid case variants, never malformed input). IM-236: it
+        # reports through the one structured unknown-prefix payload that
+        # every scoping verb shares, rather than through a per-verb
+        # sentence -- a token that cannot be a prefix is not a prefix this
+        # store has.
         self.write_issue("IM-001")
-        r = self.run_cli("--repo", "1x")
+        r = self.run_cli("--prefix", "1x")
         self.assertEqual(r.returncode, 2)
-        self.assertIn("invalid --prefix", r.stderr)
+        self.assertIn("error=unknown-prefix", r.stderr)
+        self.assertIn("unknown=1x", r.stderr)
+        self.assertIn("known=IM", r.stderr)
 
 
 class TestNoReadyWork(IssueReadyBase):
     def test_empty_set_exits_1_with_kv_stderr(self):
         self.write_issue("DOUG-001", status="open")
         self.write_issue("IM-001", deps=[("DOUG-001", "blocks")])
-        r = self.run_cli("--repo", "IM")
+        r = self.run_cli("--prefix", "IM")
         self.assertEqual(r.returncode, 1)
         self.assertIn("error=no-ready-work", r.stderr)
 
@@ -378,12 +384,17 @@ class TestNoReadyWork(IssueReadyBase):
         self.assertTrue(r.stdout.startswith("Ready:"), r.stdout)
         self.assertNotIn('"ready"', r.stdout)
 
-    def test_retired_text_flag_still_accepted(self):
-        # --text names the default now; kept working for one release.
+    def test_retired_text_flag_is_an_unknown_argument(self):
+        """IM-270: `--text` named the default, so retiring the spelling
+        removes no capability -- a bare `ready` renders the same text.
+        Pinned because a retired flag that silently kept working would
+        leave the surface two ways to ask for one thing.
+        """
+        # COVERS: surface.stability
         self.write_issue("IM-001")
         r = self.run_cli("--text")
-        self.assertEqual(r.returncode, 0)
-        self.assertEqual(r.stdout, self.run_cli().stdout)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("unrecognized arguments: --text", r.stderr)
 
     def test_empty_set_json_flag_emits_json_stderr(self):
         r = self.run_cli("--json")
@@ -443,7 +454,7 @@ class TestActorFilter(IssueReadyBase):
 class TestTextRendering(IssueReadyBase):
     def test_text_ready_section(self):
         self.write_issue("IM-001", title="TTL lease primitive")
-        r = self.run_cli("--text")
+        r = self.run_cli()
         self.assertEqual(r.returncode, 0)
         self.assertIn("Ready:\n", r.stdout)
         self.assertIn("  IM-001  TTL lease primitive", r.stdout)
@@ -452,29 +463,32 @@ class TestTextRendering(IssueReadyBase):
         self.write_issue("DOUG-001", status="open")
         self.write_issue("IM-001")
         self.write_issue("IM-002", deps=[("DOUG-001", "blocks")])
-        r = self.run_cli("--text", "--filtered", "all")
+        r = self.run_cli("--filtered", "all")
         self.assertIn("Filtered out (not ready):", r.stdout)
         self.assertIn("  IM-002  blocked by DOUG-001 (open)", r.stdout)
 
     def test_text_claim_filtered_line(self):
         self.write_issue("IM-001", claim=CLAIM_ALICE_ACTIVE)
         self.write_issue("IM-002")
-        r = self.run_cli("--text", "--actor", "bob", "--filtered", "all")
+        r = self.run_cli("--actor", "bob", "--filtered", "all")
         self.assertIn("  IM-001  claim held by alice", r.stdout)
 
     def test_text_empty_ready_prints_none(self):
-        r = self.run_cli("--text")
+        r = self.run_cli()
         self.assertEqual(r.returncode, 1)
         self.assertIn("Ready:\n  (none)", r.stdout)
 
     def test_text_no_filtered_section_when_nothing_filtered(self):
         self.write_issue("IM-001")
-        r = self.run_cli("--text", "--filtered", "all")
+        r = self.run_cli("--filtered", "all")
         self.assertNotIn("Filtered out", r.stdout)
 
 
 class TestPreconditionsAndUsage(IssueReadyBase):
-    def test_json_and_text_mutually_exclusive(self):
+    def test_retired_text_flag_rejected_alongside_json(self):
+        # IM-270 retired --text, which through v3.4.x was --json's
+        # mutually exclusive partner. The pair is still exit 2, now as an
+        # unknown argument rather than a group conflict.
         r = self.run_cli("--json", "--text")
         self.assertEqual(r.returncode, 2)
 
@@ -545,11 +559,11 @@ class TestLimit(IssueReadyBase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("invalid --limit", r.stderr)
 
-    def test_limit_applies_after_repo_filter(self):
+    def test_limit_applies_after_prefix_filter(self):
         for i in range(1, 6):
             self.write_issue("DOUG-%03d" % i)
             self.write_issue("IM-%03d" % i)
-        r = self.run_cli("--repo", "IM", "--limit", "4", "--json")
+        r = self.run_cli("--prefix", "IM", "--limit", "4", "--json")
         self.assertEqual(r.returncode, 0)
         payload = json.loads(r.stdout)
         self.assertEqual(self.ready_ids(payload),
@@ -601,7 +615,7 @@ class TestFilteredSection(IssueReadyBase):
 
     def test_filtered_all_emits_the_section(self):
         self.blocked_store()
-        r = self.run_cli("--text", "--filtered", "all")
+        r = self.run_cli("--filtered", "all")
         self.assertIn("Filtered out (not ready):", r.stdout)
         self.assertIn("  IM-999  blocked by DOUG-900 (in-progress)", r.stdout)
         payload = json.loads(

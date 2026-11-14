@@ -176,6 +176,39 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Section D2: --section is repeatable (IM-257)
+# ---------------------------------------------------------------------------
+echo
+echo "[D2] --section repeatable"
+
+make_issue "$LEGACY/.issues/IM-006.md" "IM-006"
+(
+    cd "$LEGACY"
+    "$ISSUE_NOTE" IM-006 "lands in both" \
+        --section Summary --section "Implementation Notes" --no-reindex
+)
+# Registered as a plain store through v3.4.x, so the first --section was
+# dropped without a word; both named sections must carry the line now.
+SUM6=$(awk '/## Summary/,/## Implementation Notes/' "$LEGACY/.issues/IM-006.md")
+NOTES6=$(awk '/## Implementation Notes/,/## Archived Plan Content/' "$LEGACY/.issues/IM-006.md")
+# COVERS: surface.one-meaning-per-flag
+assert_contains "$TODAY: lands in both" "$SUM6" \
+    "repeated --section writes the first-named section"
+assert_contains "$TODAY: lands in both" "$NOTES6" \
+    "repeated --section writes the last-named section"
+
+# Naming one section twice would append the line twice in one write.
+make_issue "$LEGACY/.issues/IM-007.md" "IM-007"
+set +e
+STDERR=$( (cd "$LEGACY" && "$ISSUE_NOTE" IM-007 "dup" \
+    --section Summary --section Summary --no-reindex) 2>&1 >/dev/null )
+RC=$?
+set -e
+assert_eq "2" "$RC" "the same section named twice exits 2"
+assert_contains "named more than once" "$STDERR" \
+    "stderr names the duplicated section"
+
+# ---------------------------------------------------------------------------
 # Section E: error paths
 # ---------------------------------------------------------------------------
 echo
@@ -281,7 +314,12 @@ else
     fail "--json output is not parseable: $JSON"
 fi
 assert_contains "\"date\": \"$TODAY\"" "$JSON" "--json reports date"
-assert_contains "\"section\": \"Implementation Notes\"" "$JSON" "--json reports section"
+# Parsed, not grepped: `"section": "..."` also appears inside each
+# changes.section_actions record, so the substring matched whatever the
+# top-level field was and never pinned it (found while landing IM-257).
+TOPLEVEL=$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("sections")))' <<< "$JSON" 2>/dev/null)
+assert_eq '["Implementation Notes"]' "$TOPLEVEL" \
+    "--json reports the target sections as a list"
 assert_contains "\"note\": \"$TODAY: json check\"" "$JSON" "--json reports full note payload"
 assert_contains "\"op\": \"append\"" "$JSON" "--json reports section op = append"
 

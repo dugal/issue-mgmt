@@ -14,7 +14,7 @@
 #   - --actor filtering against store claim frontmatter
 #   - --prefix prefix restriction (blocker status still resolved store-wide)
 #   - deterministic ready ordering (priority, then created, then id)
-#   - --text rendering
+#   - text rendering (the default; the retired --text spelling exits 2)
 #   - regression: >100 store-wide ready rows never truncate the
 #     ready set; --limit is post-filter, never silent (stderr notice),
 #     0 = unlimited, negative = usage error
@@ -173,6 +173,26 @@ assert_not_contains "DOUG-301" "$(echo "$OUT" | ready_ids)" \
 assert_not_contains "DOUG-303" "$(echo "$OUT" | ready_ids)" \
     "cancelled DOUG record not in ready set"
 
+echo "== --prefix value space: a list, as on every scoping verb (IM-236) =="
+OUT=$(run_ready_json --prefix IM,DOUG)
+assert_contains "IM-301" "$(echo "$OUT" | ready_ids)" \
+    "--prefix IM,DOUG keeps IM candidates"
+# COVERS: surface.one-meaning-per-flag
+assert_contains "DOUG-302" "$(echo "$OUT" | ready_ids)" \
+    "--prefix IM,DOUG keeps DOUG candidates too"
+OUT=$(run_ready_json --prefix IM --prefix DOUG)
+# COVERS: surface.one-meaning-per-flag
+assert_contains "DOUG-302" "$(echo "$OUT" | ready_ids)" \
+    "repeated --prefix accumulates rather than keeping only the last value"
+assert_contains "IM-301" "$(echo "$OUT" | ready_ids)" \
+    "repeated --prefix keeps the first occurrence too"
+ERR=$(run_ready --prefix "," 2>&1 >/dev/null)
+RC=$?
+# COVERS: surface.one-meaning-per-flag
+assert_eq "2" "$RC" "--prefix ',' exits 2 rather than scoping to everything"
+assert_contains "reason=empty-prefix-scope" "$ERR" \
+    "empty --prefix scope reports a branchable reason"
+
 echo "== deterministic ordering (priority, then created, then id) =="
 ORD_STORE="$WORKDIR/ord"; STORE_SAVE="$STORE"; STORE="$ORD_STORE"
 write_issue IM-050 open "low"    low    2026-01-01
@@ -195,12 +215,25 @@ OUT=$(run_ready_json --prefix IM --actor alice)
 assert_contains "IM-307" "$(echo "$OUT" | ready_ids)" \
     "actor alice keeps her own claim"
 
-echo "== --text rendering =="
-OUT=$(run_ready --prefix IM --text)
+# IM-243 / surface.vocabulary-registry: the claimant is one concept with one
+# synonym set, so the spelling the write side teaches (`--claim` on `start`
+# and `transition`) is accepted by this filter too. This verb took --actor
+# alone through v3.4.x. --actor stays the spelling help presents here.
+# COVERS: surface.vocabulary-registry
+OUT=$(run_ready_json --prefix IM --claim bob)
+assert_eq "IM-301 IM-302 IM-306 IM-308" "$(echo "$OUT" | ready_ids)" \
+    "--claim bob filters exactly as --actor bob does"
+# COVERS: surface.vocabulary-registry
+OUT=$(run_ready_json --prefix IM --claim alice)
+assert_contains "IM-307" "$(echo "$OUT" | ready_ids)" \
+    "--claim alice keeps her own claim"
+
+echo "== text rendering (the default) =="
+OUT=$(run_ready --prefix IM)
 assert_contains "Ready:" "$OUT" "text mode has Ready: header"
 assert_contains "IM-301" "$OUT" "text mode lists ready id"
 assert_contains "No deps" "$OUT" "text mode lists ready title"
-OUT=$(run_ready --prefix IM --text --filtered all)
+OUT=$(run_ready --prefix IM --filtered all)
 assert_contains "Filtered out (not ready):" "$OUT" \
     "text mode has filtered header"
 assert_contains "IM-303  blocked by DOUG-302 (open)" "$OUT" \
@@ -355,8 +388,14 @@ assert_contains "unknown=ZZ" "$(cat "$WORKDIR/stderr.txt")" \
     "absent-prefix stderr names the bad value"
 
 echo "== usage and preconditions =="
+# IM-270 retired --text, which named the default rather than a capability,
+# so the spelling exits 2 as an unknown argument -- alone or alongside
+# --json, which was its mutually exclusive partner through v3.4.x.
+run_ready --text >/dev/null 2>&1
+# COVERS: surface.stability
+assert_eq 2 "$?" "retired --text is an unknown argument (exit 2)"
 run_ready --json --text >/dev/null 2>&1
-assert_eq 2 "$?" "--json with --text is a usage error"
+assert_eq 2 "$?" "retired --text alongside --json is still exit 2"
 run_ready --prefix lowercase >/dev/null 2>&1
 assert_eq 2 "$?" "malformed --prefix prefix is a usage error"
 ISSUE_STORE_ROOT="$WORKDIR/does-not-exist" "$ISSUE_READY" >/dev/null 2>"$WORKDIR/stderr.txt"

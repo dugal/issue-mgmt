@@ -170,7 +170,7 @@ grep -q "^status: in-progress" "$STORE/TT/TT-001.md" \
     && ok "transition updated the markdown status" \
     || bad "transition did not update markdown status"
 # issue ready computes readiness from frontmatter with no bd.
-if issue ready --repo TT >/tmp/ready.log 2>&1 || [ $? -eq 1 ]; then
+if issue ready --prefix TT >/tmp/ready.log 2>&1 || [ $? -eq 1 ]; then
     ok "issue ready runs bd-less (exit 0 or 1 no-ready-work)"
 else
     bad "issue ready failed"; tail -10 /tmp/ready.log

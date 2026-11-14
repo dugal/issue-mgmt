@@ -348,7 +348,12 @@ assert_contains "no activity" "$EMPTY_STDERR" \
 OUT_ERR=$("$ACTIVITY" --prefix 1x 2>&1 >/dev/null)
 RC=$?
 assert_eq "2" "$RC" "bad-shape --prefix -> exit 2"
-assert_contains "invalid prefix" "$OUT_ERR" "bad-shape --prefix error names 'invalid prefix'"
+# IM-236: one structured payload for every unusable --prefix scope. A token
+# that cannot be a prefix is not a prefix this store has, so it reports
+# through unknown-prefix rather than through a per-verb sentence.
+# COVERS: surface.one-meaning-per-flag
+assert_contains "error=unknown-prefix" "$OUT_ERR" \
+    "bad-shape --prefix reports the structured unknown-prefix payload"
 
 OUT_ERR=$("$ACTIVITY" --prefix "IM,bad-prefix" 2>&1 >/dev/null)
 RC=$?
@@ -358,8 +363,9 @@ assert_eq "2" "$RC" "mixed-list with one bad shape -> exit 2"
 OUT_ERR=$("$ACTIVITY" --prefix "," 2>&1 >/dev/null)
 RC=$?
 assert_eq "2" "$RC" "--prefix containing only separators -> exit 2"
-assert_contains "empty after parsing" "$OUT_ERR" \
-    "empty-prefix error names 'empty after parsing'"
+# COVERS: surface.one-meaning-per-flag
+assert_contains "reason=empty-prefix-scope" "$OUT_ERR" \
+    "separators-only --prefix reports reason=empty-prefix-scope"
 
 # Absent prefix -> exit 2 (argument error), distinct from "no activity"
 # (exit 1). IM-238: a scope naming nothing in the store is a bad argument,
