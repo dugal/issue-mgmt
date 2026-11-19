@@ -39,7 +39,7 @@ Internally delegates to the same per-issue lock + snapshot + atomic-write + comm
 
 - `0` -- success.
 - `1` -- issue file not found, or target section not found.
-- `2` -- argument / usage error: missing ID, missing text, invalid `--date`, empty stdin, or note text containing a `#`/`## ` header line that would escape the target section -- demote such headers (`## x` -> `### x`) and retry.
+- `2` -- argument / usage error: missing ID, missing text, invalid `--date`, empty stdin, or note text that would fragment the file -- an unfenced `#`/`## ` header line that would escape the target section (demote it: `## x` -> `### x`), or a code fence the note opens and never closes. A `## ` line inside a closed code fence nests fine and passes.
 - `3` -- `concurrent-edit`: lock timeout or hand-edit divergence detected. **Retry once with fresh state** (re-read the issue file, re-issue the note); on persistent failure, surface the error verbatim and stop.
 
 ## Examples

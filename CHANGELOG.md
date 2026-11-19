@@ -2,6 +2,109 @@
 
 ## [Unreleased]
 
+## [v3.6.1] - 2026-11-19
+
+### Fixed
+- An empty (or whitespace-only) `.issues/.migrated-to-store` sentinel no
+  longer silently resolves the store root to the current directory
+  (`Path('')` is `Path('.')`, which exists, so the store-unresolvable
+  guard passed and downstream failures -- unregistered repo, missing
+  issue file -- misreported the condition). One rule now covers every
+  sentinel reader -- the shared 4-step chain, `admin snapshot`'s walk-up,
+  and `admin init-project`'s local read, the latter two of which used to
+  SKIP the empty payload toward the config leg: a present-but-empty
+  sentinel is corrupt routing state and fails loud with the branchable
+  `error=precondition-failed reason=corrupt-sentinel` payload naming the
+  sentinel path (exit 1, one-line JSON under `--json`). An earlier leg
+  still short-circuits, which is what makes the recovery work:
+  `issue admin init-project --store ROOT` resolves via the flag and
+  REPAIRS the empty sentinel (an empty payload routes nowhere, so
+  rewriting it is repair, not overwrite of a divergent route). The error
+  is raised inside the shared resolver, below per-verb handling, and
+  surfaces through a new dispatcher-level `ContractError` backstop in
+  `scripts/issue` -- the structural guarantee that an uncaught contract
+  error exits through a diagnostic rather than a traceback. New
+  `tests/verification/im-294-empty-sentinel.sh` covers all five paths;
+  unit coverage in `tests/test_storeresolve.py`. (IM-294,
+  discovered-from IM-280)
+- `tests/verification/im-164-fresh-install.sh` no longer leaves a `dev-*`
+  VERSION stamp in the source tree: its `make dist` chains `stamp`, which
+  off-tag rewrites the `VERSION` constant in six `lib/cli/*.py` files, so
+  every full verification sweep on a machine with docker left six tracked
+  files dirty and failed the `--version` assertions of the five scripts
+  that run after it in one pass (`init-issue-project`, `issue-snapshot`,
+  `migrate-to-store`, `new-issue-store-mode`, `validate-issue`). This was
+  the stray dev stamp docs/plan.md carried as "origin never identified"
+  since 2026-11-07, intermittent because the script SKIPs without the
+  docker image. The script now snapshots the stamped files before `make
+  dist` and restores the exact pre-run bytes from its EXIT trap (success,
+  failure, or interrupt), via a new `snapshot_version_stamps` /
+  `restore_version_stamps` pair in `tests/verification/lib.sh`, and
+  `project-meta.sh` gains check 6: every executed stamp-chaining `make`
+  invocation (`dist`, `stamp`, `all`, `release*`, `publish*`, or a bare
+  `make`) in the suite must be snapshot/restore bracketed -- the same
+  project-level invariant shape as IM-255's operator-store check, one
+  axis over (source tree instead of store). The restore returns the tree
+  to whatever state it was in, so real uncommitted work in `lib/` is
+  preserved rather than checked out away. (IM-286; IM-290 cancelled into
+  it as a duplicate)
+- Store-root resolution is one shared chain. The 4-step precedence
+  (`--store` -> `ISSUE_STORE_ROOT` -> sentinel -> legacy) is implemented
+  once in the new `lib/storeresolve.py` and every verb resolves through
+  it, collapsing the four surviving local copies (`create`, `ready`,
+  `editcore`, plus `edit`/`note`/`dep`'s inline `--store` handling); the
+  three config-file readers in `admin init-project` / `admin migrate` /
+  `admin snapshot` collapse onto one shared reader, and each of those
+  verbs documents at its resolver why it deviates (the first two run
+  before the sentinel exists; `snapshot` is designed for cron). Every leg
+  now applies `~` expansion uniformly (previously only `ready` and
+  `migrate` did). The docs promised a 5-step chain (config file + prompt
+  on every verb) that only those three admin verbs ever implemented;
+  `requirements.md`, `spec.md`, and CLAUDE.md now state the 4-step chain
+  with the three documented deviations, decided over adding a config leg
+  everywhere because an ambient per-machine file redirecting every verb's
+  writes is the failure class the store-safety convention guards against.
+  The 2026-11-07 live-store corruption was re-investigated under the same
+  issue: the recorded config-file fall-through mechanism cannot occur
+  (`transition` never reads the config file); the real mechanism -- an
+  inherited `ISSUE_STORE_ROOT` outranking a scratch-directory legacy
+  fixture -- was reproduced in a controlled throwaway-store experiment
+  and the plan.md convention narrative corrected. (IM-280)
+- `issue admin init-project` no longer hangs forever on an exhausted stdin
+  when `--prefix` is omitted: `derive_prefix`'s prompt loop spun on the
+  empty read EOF returns every time, so a non-interactive caller blocked
+  indefinitely with no diagnostic. Now exit 2 with the same branchable
+  `error=usage-error reason=non-interactive-stdin` payload `issue create`
+  emits, naming `--prefix` as the flag that supplies the value. The fix
+  distinguishes an exhausted stream from a piped one -- a piped answer is
+  still a real answer, so the piped store-root and prefix prompts keep
+  working, and piped blank lines re-prompt until the pipe exhausts. Closes
+  the third known `surface.non-interactive` violation (after the `create`
+  traceback and the store-root EOF loop). (IM-279)
+- The section-boundary parser is fence-aware: a `## ` line inside a fenced
+  code block (``` or ~~~, length >= 3, up to 3 spaces of indentation, per
+  CommonMark) is content, not a section boundary. Previously any `## ` line
+  ended the section, so an `issue edit --append`, an `issue note`, or the
+  automated status-transition audit line landed INSIDE a fenced markdown
+  example mid-section instead of at the true section end (observed on
+  MAD-129, 2026-07-08). The fix lives in the shared `find_section` /
+  `list_section_names` scan, so every consumer -- `edit`'s section ops,
+  `note`, `show --section`, `transition`'s note writer, the reaper's, and
+  structural section ops -- is corrected at once. Consequently the IM-174
+  escaping-header guard now PASSES a `#`/`## ` line inside a closed fence
+  (it no longer fragments anything) and gains the counterpart refusal: a
+  body that opens a code fence it never closes exits 2 naming the opener,
+  since an unclosed fence would run to end of file and swallow every
+  following section heading. (IM-139)
+- `issue create --set-section NAME=TEXT` runs the IM-174 escaping-header
+  guard (fence-aware, as above) on each seeded TEXT at parse time, before
+  any store is resolved or any file created: an unfenced `#`/`## ` line or
+  an unclosed fence exits 2 with the same diagnostic the `edit`-side body
+  ops emit, instead of silently fragmenting the new issue. One shared guard
+  (`frontmatter.check_body_nests`) now backs both verbs. `--from-file`
+  stays verbatim and unguarded by design -- the caller owns the structure,
+  exactly as `edit --replace-body-file` does. (IM-291)
+
 ## [v3.6.0] - 2026-11-14
 
 ### Added

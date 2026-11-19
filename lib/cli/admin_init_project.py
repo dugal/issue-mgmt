@@ -93,10 +93,11 @@ from pathlib import Path
 import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 import repo as repo_lib  # noqa: E402
+import storeresolve  # noqa: E402
 
 from . import common
 
-VERSION = "v3.6.0"
+VERSION = "v3.6.1"
 
 PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
 RESERVED_PREFIXES = {"ISSUE"}
@@ -105,7 +106,7 @@ CONCURRENT_EDIT_EXIT = errors.EXIT_CONCURRENT_EDIT
 LOCK_TIMEOUT_SECONDS = 5.0
 LOCK_POLL_INTERVAL = 0.05
 
-CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
+CONFIG_PATH = storeresolve.CONFIG_PATH
 
 
 PROG = "issue admin init-project"
@@ -168,21 +169,8 @@ def show_help():
 
 
 def read_config_store_root():
-    if not CONFIG_PATH.is_file():
-        return None
-    try:
-        for line in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            if key.strip() == "store_root":
-                return value.strip() or None
-    except OSError as e:
-        die(f"failed to read {CONFIG_PATH}: {e}")
-    return None
+    """Shared config reader (``storeresolve``, IM-280); None when absent."""
+    return storeresolve.read_config_store_root()
 
 
 def write_config_store_root(value):
@@ -236,6 +224,12 @@ def resolve_anchor(toplevel):
 
 
 def resolve_store_root(cli_store, anchor, non_interactive):
+    """Documented deviation from the shared 4-step chain (IM-280).
+
+    This verb runs BEFORE the sentinel exists (the sentinel is its output),
+    so after the shared legs it falls through to the per-machine config file
+    and, interactively, to a prompt. No Tier-1 verb carries these legs.
+    """
     if cli_store:
         return cli_store
     env = os.environ.get("ISSUE_STORE_ROOT")
@@ -243,9 +237,12 @@ def resolve_store_root(cli_store, anchor, non_interactive):
         return env
     sentinel = anchor / ".issues" / ".migrated-to-store"
     if sentinel.is_file():
-        content = sentinel.read_text(encoding="utf-8").strip()
-        if content:
-            return content
+        # A present-but-empty sentinel fails loud (IM-294) rather than
+        # being skipped toward the config leg: it is corrupt routing
+        # state, not an unconfigured project. Passing --store (or the env
+        # var) short-circuits above, and the write path below repairs the
+        # empty file.
+        return storeresolve.read_sentinel_payload(sentinel)
     cfg = read_config_store_root()
     if cfg:
         return cfg
@@ -304,7 +301,25 @@ def derive_prefix(cli_prefix, anchor, non_interactive):
                 "(uppercase, 2-8 chars, e.g. IM): "
             )
             sys.stderr.flush()
-            answer = sys.stdin.readline().strip()
+            raw = sys.stdin.readline()
+            if raw == "":
+                # EOF: an exhausted stream can never answer, and before
+                # IM-279 this loop spun on it forever (`continue` on the
+                # empty read, which at EOF is empty every time). Distinct
+                # from a piped blank line ("\n"), which re-prompts -- a
+                # piped answer is still a real answer (Tests 16/18 pin
+                # that capability). Same refusal shape as IM-248 and the
+                # IM-252 fix one prompt over in resolve_store_root: fail
+                # naming the flag that supplies the value, never block.
+                err = errors.UsageError(
+                    "stdin is exhausted, so the interactive prompt for "
+                    "the issue prefix cannot be answered -- pass "
+                    "--prefix PREFIX instead",
+                    reason="non-interactive-stdin",
+                )
+                print(err.format_stderr(PROG), file=sys.stderr)
+                sys.exit(errors.EXIT_USAGE)
+            answer = raw.strip()
             if not answer:
                 continue
             if not PREFIX_RE.match(answer) or answer in RESERVED_PREFIXES:
@@ -459,6 +474,13 @@ def ensure_local_sentinel_file(anchor, store_root):
         existing = sentinel.read_text(encoding="utf-8").strip()
         if existing == expected:
             return sentinel, False
+        if not existing:
+            # A present-but-empty sentinel routes nowhere, so rewriting it
+            # is repair of corrupt state, not overwrite of a divergent
+            # route (IM-294) -- and this verb is the recovery the
+            # corrupt-sentinel diagnostic names.
+            sentinel.write_text(expected + "\n", encoding="utf-8")
+            return sentinel, True
         die(
             f"{sentinel} contains {existing!r}; would write {expected!r} "
             f"-- refusing to overwrite a divergent sentinel"

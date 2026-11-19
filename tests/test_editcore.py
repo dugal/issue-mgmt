@@ -139,6 +139,18 @@ class TestInterpretSectionActions(unittest.TestCase):
         )
         self.assertEqual(actions, [("edit", "A", "append", "### fine\n")])
 
+    def test_h2_inside_closed_fence_allowed(self):
+        # Fence-aware (IM-139): a fenced markdown example containing a
+        # '## ' line is no longer a boundary, so the guard passes it.
+        body = "```markdown\n## example\n```\n"
+        actions, _ = self._interp([("--section", "A"), ("--append", body)])
+        self.assertEqual(actions, [("edit", "A", "append", body)])
+
+    def test_unclosed_fence_in_body_refused(self):
+        with self.assertRaises(ValueError) as cm:
+            self._interp([("--section", "A"), ("--append", "```\ncode\n")])
+        self.assertIn("never closes", str(cm.exception))
+
     def test_add_section_with_body_default_position(self):
         actions, _ = self._interp(
             [("--add-section", "New"), ("--body", "text")]

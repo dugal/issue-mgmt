@@ -373,6 +373,51 @@ else
     fail "interactive prefix prompt invalid+valid (rc=$rc invalid_count=$invalid_count out=$out)"
 fi
 
+# --- Test 19b: prefix prompt refuses an exhausted stream (IM-279) ---
+# `--store S --repo R </dev/null` with no --prefix used to hang forever:
+# derive_prefix's loop `continue`d on the empty read, and at EOF the
+# read is empty every time. Now an argument error (exit 2) with the
+# IM-248 branchable payload naming --prefix. Run under `timeout` so a
+# regression HANGS the check rather than passing it.
+STORE_EOF="$WORKDIR/store-eof-prefix"
+mk_store "$STORE_EOF"
+REPO_EOF="$(mk_repo eofprefix)"
+out=$( cd "$REPO_EOF" && unset ISSUE_STORE_ROOT && \
+       timeout 10 "$SCRIPT" --store "$STORE_EOF" --repo eofprefix \
+       </dev/null 2>&1 )
+rc=$?
+# COVERS: surface.non-interactive
+if [[ $rc -eq 2 ]] \
+   && [[ "$out" == *"reason=non-interactive-stdin"* ]] \
+   && [[ "$out" == *"--prefix"* ]]; then
+    pass "prefix prompt at EOF exits 2 naming --prefix (no hang)"
+else
+    fail "prefix prompt at EOF (rc=$rc out=$out)"
+fi
+# Nothing was registered on the refusal.
+if ! grep -q 'eofprefix:' "$STORE_EOF/.repos" 2>/dev/null; then
+    pass "EOF refusal registered nothing"
+else
+    fail "EOF refusal wrote a registry entry anyway"
+fi
+
+# --- Test 19c: piped blank lines then EOF terminate (IM-279) --------
+# A blank line re-prompts (a live pipe may still answer); when the pipe
+# then exhausts, the EOF refusal fires instead of looping.
+STORE_EOF2="$WORKDIR/store-eof-prefix-2"
+mk_store "$STORE_EOF2"
+REPO_EOF2="$(mk_repo eofprefix2)"
+out=$( cd "$REPO_EOF2" && unset ISSUE_STORE_ROOT && \
+       printf '\n\n' | timeout 10 "$SCRIPT" --store "$STORE_EOF2" \
+       --repo eofprefix2 2>&1 )
+rc=$?
+# COVERS: surface.non-interactive
+if [[ $rc -eq 2 ]] && [[ "$out" == *"reason=non-interactive-stdin"* ]]; then
+    pass "blank lines then EOF terminate with the refusal (no hang)"
+else
+    fail "blank-lines-then-EOF (rc=$rc out=$out)"
+fi
+
 # --- Test 20: ~/.config/issue-mgmt/config fallback resolution ---
 # Pre-seed the config under HOME-override; no --store, no env, no
 # sentinel. Exercises the cfg branch of resolve_store_root() AND

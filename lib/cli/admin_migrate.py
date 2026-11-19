@@ -102,8 +102,9 @@ from pathlib import Path
 import concurrency  # noqa: E402
 import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
+import storeresolve  # noqa: E402
 
-VERSION = "v3.6.0"
+VERSION = "v3.6.1"
 
 # The one place this verb names itself. Every diagnostic, usage line,
 # and `prog=` keyword formats through it, so the surface manifest sees
@@ -111,7 +112,7 @@ VERSION = "v3.6.0"
 # rather than a ~90-site grep (IM-239).
 PROG = "issue admin migrate"
 
-CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
+CONFIG_PATH = storeresolve.CONFIG_PATH
 
 
 def resolve_canonical_template() -> Path | None:
@@ -180,24 +181,17 @@ def show_help():
 
 
 def read_config_store_root():
-    if not CONFIG_PATH.is_file():
-        return None
-    try:
-        for raw in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            if key.strip() == "store_root":
-                return value.strip() or None
-    except OSError:
-        return None
-    return None
+    """Shared config reader (``storeresolve``, IM-280); None when absent."""
+    return storeresolve.read_config_store_root()
 
 
 def resolve_store_root(cli_store):
+    """Documented deviation from the shared 4-step chain (IM-280).
+
+    Migration targets a project that is not yet migrated, so there is no
+    sentinel leg by construction; after --store and ISSUE_STORE_ROOT it
+    falls through to the per-machine config file instead.
+    """
     if cli_store:
         return Path(cli_store).expanduser()
     env = os.environ.get("ISSUE_STORE_ROOT")

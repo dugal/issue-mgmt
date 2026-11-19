@@ -42,10 +42,18 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     exit 0
 fi
 
-cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1; }
+cleanup() {
+    docker rm -f "$CONTAINER" >/dev/null 2>&1
+    restore_version_stamps
+}
 trap cleanup EXIT
 
 echo "== build dist tarball + container-local formula =="
+# `make dist` chains `stamp`, which off-tag rewrites the VERSION constant in
+# lib/cli/*.py to a dev-* string. Snapshot the stamped files first; cleanup
+# restores the pre-run bytes on success, failure, or interrupt, so this
+# script never leaves the source tree modified (IM-286).
+snapshot_version_stamps
 # Capture make's output and echo it on failure -- the strict stamp gate
 # refuses `make dist` on an unstamped tree (the promote->stamp window), and
 # a swallowed diagnostic cost two full coverage re-runs to trace.

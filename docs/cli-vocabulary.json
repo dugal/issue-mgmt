@@ -909,7 +909,7 @@
       "issues": [
         "IM-282"
       ],
-      "note": "Behavioral. IM-248 and IM-252 closed the two known violations; what stays open, and is what IM-282 carries, is whether the clause as written forbids a PIPED prompt answer, which two admin init-project tests pin as a real capability."
+      "note": "Behavioral. IM-248, IM-252, and IM-279 closed the three known violations (the last was derive_prefix's EOF loop, a hang rather than a traceback); what stays open, and is what IM-282 carries, is whether the clause as written forbids a PIPED prompt answer, which two admin init-project tests pin as a real capability."
     },
     {
       "clause": "surface.preview-not-confirmation",

@@ -184,16 +184,14 @@ def _resolve_paths(issue_id, cli_store, *, emit_note=None):
     """ResolveResult, honoring --store first.
 
     Store-root precedence (``--store`` -> ``ISSUE_STORE_ROOT`` -> sentinel)
-    stays here; id/prefix canonicalization + the path build go through
+    goes through the shared ``storeresolve`` chain via ``editcore``;
+    id/prefix canonicalization + the path build go through
     ``idresolve``, so the returned ``lock_path`` is always built
     from the canonical stem (P2). Raises ValueError on a malformed id and
     ``errors.StoreIntegrityError`` (exit 1) on a D2 collision.
     """
     anchor = _ei.find_project_anchor()
-    if cli_store:
-        store_root = Path(cli_store)
-    else:
-        store_root = _ei.resolve_store_root(anchor)
+    store_root = _ei.resolve_store_root(anchor, cli_store)
     return idresolve.resolve_issue_paths(
         issue_id, store_root, anchor, emit_note=emit_note
     )

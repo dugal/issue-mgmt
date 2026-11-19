@@ -135,19 +135,25 @@ def find_section(body_text: str, name: str) -> Optional[Tuple[int, int, int]]:
     '## <name>', body_start is heading_idx + 1, body_end is the index of
     the next '## ' heading or len(lines) if none follows.
 
+    Fence-aware (IM-139): a '## ' line inside a fenced code block is
+    content, not a section boundary, so a section whose body embeds a
+    fenced markdown example stays one section. A fence left unclosed
+    runs to end of text, per CommonMark, hiding any later headings.
+
     Returns None if the section is not found.
     """
     lines = body_text.splitlines(keepends=True)
+    fenced = _fence_mask(lines)
     heading_idx = None
     for i, line in enumerate(lines):
-        if _is_h2(line, name):
+        if not fenced[i] and _is_h2(line, name):
             heading_idx = i
             break
     if heading_idx is None:
         return None
     end_idx = len(lines)
     for j in range(heading_idx + 1, len(lines)):
-        if _is_any_h2(lines[j]):
+        if not fenced[j] and _is_any_h2(lines[j]):
             end_idx = j
             break
     return heading_idx, heading_idx + 1, end_idx
@@ -204,8 +210,10 @@ def list_section_names(body_text: str) -> List[str]:
     with an existing one).
     """
     names = []
-    for line in body_text.splitlines(keepends=True):
-        if _is_any_h2(line):
+    lines = body_text.splitlines(keepends=True)
+    fenced = _fence_mask(lines)
+    for i, line in enumerate(lines):
+        if not fenced[i] and _is_any_h2(line):
             content = line.rstrip("\r\n").rstrip()
             names.append(content[3:].strip())
     return names
@@ -572,22 +580,119 @@ def _is_any_h2(line: str) -> bool:
     return stripped.startswith("## ")
 
 
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def _fence_scan(lines: List[str]) -> Tuple[List[bool], Optional[str]]:
+    """Scan lines for CommonMark fenced code blocks.
+
+    Returns (mask, unclosed): `mask` is a per-line list, True where the
+    line belongs to a fenced code block (delimiter lines included);
+    `unclosed` is the opening line of a fence still open at end of
+    input, or None.
+
+    Fence grammar (the CommonMark subset issue bodies use): an opening
+    fence is up to three spaces of indentation plus a run of at least
+    three backticks or tildes with an optional info string (a backtick
+    fence's info string may not itself contain a backtick); the closing
+    fence uses the same character, is at least as long, and carries
+    nothing but whitespace. A fence left open runs to end of input.
+    """
+    mask = []
+    open_char = ""
+    open_len = 0
+    open_line = None
+    for line in lines:
+        m = _FENCE_RE.match(line.rstrip("\r\n"))
+        if open_char:
+            mask.append(True)
+            if (
+                m is not None
+                and m.group(1)[0] == open_char
+                and len(m.group(1)) >= open_len
+                and not m.group(2).strip()
+            ):
+                open_char = ""
+                open_line = None
+            continue
+        if m is not None and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            open_char = m.group(1)[0]
+            open_len = len(m.group(1))
+            open_line = line.rstrip("\r\n").rstrip()
+            mask.append(True)
+            continue
+        mask.append(False)
+    return mask, open_line
+
+
+def _fence_mask(lines: List[str]) -> List[bool]:
+    return _fence_scan(lines)[0]
+
+
+def find_unclosed_fence(text: str) -> Optional[str]:
+    """Return the opening line of a code fence left unclosed at the end
+    of `text`, or None if every fence closes.
+
+    Spliced into a document, an unclosed fence runs to end of file and
+    swallows every later section heading (the fence-aware parser stops
+    seeing them as boundaries), so the body-op guard refuses it
+    alongside escaping headers.
+    """
+    return _fence_scan(text.splitlines(keepends=True))[1]
+
+
 def find_escaping_header(text: str, level: int = 2) -> Optional[str]:
     """Return the first line of `text` that is an ATX header at or above
     `level` (would escape a level-`level` section when spliced into its
     body), or None if the text nests cleanly.
 
-    The check is deliberately fence-naive, matching `find_section`: the
-    section parser treats any `## ` line as a boundary, including inside
-    a code fence, so such a line genuinely fragments the file and must
-    be caught here too. Deeper headers (`###`+) nest fine and pass.
+    Fence-aware, matching `find_section` (IM-139): a header line inside
+    a fenced code block is content, not a boundary, so it nests fine
+    and passes. Lines after an unclosed fence opener are in-fence and
+    pass too -- callers that splice must pair this check with
+    `find_unclosed_fence`, since an unclosed fence is its own hazard.
+    Deeper headers (`###`+) nest fine and pass.
     """
     prefixes = tuple("#" * n + " " for n in range(1, level + 1))
-    for line in text.splitlines():
+    lines = text.splitlines(keepends=True)
+    fenced = _fence_mask(lines)
+    for i, line in enumerate(lines):
+        if fenced[i]:
+            continue
         stripped = line.rstrip("\r\n").rstrip()
         if stripped.startswith(prefixes):
             return stripped
     return None
+
+
+def check_body_nests(text: str, op_label: str, anchor_label: str) -> None:
+    """Refuse body text that would damage the ##-delimited section model.
+
+    Raises ValueError (CLI exit 2, the argv/usage contract) when `text`
+    contains a header line that would escape a level-2 section and
+    fragment the file, or opens a code fence it never closes (which
+    would swallow every following section heading). One guard shared by
+    the edit-side body ops and `issue create`'s `--set-section` seeds
+    (IM-291), so the diagnostic does not depend on which verb was
+    reached for; runs at parse time, before any lock is acquired.
+    """
+    label = f"{anchor_label} {op_label}".rstrip()
+    offending = find_escaping_header(text)
+    if offending is not None:
+        raise ValueError(
+            f"{label}: body contains a markdown "
+            f"header that would escape the level-2 section and fragment "
+            f"the file: {offending!r} -- demote it to nest under the "
+            "section (e.g. '## heading' -> '### heading') and retry"
+        )
+    unclosed = find_unclosed_fence(text)
+    if unclosed is not None:
+        raise ValueError(
+            f"{label}: body opens a code fence it never closes "
+            f"({unclosed!r}) -- spliced into the file, an unclosed fence "
+            "runs to end of file and swallows every following section; "
+            "close the fence and retry"
+        )
 
 
 # --- Block-aware dict parser -------------------------------------------

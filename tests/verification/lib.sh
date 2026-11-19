@@ -218,3 +218,48 @@ shipped_skill_names() {
 shipped_skill_count() {
     shipped_skill_names | wc -l | tr -d '[:space:]'
 }
+
+# ---------------------------------------------------------------------------
+# VERSION-stamp preservation (IM-286).
+#
+# `make dist` declares `stamp` as a prerequisite, and off-tag `stamp`
+# rewrites the `VERSION = "..."` constant in every lib/cli/*.py module that
+# carries one to a `dev-*` string (a bare `make` does the same via the
+# default goal). A verification script that builds a tarball therefore
+# mutates the source tree it is verifying: the suite leaves tracked files
+# dirty, and every `--version` assertion in a script that runs later in the
+# same sweep fails against the dev stamp. This was the stray dev stamp
+# docs/plan.md recorded as "origin never identified".
+#
+# Any script that runs a stamp-chaining make target MUST bracket it:
+#
+#     snapshot_version_stamps      # immediately before the make invocation
+#     ...make -C "$PROJECT_ROOT" dist...
+#     # and call restore_version_stamps from its EXIT trap
+#
+# The snapshot records the exact pre-run bytes of every stamped file, so the
+# restore returns the tree to whatever state it was in before the script ran
+# -- including a tree already dirty with real uncommitted work, which a
+# blanket `git checkout -- lib/` would destroy. project-meta.sh enforces the
+# bracketing by shape (its stamp-restore check).
+
+VERSION_STAMP_SNAPSHOT=""
+
+snapshot_version_stamps() {
+    : "${PROJECT_ROOT:?snapshot_version_stamps requires PROJECT_ROOT}"
+    VERSION_STAMP_SNAPSHOT=$(mktemp -d -t im-version-stamps.XXXXXX)
+    for _vs_f in "$PROJECT_ROOT"/lib/cli/*.py; do
+        grep -q '^VERSION = ' "$_vs_f" 2>/dev/null || continue
+        cp -p "$_vs_f" "$VERSION_STAMP_SNAPSHOT/$(basename "$_vs_f")"
+    done
+}
+
+restore_version_stamps() {
+    [ -n "$VERSION_STAMP_SNAPSHOT" ] && [ -d "$VERSION_STAMP_SNAPSHOT" ] || return 0
+    for _vs_f in "$VERSION_STAMP_SNAPSHOT"/*.py; do
+        [ -f "$_vs_f" ] || continue
+        cp -p "$_vs_f" "$PROJECT_ROOT/lib/cli/$(basename "$_vs_f")"
+    done
+    rm -rf "$VERSION_STAMP_SNAPSHOT"
+    VERSION_STAMP_SNAPSHOT=""
+}

@@ -113,10 +113,7 @@ def register(subparsers):
 def _resolve_paths(issue_id, cli_store, *, emit_note=None):
     """ResolveResult, honoring --store first (id canonicalization)."""
     anchor = _EI.find_project_anchor()
-    if cli_store:
-        store_root = Path(cli_store)
-    else:
-        store_root = _EI.resolve_store_root(anchor)
+    store_root = _EI.resolve_store_root(anchor, cli_store)
     return idresolve.resolve_issue_paths(
         issue_id, store_root, anchor, emit_note=emit_note
     )

@@ -279,6 +279,94 @@ else
     fail "Test 12: rc=$rc12 out=$out12"
 fi
 
+# --- Test 13: IM-291 escaping-header guard on --set-section ----------
+# The IM-174 guard runs on each seeded TEXT at parse time: a `#`/`## `
+# line would fragment the new issue, so it exits 2 with the same
+# diagnostic the edit-side body ops emit, and no issue file is created.
+count_before=$(ls "$STORE/PA"/PA-*.md 2>/dev/null | wc -l)
+set +e
+out13=$("$NEW_ISSUE" --set-section $'Summary=before\n## Escaped\nafter' \
+    "Escaping seed" chore low 2>&1)
+rc13=$?
+set -e
+count_after=$(ls "$STORE/PA"/PA-*.md 2>/dev/null | wc -l)
+# COVERS: cli.edit-error-contracts
+if [[ "$rc13" -eq 2 ]] && echo "$out13" | grep -qF "would escape the level-2 section" \
+        && echo "$out13" | grep -qF "'## Escaped'"; then
+    pass "Test 13: --set-section with ## line exits 2 naming the offending line"
+else
+    fail "Test 13: rc=$rc13 out=$out13"
+fi
+if [[ "$count_before" -eq "$count_after" ]]; then
+    pass "Test 13: no issue file created on refusal"
+else
+    fail "Test 13: issue count moved $count_before -> $count_after"
+fi
+
+# --- Test 14: ### and deeper still nest fine in a seed ---------------
+"$NEW_ISSUE" --set-section $'Summary=intro\n### nested\nbody' \
+    "Nested seed" chore low >/dev/null 2>&1
+ID14="PA-009"
+F14="$STORE/PA/$ID14.md"
+if grep -qE '^### nested$' "$F14"; then
+    pass "Test 14: ### heading nests fine in a --set-section seed"
+else
+    fail "Test 14: ### content missing from $F14"
+fi
+
+# --- Test 15: a ## line inside a closed fence seeds fine (IM-139) ----
+"$NEW_ISSUE" --set-section $'Summary=example:\n```markdown\n## fenced\n```\ntail' \
+    "Fenced seed" chore low >/dev/null 2>&1
+ID15="PA-010"
+F15="$STORE/PA/$ID15.md"
+# Fence-aware: the fenced ## is content inside Summary, not a new
+# section -- the fence-aware section list must not contain "fenced".
+SECTIONS15=$(python3 - "$F15" "$REPO_ROOT/lib" <<'PYS'
+import sys
+sys.path.insert(0, sys.argv[2])
+import frontmatter
+_, body = frontmatter.read_issue(sys.argv[1])
+print("\n".join(frontmatter.list_section_names(body)))
+PYS
+)
+if grep -qF '## fenced' "$F15" && ! echo "$SECTIONS15" | grep -qx "fenced"; then
+    pass "Test 15: fenced ## seeded as content, not a new section"
+else
+    fail "Test 15: sections=[$SECTIONS15] in $F15"
+fi
+
+# --- Test 16: unclosed fence in a seed is refused --------------------
+set +e
+out16=$("$NEW_ISSUE" --set-section $'Summary=```python\ncode' \
+    "Unclosed fence seed" chore low 2>&1)
+rc16=$?
+set -e
+# COVERS: cli.edit-error-contracts
+if [[ "$rc16" -eq 2 ]] && echo "$out16" | grep -qF "never closes"; then
+    pass "Test 16: unclosed fence in a seed exits 2"
+else
+    fail "Test 16: rc=$rc16 out=$out16"
+fi
+
+# --- Test 17: --from-file stays verbatim and unguarded ---------------
+# Deliberate asymmetry (IM-291): --from-file's promise is that the
+# caller owns the structure, exactly as `edit --replace-body-file`
+# does, so a body --set-section would refuse is accepted verbatim here.
+FIXTURE17="$WORKDIR/fixture17.md"
+printf '\n## New Top Section\n\nowned by caller\n' > "$FIXTURE17"
+set +e
+"$NEW_ISSUE" --from-file "$FIXTURE17" "Verbatim guard asymmetry" chore low \
+    >/dev/null 2>&1
+rc17=$?
+set -e
+ID17=$(ls "$STORE/PA"/PA-*.md | sort | tail -1)
+# COVERS: cli.create-seeded-body
+if [[ "$rc17" -eq 0 ]] && grep -qE '^## New Top Section$' "$ID17"; then
+    pass "Test 17: --from-file accepts ## headers verbatim (unguarded by design)"
+else
+    fail "Test 17: rc=$rc17 file=$ID17"
+fi
+
 # --- Summary ---------------------------------------------------------
 echo
 if [[ "$fail_count" -gt 0 ]]; then

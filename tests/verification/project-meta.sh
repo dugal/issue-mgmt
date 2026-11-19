@@ -199,8 +199,10 @@ fi
 # (concurrency.auto-commit-per-mutation), the script's cleanup trap could
 # never undo it: 447 commits touching SMOKE/ by 2026-11-12, the newest from
 # the v3.4.0 release ceremony's own sweep. Same class as the 2026-11-07
-# audit-subagent incident, where store resolution fell through to
-# ~/.config/issue-mgmt/config and flipped IM-001 back to open.
+# audit-subagent incident, where an inherited ISSUE_STORE_ROOT outranked a
+# scratch legacy fixture and flipped IM-001 back to open (mechanism
+# corrected on IM-280; an earlier version of this comment blamed a
+# config-file fall-through that cannot happen on the transition path).
 #
 # The check is SHAPE-based, and deliberately so: whether a script writes to
 # the operator store is decided at runtime by the resolution precedence, and
@@ -313,6 +315,126 @@ if [ -n "$STORE_FINDINGS" ]; then
     printf '%s\n' "$STORE_FINDINGS" | sed 's/^/    /'
 else
     pass "no executable verification script names the operator issue store"
+fi
+
+# ---------------------------------------------------------------------------
+# Check 6: no verification script leaves the source tree modified via a
+# stamp-chaining make target (IM-286).
+#
+# The invariant: nothing under tests/verification/ may leave the source tree
+# it is verifying modified. The one mechanical way a script here does that is
+# a make target that chains `stamp`: `dist` (and `all`, the default goal, and
+# the release/publish families) rewrite the VERSION constant in lib/cli/*.py,
+# off-tag to a dev-* string. im-164-fresh-install.sh did exactly that for
+# five releases -- six tracked files dirty after every sweep on a machine
+# with docker, five sibling scripts' `--version` assertions failing when run
+# after it in one pass, and the stray dev stamp docs/plan.md carried as
+# "origin never identified". Same shape as Check 5 one axis over: a script
+# with a side effect on shared state outside its own fixtures (IM-255 was
+# the operator store; this is the source tree).
+#
+# The check is SHAPE-based, like Check 5, and for the same reason: whether a
+# make run dirties the tree is decided at build time, and the only dynamic
+# test is running the sweep this check exists to keep clean. So it finds
+# every executed `make` invocation whose goal list chains `stamp` -- a goal
+# in {dist, stamp, all}, a goal starting with release/publish, or no goal at
+# all (the default goal is `all`) -- and requires the script to bracket it
+# with the lib.sh pair: `snapshot_version_stamps` on an earlier line, and
+# `restore_version_stamps` somewhere in the script (the EXIT trap, by
+# convention). Goals outside that set (`make test`, `make coverage-*`) are
+# not flagged; they chain no stamp.
+#
+# No `# COVERS:` marker: project policy with no requirements.md entry (same
+# reasoning as [4] and [5]).
+# ---------------------------------------------------------------------------
+echo
+echo "[6] no verification script leaves a VERSION stamp in the source tree"
+
+STAMP_FINDINGS=$(python3 - "$PROJECT_ROOT" <<'PY'
+import os
+import pathlib
+import re
+import sys
+
+root = pathlib.Path(sys.argv[1])
+vdir = root / "tests" / "verification"
+
+STAMP_GOALS = {"dist", "stamp", "all"}
+STAMP_PREFIXES = ("release", "publish")
+MAKE_TOKEN = re.compile(r"(?:^|[;&|(\s!`])make\b")
+OPERATOR = re.compile(r"^\d*[>|&;)]")
+
+
+def stamping_invocation(line):
+    """True when the line executes make with a stamp-chaining goal list."""
+    for m in MAKE_TOKEN.finditer(line):
+        # `echo "FATAL: make dist failed"` prints make, never runs it.
+        if re.search(r"\becho\b|\bprintf\b", line[:m.start()]):
+            continue
+        toks = line[m.end():].split()
+        goals = []
+        i = 0
+        while i < len(toks):
+            t = toks[i]
+            if OPERATOR.match(t) or t in ("||", "&&", ";", "|", ")"):
+                break
+            if t == "-C":
+                i += 2
+                continue
+            if t.startswith("-"):
+                i += 1
+                continue
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", t):
+                i += 1
+                continue
+            g = t.strip("\"');`")
+            if g:
+                goals.append(g)
+            i += 1
+        if not goals:
+            return True   # bare make: the default goal chains stamp
+        for g in goals:
+            if g in STAMP_GOALS or g.startswith(STAMP_PREFIXES):
+                return True
+    return False
+
+
+findings = []
+for path in sorted(vdir.glob("*.sh")):
+    if not os.access(path, os.X_OK):
+        continue   # lib.sh and friends: sourced, never swept
+    lines = path.read_text().splitlines()
+    snapshot_line = None
+    has_restore = False
+    for n, line in enumerate(lines, 1):
+        if "snapshot_version_stamps" in line and snapshot_line is None:
+            snapshot_line = n
+        if "restore_version_stamps" in line:
+            has_restore = True
+    for n, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        if not stamping_invocation(line):
+            continue
+        if snapshot_line is None or snapshot_line > n:
+            findings.append((path.name, n,
+                             "stamp-chaining make with no prior snapshot_version_stamps",
+                             line.strip()))
+        elif not has_restore:
+            findings.append((path.name, n,
+                             "stamp-chaining make with no restore_version_stamps",
+                             line.strip()))
+
+for name, n, rule, text in findings:
+    print("%s:%d\t%s\t%s" % (name, n, rule, text))
+PY
+)
+
+if [ -n "$STAMP_FINDINGS" ]; then
+    fail "verification scripts that can leave a VERSION stamp behind:"
+    printf '%s\n' "$STAMP_FINDINGS" | sed 's/^/    /'
+else
+    pass "every stamp-chaining make invocation is snapshot/restore bracketed"
 fi
 
 echo

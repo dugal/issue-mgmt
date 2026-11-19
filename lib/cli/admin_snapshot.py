@@ -21,6 +21,7 @@ from pathlib import Path
 
 import concurrency  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import errors  # noqa: E402
+import storeresolve  # noqa: E402
 
 from . import common
 
@@ -42,7 +43,7 @@ SURFACE_STORE = "flag"
 # (conversion work is IM-260).
 SURFACE_STRUCTURED_ERRORS = "unconverted"
 
-CONFIG_PATH = Path.home() / ".config" / "issue-mgmt" / "config"
+CONFIG_PATH = storeresolve.CONFIG_PATH
 
 _DESCRIPTION = """\
 Reconcile the issue store with its working tree. If there is any pending
@@ -110,19 +111,8 @@ def _die(msg, code=1):
 
 
 def _read_config_store_root():
-    if not CONFIG_PATH.is_file():
-        return None
-    try:
-        for line in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            if key.strip() == "store_root":
-                return value.strip() or None
-    except OSError:
-        return None
-    return None
+    """Shared config reader (``storeresolve``, IM-280); None when absent."""
+    return storeresolve.read_config_store_root()
 
 
 def _find_sentinel_store_root():
@@ -130,13 +120,21 @@ def _find_sentinel_store_root():
     for d in [cur, *cur.parents]:
         sentinel = d / ".issues" / ".migrated-to-store"
         if sentinel.is_file():
-            content = sentinel.read_text(encoding="utf-8").strip()
-            if content:
-                return content
+            # A present-but-empty sentinel fails loud (IM-294) instead of
+            # being skipped toward higher directories or the config leg:
+            # it is corrupt routing state, and the nearest sentinel is the
+            # one that governs.
+            return storeresolve.read_sentinel_payload(sentinel)
     return None
 
 
 def _resolve_store_root(cli_store):
+    """Documented deviation from the shared 4-step chain (IM-280).
+
+    Snapshot is designed to run from cron, where no env var is exported and
+    no sentinel walk-up from $HOME succeeds, so after the shared legs it
+    falls through to the per-machine config file.
+    """
     if cli_store:
         return cli_store
     env = os.environ.get("ISSUE_STORE_ROOT")

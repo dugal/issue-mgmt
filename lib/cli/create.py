@@ -36,6 +36,7 @@ from pathlib import Path
 
 import concurrency  # noqa: E402  (lib/ is on sys.path via the entrypoint)
 import frontmatter as _fm  # noqa: E402
+import storeresolve  # noqa: E402
 import reindex as _reindex  # noqa: E402
 import repo as _repo  # noqa: E402
 
@@ -172,16 +173,11 @@ def _find_project_anchor() -> Path:
 
 
 def _resolve_store_root(anchor: Path, cli_store):
-    """--store -> ISSUE_STORE_ROOT -> sentinel -> None (legacy)."""
-    if cli_store:
-        return Path(cli_store)
-    env = os.environ.get("ISSUE_STORE_ROOT")
-    if env:
-        return Path(env)
-    sentinel = anchor / ".migrated-to-store"
-    if sentinel.is_file():
-        return Path(sentinel.read_text(encoding="utf-8").strip())
-    return None
+    """--store -> ISSUE_STORE_ROOT -> sentinel -> None (legacy).
+
+    The one shared chain (``storeresolve``, IM-280) -- no local copy.
+    """
+    return storeresolve.resolve_store_root(anchor, cli_store)
 
 
 def _lookup_repo_prefix(store_root: Path, repo_name: str):
@@ -271,8 +267,10 @@ def _build_issue_text(template_path, id_, title, type_, priority, today,
         if not body_text.endswith("\n"):
             body_text += "\n"
     else:
-        section_headers = [ln for ln in body_raw.split("\n") if ln.startswith("## ")]
-        body_chunks = [f"\n{h}\n" for h in section_headers] + ["\n"]
+        # Fence-aware (IM-139): a fenced `## ` line in the template is
+        # content, not a section header to scaffold.
+        section_names = _fm.list_section_names(body_raw)
+        body_chunks = [f"\n## {n}\n" for n in section_names] + ["\n"]
         body_text = "".join(body_chunks)
 
     for name, text in sections:
@@ -327,6 +325,17 @@ def run(args) -> int:
             print(
                 "Error: --set-section NAME must be non-empty", file=sys.stderr
             )
+            return 2
+        # IM-291: the IM-174 escaping-header guard, here at parse time --
+        # before any store is resolved or any directory created -- so a
+        # seeded `#`/`## ` line or unclosed fence cannot silently fragment
+        # the new issue. --from-file stays verbatim and unguarded: that
+        # flag's promise is that the caller owns the structure, exactly as
+        # `edit --replace-body-file` does.
+        try:
+            _fm.check_body_nests(text, "", f"--set-section {name!r}")
+        except ValueError as e:
+            print(f"{PROG}: {e}", file=sys.stderr)
             return 2
         section_pairs.append((name, text))
 

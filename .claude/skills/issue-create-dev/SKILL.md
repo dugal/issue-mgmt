@@ -47,7 +47,7 @@ Contiguous 3-7 loser-side exit-code contract. Per-skill handling -- "Retry once"
 
 - `0` -- success; print the created path and ID to the user.
 - `1` -- precondition failed (store not configured, repo not registered, missing template).
-- `2` -- argument or usage error (invalid type, invalid priority, missing positional).
+- `2` -- argument or usage error (invalid type, invalid priority, missing positional, or a `--set-section` TEXT that would fragment the new issue: an unfenced `#`/`## ` header line, or a code fence it opens and never closes; `--from-file` stays verbatim and unguarded).
 - `3` -- `concurrent-edit` on the registry, INDEX, or store-commit lock. **Retry once** with fresh state; if it fails again, surface the structured error verbatim and stop. Do not retry indefinitely.
 
 ## Structured stderr

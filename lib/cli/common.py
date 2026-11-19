@@ -19,10 +19,11 @@ import sys
 from pathlib import Path
 
 import idresolve  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import storeresolve  # noqa: E402
 
 # Single source of the consolidated CLI version. `stamp-version` rewrites
 # this line at release time (directory-wide scan; see docs/releases.md).
-VERSION = "v3.6.0"
+VERSION = "v3.6.1"
 
 # <PREFIX>-NNN, prefix ^[A-Z][A-Z0-9]{1,7}$. Aliased to the single shared
 # grammar in lib/idresolve.py -- do not re-derive it here.
@@ -203,17 +204,10 @@ def resolve_store_root(anchor: Path, cli_store):
     """Resolve the store root, or None for legacy mode.
 
     Precedence: --store -> ISSUE_STORE_ROOT -> .migrated-to-store sentinel
-    -> None (legacy .issues/ mode).
+    -> None (legacy .issues/ mode). Thin alias over the one shared chain in
+    ``storeresolve`` (IM-280).
     """
-    if cli_store:
-        return Path(cli_store)
-    env = os.environ.get("ISSUE_STORE_ROOT")
-    if env:
-        return Path(env)
-    sentinel = anchor / ".migrated-to-store"
-    if sentinel.is_file():
-        return Path(sentinel.read_text(encoding="utf-8").strip())
-    return None
+    return storeresolve.resolve_store_root(anchor, cli_store)
 
 
 def emit_error(err, *, prog, json_mode=False):

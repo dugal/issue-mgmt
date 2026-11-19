@@ -28,6 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "lib"))
 
 import cli  # noqa: E402
+import errors  # noqa: E402
 from cli import common  # noqa: E402
 
 HISTORY_SUMMARY = "read-only git archaeology over the issue store"
@@ -129,7 +130,25 @@ def main(argv=None):
         # verbs with exit 2). Fall back to the tiered help.
         sys.stdout.write(build_tiered_help(groups))
         return 0
-    return run(args)
+    try:
+        return run(args)
+    except errors.ContractError as err:
+        # Dispatcher backstop (IM-294): a ContractError a verb did not
+        # render itself -- the first is the corrupt-sentinel refusal raised
+        # inside the shared store-resolution chain, below every verb's own
+        # error handling -- exits through the branchable payload instead of
+        # a traceback (`surface.no-traceback`). Verbs that already catch
+        # and render never reach this. The prog and the json opt-in are
+        # derived from argv, keeping output a function of argv alone.
+        if argv[0] in ("history", "admin") and len(argv) > 1:
+            prog = f"issue {argv[0]} {argv[1]}"
+        else:
+            prog = f"issue {argv[0]}"
+        json_mode = any(
+            a == "--json" or a.startswith("--json=") for a in argv
+        )
+        common.emit_error(err, prog=prog, json_mode=json_mode)
+        return err.exit_code
 
 
 if __name__ == "__main__":

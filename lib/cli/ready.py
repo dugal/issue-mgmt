@@ -174,17 +174,8 @@ def register(subparsers):
 
 
 def resolve_store_root(cli_store):
-    if cli_store:
-        return Path(cli_store).expanduser()
-    env = os.environ.get("ISSUE_STORE_ROOT")
-    if env:
-        return Path(env).expanduser()
-    sentinel = common.find_project_anchor() / ".migrated-to-store"
-    if sentinel.is_file():
-        return Path(
-            sentinel.read_text(encoding="utf-8").strip()
-        ).expanduser()
-    return None
+    """The one shared chain (``storeresolve``, IM-280) -- no local copy."""
+    return common.resolve_store_root(common.find_project_anchor(), cli_store)
 
 
 def id_prefix(issue_id):

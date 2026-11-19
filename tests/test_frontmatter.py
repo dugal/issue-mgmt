@@ -570,12 +570,26 @@ class FindEscapingHeader(unittest.TestCase):
         # Matches _is_any_h2: a header requires '# '/'## ' with the space.
         self.assertIsNone(frontmatter.find_escaping_header("##\n##foo\n#bar\n"))
 
-    def test_h2_inside_code_fence_is_still_flagged(self):
-        # Deliberately fence-naive: find_section treats a fenced '## ' line
-        # as a section boundary too, so it genuinely fragments the file.
+    def test_h2_inside_closed_code_fence_passes(self):
+        # Fence-aware (IM-139): find_section no longer treats a fenced
+        # '## ' line as a section boundary, so it nests fine.
         text = "```markdown\n## fenced heading\n```\n"
+        self.assertIsNone(frontmatter.find_escaping_header(text))
+
+    def test_h2_after_closed_fence_is_flagged(self):
+        text = "```\ncode\n```\n## escaped\n"
         self.assertEqual(
-            frontmatter.find_escaping_header(text), "## fenced heading"
+            frontmatter.find_escaping_header(text), "## escaped"
+        )
+
+    def test_h2_after_unclosed_fence_opener_passes(self):
+        # In-fence per CommonMark (the fence runs to end of text); the
+        # unclosed fence itself is caught by find_unclosed_fence.
+        self.assertIsNone(frontmatter.find_escaping_header("```\n## x\n"))
+
+    def test_tilde_fence_passes_fenced_h2(self):
+        self.assertIsNone(
+            frontmatter.find_escaping_header("~~~\n## x\n~~~\n")
         )
 
     def test_trailing_whitespace_and_crlf_normalized(self):
@@ -595,6 +609,153 @@ class FindEscapingHeader(unittest.TestCase):
             frontmatter.find_escaping_header("# not fine\n", level=1),
             "# not fine",
         )
+
+
+FENCED_BODY = """## Summary
+
+intro
+
+```markdown
+## fenced heading
+content
+```
+
+tail of summary
+
+## Implementation Notes
+
+note line
+"""
+
+
+class FenceAwareSections(unittest.TestCase):
+    """find_section / edit_section / list_section_names skip fenced
+    '## ' lines (IM-139)."""
+
+    def test_find_section_fenced_h2_is_not_a_boundary(self):
+        bounds = frontmatter.find_section(FENCED_BODY, "Summary")
+        lines = FENCED_BODY.splitlines(keepends=True)
+        self.assertEqual(
+            lines[bounds[2]], "## Implementation Notes\n"
+        )
+
+    def test_find_section_fenced_name_is_not_found(self):
+        self.assertIsNone(
+            frontmatter.find_section(FENCED_BODY, "fenced heading")
+        )
+
+    def test_edit_section_append_lands_at_true_section_end(self):
+        # The IM-139 observed defect: the append landed inside the fence.
+        result = frontmatter.edit_section(
+            FENCED_BODY, "Summary", "append", "APPENDED"
+        )
+        self.assertIn("tail of summary\n\nAPPENDED\n", result)
+
+    def test_list_section_names_skips_fenced_h2(self):
+        self.assertEqual(
+            frontmatter.list_section_names(FENCED_BODY),
+            ["Summary", "Implementation Notes"],
+        )
+
+    def test_longer_fence_needs_equal_or_longer_close(self):
+        # ``` does not close a ```` fence, so the heading stays fenced.
+        body = "## A\n\n````\n```\n## inside\n````\n\n## B\n"
+        self.assertEqual(
+            frontmatter.list_section_names(body), ["A", "B"]
+        )
+
+    def test_mismatched_fence_char_does_not_close(self):
+        body = "## A\n\n```\n~~~\n## inside\n```\n\n## B\n"
+        self.assertEqual(
+            frontmatter.list_section_names(body), ["A", "B"]
+        )
+
+    def test_indented_fence_up_to_three_spaces_counts(self):
+        body = "## A\n\n   ```\n## inside\n   ```\n\n## B\n"
+        self.assertEqual(
+            frontmatter.list_section_names(body), ["A", "B"]
+        )
+
+    def test_unclosed_fence_hides_later_headings(self):
+        # Per CommonMark an unclosed fence runs to end of text, so the
+        # later heading is content; Summary extends to EOF.
+        body = "## Summary\n\n```\ncode\n\n## Later\n"
+        bounds = frontmatter.find_section(body, "Summary")
+        self.assertEqual(
+            bounds[2], len(body.splitlines(keepends=True))
+        )
+
+    def test_backtick_fence_with_backtick_info_is_not_a_fence(self):
+        # CommonMark: a backtick fence's info string may not contain a
+        # backtick (that line is inline code, not an opener).
+        body = "## A\n\n``` `x` \n## B\n"
+        self.assertEqual(
+            frontmatter.list_section_names(body), ["A", "B"]
+        )
+
+
+class FindUnclosedFence(unittest.TestCase):
+    def test_balanced_fences_pass(self):
+        self.assertIsNone(
+            frontmatter.find_unclosed_fence("```\ncode\n```\n")
+        )
+
+    def test_no_fences_pass(self):
+        self.assertIsNone(frontmatter.find_unclosed_fence("plain\n"))
+
+    def test_unclosed_opener_returned(self):
+        self.assertEqual(
+            frontmatter.find_unclosed_fence("```python\ncode\n"),
+            "```python",
+        )
+
+    def test_shorter_close_leaves_fence_open(self):
+        self.assertEqual(
+            frontmatter.find_unclosed_fence("````\ncode\n```\n"), "````"
+        )
+
+
+class CheckBodyNests(unittest.TestCase):
+    """the shared body-op guard (IM-174 escaping header + IM-139
+    unclosed fence), consumed by editcore and create's seeds."""
+
+    def test_clean_body_passes(self):
+        frontmatter.check_body_nests(
+            "text\n### nested\n", "--append", "--section 'Summary'"
+        )
+
+    def test_fenced_h2_passes(self):
+        frontmatter.check_body_nests(
+            "```markdown\n## example\n```\n", "--append",
+            "--section 'Summary'",
+        )
+
+    def test_escaping_header_raises_naming_line_and_labels(self):
+        with self.assertRaises(ValueError) as ctx:
+            frontmatter.check_body_nests(
+                "## esc\n", "--append", "--section 'Summary'"
+            )
+        msg = str(ctx.exception)
+        self.assertIn("--section 'Summary' --append:", msg)
+        self.assertIn("'## esc'", msg)
+        self.assertIn("escape", msg)
+
+    def test_unclosed_fence_raises_naming_opener(self):
+        with self.assertRaises(ValueError) as ctx:
+            frontmatter.check_body_nests(
+                "```\nstuff\n", "--append", "--section 'Summary'"
+            )
+        msg = str(ctx.exception)
+        self.assertIn("never closes", msg)
+        self.assertIn("'```'", msg)
+
+    def test_empty_op_label_renders_without_trailing_space(self):
+        # create's --set-section passes op_label="" (one flag, no op).
+        with self.assertRaises(ValueError) as ctx:
+            frontmatter.check_body_nests(
+                "## esc\n", "", "--set-section 'Summary'"
+            )
+        self.assertIn("--set-section 'Summary':", str(ctx.exception))
 
 
 if __name__ == "__main__":

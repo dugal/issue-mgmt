@@ -35,6 +35,7 @@ import frontmatter  # noqa: E402
 import graph  # noqa: E402
 import idresolve  # noqa: E402
 import lease  # noqa: E402
+import storeresolve  # noqa: E402
 
 GUARDED_FIELDS = {
     "status": "use `issue transition` to change status",
@@ -113,22 +114,18 @@ _DEP_QUALIFIER_FLAGS = {"--kind", "--dep-note"}
 
 
 def _check_body_nests(text, op_label, anchor_label):
-    """Refuse body text whose headers would escape the target section.
+    """Refuse body text whose structure would damage the section model.
 
-    Sections are ##-delimited, so a `#` or `## ` line in an incoming
-    body reparses as a NEW top-level section and silently fragments the
-    file. Raises ValueError (CLI exit 2, the argv/usage
+    Sections are ##-delimited, so an unfenced `#` or `## ` line in an
+    incoming body reparses as a NEW top-level section and silently
+    fragments the file; an unclosed code fence swallows every following
+    section heading. Delegates to `frontmatter.check_body_nests` -- one
+    guard, one message, shared with `issue create`'s `--set-section`
+    seeds (IM-291). Raises ValueError (CLI exit 2, the argv/usage
     contract) naming the offending line; runs at parse time, before any
     lock is acquired.
     """
-    offending = frontmatter.find_escaping_header(text)
-    if offending is not None:
-        raise ValueError(
-            f"{anchor_label} {op_label}: body contains a markdown "
-            f"header that would escape the level-2 section and fragment "
-            f"the file: {offending!r} -- demote it to nest under the "
-            "section (e.g. '## heading' -> '### heading') and retry"
-        )
+    frontmatter.check_body_nests(text, op_label, anchor_label)
 
 
 def interpret_section_actions(ordered_flags):
@@ -365,15 +362,14 @@ def find_project_anchor():
     return cwd / ".issues"
 
 
-def resolve_store_root(anchor):
-    """Return Path of the store root, or None when legacy mode applies."""
-    env = os.environ.get("ISSUE_STORE_ROOT")
-    if env:
-        return Path(env)
-    sentinel = anchor / ".migrated-to-store"
-    if sentinel.is_file():
-        return Path(sentinel.read_text(encoding="utf-8").strip())
-    return None
+def resolve_store_root(anchor, cli_store=None):
+    """Return Path of the store root, or None when legacy mode applies.
+
+    Thin alias over the one shared chain (``storeresolve``, IM-280); the
+    optional ``cli_store`` carries a verb's ``--store`` flag, which earlier
+    callers handled themselves before calling this.
+    """
+    return storeresolve.resolve_store_root(anchor, cli_store)
 
 
 def resolve_issue_paths(issue_id, *, emit_note=None):

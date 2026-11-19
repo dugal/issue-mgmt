@@ -354,15 +354,20 @@ own; the project holds only the small routing pointers.)
 ### Where the store lives
 
 Store-aware tools resolve the store root in this order (highest precedence
-first): `--store ROOT` (where accepted), the `ISSUE_STORE_ROOT` env var, a
-`<project>/.issues/.migrated-to-store` sentinel, the
-`~/.config/issue-mgmt/config` `store_root` key, then an interactive prompt. No
-default path ships in the code. `issue admin init-project` writes the project's
-routing files -- `.issues/.prefix` and the `.issues/.migrated-to-store`
-sentinel -- which is what makes the store resolvable from anywhere inside that
-project. It does not write `~/.config/issue-mgmt/config`; that key is for
-pointing at a store from OUTSIDE any registered project, and you create it
-yourself if you want it.
+first): `--store ROOT` (where accepted), the `ISSUE_STORE_ROOT` env var, then a
+`<project>/.issues/.migrated-to-store` sentinel. No default path ships in the
+code, and no ordinary verb reads a config file. Exactly three admin verbs that
+cannot rely on that chain -- `init-project` and `migrate` (which run before the
+sentinel exists) and `snapshot` (designed for cron) -- additionally fall back
+to the `~/.config/issue-mgmt/config` `store_root` key, and `init-project` to an
+interactive prompt. A present-but-empty sentinel never resolves: it is refused
+as corrupt (`reason=corrupt-sentinel`, naming the file), and
+`issue admin init-project --store ROOT` repairs it in place. `issue admin
+init-project` writes the project's routing files -- `.issues/.prefix` and the
+`.issues/.migrated-to-store` sentinel -- which is what makes the store
+resolvable from anywhere inside that project. It does not write
+`~/.config/issue-mgmt/config`; that key is for pointing at a store from
+OUTSIDE any registered project, and you create it yourself if you want it.
 
 ---
 

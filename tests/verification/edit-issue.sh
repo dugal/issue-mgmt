@@ -709,8 +709,10 @@ assert_contains "stdin already consumed by --append-file" "$STDERR" \
 # Body ops refuse (exit 2, argv/usage contract) a body containing a
 # markdown header at or above the target section's level (`# ` / `## `),
 # which would reparse as a NEW top-level section and silently fragment
-# the file. The check is fence-naive, matching find_section. `###`+
-# nests fine and passes.
+# the file. The check is fence-aware, matching find_section (IM-139): a
+# `## ` line inside a closed code fence nests fine and passes, while a
+# body that opens a fence it never closes is refused (it would swallow
+# every following section). `###`+ nests fine and passes.
 # ---------------------------------------------------------------------------
 echo
 echo "[J] IM-174 section-escape guard"
@@ -750,11 +752,18 @@ printf '## phase-1: foo\n\n- [x] item\n' > "$TMPDIR_ROOT/im174-block.md"
 j_reject "J.4 --append-file ## body" -- \
     --section "Archived Plan Content" --append-file "$TMPDIR_ROOT/im174-block.md"
 
-# 5. Fence-naive: a ## line inside a code fence still fragments (the
-#    section parser does not track fences), so it is also refused.
-printf '```markdown\n## fenced\n```\n' > "$TMPDIR_ROOT/im174-fenced.md"
-j_reject "J.5 fenced ## still refused" -- \
-    --section "Summary" --replace-file "$TMPDIR_ROOT/im174-fenced.md"
+# 5. IM-139: a body that opens a code fence it never closes is refused
+#    (spliced in, the fence would run to EOF and swallow every later
+#    section heading).
+RC=0
+STDERR=$(
+    cd "$LEGACY"
+    "$EDIT_ISSUE" IM-174 --no-reindex \
+        --section "Summary" --append $'```python\ncode' 2>&1 >/dev/null
+) || RC=$?
+# COVERS: cli.edit-error-contracts
+assert_eq "2" "$RC" "J.5 unclosed fence exits 2"
+assert_contains "never closes" "$STDERR" "J.5 stderr names the unclosed fence"
 
 # 6. --add-section --body with a ## header (same fragmentation vector)
 j_reject "J.6 --add-section --body ##" -- \
@@ -795,6 +804,38 @@ RC=0
         >/dev/null 2>&1
 ) || RC=$?
 assert_eq "0" "$RC" "J.10 mid-line ## accepted"
+
+# 11. IM-139: a ## line inside a CLOSED code fence nests fine and passes
+#     (the fence-aware parser no longer treats it as a boundary), and the
+#     fenced content lands inside the target section rather than
+#     fragmenting the file.
+RC=0
+(
+    cd "$LEGACY"
+    "$EDIT_ISSUE" IM-174 --no-reindex \
+        --section "Implementation Notes" \
+        --append $'```markdown\n## fenced example\n```' \
+        >/dev/null 2>&1
+) || RC=$?
+# COVERS: cli.edit-error-contracts
+assert_eq "0" "$RC" "J.11 fenced ## body accepted"
+assert_file_contains "## fenced example" "$LEGACY/.issues/IM-174.md" \
+    "J.11 fenced content landed"
+# The fenced heading must NOT have become a real section: a follow-up
+# append to Implementation Notes lands AFTER the fence, at true EOF of
+# the section, not before it.
+RC=0
+(
+    cd "$LEGACY"
+    "$EDIT_ISSUE" IM-174 --no-reindex \
+        --section "Implementation Notes" --append "after-fence line" \
+        >/dev/null 2>&1
+) || RC=$?
+assert_eq "0" "$RC" "J.11 follow-up append accepted"
+J11_TAIL=$(awk '/^## fenced example$/{seen=1} seen && /^after-fence line$/{print "ordered"}' \
+    "$LEGACY/.issues/IM-174.md")
+assert_eq "ordered" "$J11_TAIL" \
+    "J.11 follow-up append landed after the fenced block (true section end)"
 
 # ---------------------------------------------------------------------------
 # Summary

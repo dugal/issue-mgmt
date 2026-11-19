@@ -85,7 +85,7 @@ Contiguous 3-7 loser-side exit-code contract. Per-skill handling -- "Retry once"
 
 - `0` -- success (including no-op if no edits change content).
 - `1` -- issue file not found, or `--section NAME` did not match.
-- `2` -- argument/usage error: guarded field, no `--set` or `--section` provided, multiple body ops on one `--section`, or a body op whose content contains a `#`/`## ` header line that would escape the level-2 section and fragment the file -- demote such headers (`## x` -> `### x`) and retry.
+- `2` -- argument/usage error: guarded field, no `--set` or `--section` provided, multiple body ops on one `--section`, or a body op whose content would fragment the file -- an unfenced `#`/`## ` header line that would escape the level-2 section (demote it: `## x` -> `### x`), or a code fence the content opens and never closes (close it and retry). A `## ` line inside a closed code fence nests fine and passes.
 - `3` -- `concurrent-edit`: lock timeout, hand-edit divergence, or `--if-unchanged-since` drift. **Retry once** with fresh state (re-read the issue file, re-construct the edit).
 - `5` -- `stale-local-view`: the passed `--claim-generation` is behind the store. **Refresh, retry once** -- re-read the issue frontmatter and the session-state file; if the refreshed generation now matches the store (e.g. the state file was momentarily stale), retry with it; if the claim moved to another actor, surface to the user instead.
 - `7` -- `not-claimable` (`reason=lease-expired`: the generation matches but the session's lease expired or was released). **Escalate** -- surface the structured stderr and stop; re-claim via `/issue-start-dev` before editing under a guard again.
