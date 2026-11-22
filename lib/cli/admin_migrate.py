@@ -104,7 +104,7 @@ import errors  # noqa: E402
 import migrate as migrate_lib  # noqa: E402
 import storeresolve  # noqa: E402
 
-VERSION = "v3.6.1"
+VERSION = "v3.6.2"
 
 # The one place this verb names itself. Every diagnostic, usage line,
 # and `prog=` keyword formats through it, so the surface manifest sees

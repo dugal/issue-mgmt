@@ -97,7 +97,7 @@ import storeresolve  # noqa: E402
 
 from . import common
 
-VERSION = "v3.6.1"
+VERSION = "v3.6.2"
 
 PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
 RESERVED_PREFIXES = {"ISSUE"}

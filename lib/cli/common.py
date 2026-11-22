@@ -23,7 +23,7 @@ import storeresolve  # noqa: E402
 
 # Single source of the consolidated CLI version. `stamp-version` rewrites
 # this line at release time (directory-wide scan; see docs/releases.md).
-VERSION = "v3.6.1"
+VERSION = "v3.6.2"
 
 # <PREFIX>-NNN, prefix ^[A-Z][A-Z0-9]{1,7}$. Aliased to the single shared
 # grammar in lib/idresolve.py -- do not re-derive it here.

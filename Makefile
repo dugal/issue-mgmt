@@ -501,6 +501,18 @@ surface-lint:
 # a prep commit whose diff changes the CLI surface must pass it.
 surface-check: cli-surface-check surface-lint
 
+# --- Operational-doc invocation lint (IM-283) ---
+
+# docs/plan.md and CLAUDE.md prescribe `issue <verb> --flag` and
+# `make <target>` invocations that sessions act on directly. This resolves
+# every prescribed invocation against docs/cli-surface.json and this
+# Makefile's own target list, so a retired flag or target cannot survive in
+# the operational docs. Qualified historical mentions pass; docs/releases.md
+# and CHANGELOG.md are out of scope as history. Also rides `make test` via
+# tests/test_invocation_lint.py.
+invocation-lint:
+	scripts/invocation-lint
+
 # --- Shipped skills: derived dev copies + shipped-body guard (IM-276) ---
 
 # The skills are authored ONCE, canonically, under
@@ -554,4 +566,4 @@ coverage-unit:
 	@COVERAGE_VERSION=$(VERSION) coverage-model run unit
 
 
-.PHONY: all stamp dist formula publish-local release-check release-prep install sync-tap publish-github release-github publish-gitea release-gitea release verify-publish test coverage-unit coverage-black-box coverage-spec cli-surface cli-surface-check surface-lint surface-check dev-skills dev-skills-check shipped-skills-check skills-check
+.PHONY: all stamp dist formula publish-local release-check release-prep install sync-tap publish-github release-github publish-gitea release-gitea release verify-publish test coverage-unit coverage-black-box coverage-spec cli-surface cli-surface-check surface-lint surface-check invocation-lint dev-skills dev-skills-check shipped-skills-check skills-check

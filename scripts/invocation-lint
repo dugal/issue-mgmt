@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""invocation-lint -- check the operational docs' prescribed invocations.
+
+`docs/plan.md` and `CLAUDE.md` tell sessions to run specific
+`issue <verb> --flag` and `make <target>` invocations. This resolves every
+prescribed invocation against `docs/cli-surface.json` (the committed
+record of the CLI surface) and the Makefile's target list, so a retired
+flag or target cannot survive in the docs a session acts on (IM-283).
+
+Only inline code spans and fenced code-block lines are read, and a line
+carrying an explicit historical qualifier (was, retired, removed, ...)
+passes as a deliberate historical mention. `docs/releases.md` and
+`CHANGELOG.md` are out of scope as history by construction.
+
+Exit codes:
+  0  every prescribed invocation resolves
+  1  findings, or the lint could not run
+  2  argument/usage error
+
+usage:
+  scripts/invocation-lint           # lint; one line per finding
+  scripts/invocation-lint --json    # machine-readable findings
+  scripts/invocation-lint --help
+
+example:
+  scripts/invocation-lint
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import invocation_lint  # noqa: E402
+
+sys.path.insert(0, str(invocation_lint.REPO_ROOT / "lib"))
+from cli import common  # noqa: E402
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(
+        prog="invocation-lint",
+        description=__doc__.split("\n\n")[1],
+        epilog="example:\n  scripts/invocation-lint",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--json", action="store_true",
+                   help="Emit a machine-readable JSON document on stdout.")
+    p.add_argument("--version", action="version", version=common.VERSION)
+    args = p.parse_args(argv)
+
+    try:
+        findings = invocation_lint.lint_docs()
+    except invocation_lint.LintError as e:
+        if args.json:
+            json.dump({"error": "precondition-failed", "detail": str(e)},
+                      sys.stdout)
+            sys.stdout.write("\n")
+        else:
+            print(f"invocation-lint: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        json.dump({
+            "findings": [f.as_dict() for f in findings],
+            "totals": {"findings": len(findings)},
+        }, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 1 if findings else 0
+
+    for f in findings:
+        print(f"{f.doc}:{f.line_no}: {f.detail}")
+        print(f"  span: {f.span}")
+    if findings:
+        print(f"\ninvocation-lint: {len(findings)} finding(s)",
+              file=sys.stderr)
+        return 1
+    print("invocation-lint: clean -- every prescribed invocation resolves")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

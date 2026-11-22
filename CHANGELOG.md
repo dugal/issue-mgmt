@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [v3.6.2] - 2026-11-22
+
+### Added
+- New operational-doc invocation lint (`scripts/invocation-lint`,
+  `make invocation-lint`, riding `make test` via
+  `tests/test_invocation_lint.py`): every prescribed `issue <verb> --flag`
+  and `make <target>` invocation in `docs/plan.md` and `CLAUDE.md` must
+  resolve against `docs/cli-surface.json` and the Makefile's target list,
+  so a retired flag or target cannot survive in the docs a session acts
+  on (the class behind the retired `--force` instruction and the v3.5.0
+  ungated publish). Only inline code spans and fenced code-block lines
+  are candidates; a line carrying a historical qualifier (`was`,
+  `retired`, `removed`, ...) passes as narration; `docs/releases.md` and
+  `CHANGELOG.md` are out of scope as history by construction. The
+  sequence-level half of the class (a correct command in the wrong
+  ceremony step) is recorded as not mechanically checkable from docs and
+  tracked tool-side as RM-158. Dev-tree only; nothing ships in the
+  tarball. (IM-283)
+
+### Fixed
+- `docs/plan.md`'s Task Completion Workflow step 3 prescribed
+  `make publish` and `make distribute` -- targets retired many Makefile
+  schemas ago -- and described a merge-publish-distribute ceremony that
+  contradicted the authoritative CLAUDE.md release ceremony. Found by the
+  new lint's adoption sweep; the step now points at the CLAUDE.md Release
+  ceremony ending at `make release`. (IM-283)
+
 ## [v3.6.1] - 2026-11-19
 
 ### Fixed
