@@ -1,6 +1,5 @@
 """`issue admin selftest` -- post-install end-to-end functional smoke.
 
-Dispatcher port of the flat ``issue-mgmt-selftest`` bash binary.
 Proves an install actually WORKS end-to-end --
 store scaffold, project registration, issue creation + note, a blocks
 dependency edge, the frontmatter-native ready-set transition, and body
@@ -12,14 +11,14 @@ network. Exit 0 pass; 1 a named check failed; 2 usage error.
 Self-consistency: the smoke drives the consolidated ``issue
 <verb>`` surface -- each step resolves to ``issue <verb>`` when that verb is
 present in the dispatcher, so a shipped v3 install exercises the very
-binary under test. Verbs not yet registered on the current tree (parallel
-WPs land them) fall back to the flat sibling next to the dispatcher, so the
-smoke passes at every phase-integration point; the shipped install never
-takes the fallback (all verbs exist under ``issue``).
+binary under test. The arg surface is a normal argparse subparser since
+IM-272 (the hand-walked argv loop and its ``SURFACE_MANUAL_FLAGS``
+declaration are retired).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -29,17 +28,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import discover
-
-VERSION = "v3.6.2"
+from . import common, discover
 
 # The one place this verb names itself, so the manifest sees exactly one
-# name for it and `surface.self-naming` is checkable (IM-239). Declared
-# above `_USAGE` because the usage block interpolates it.
+# name for it and `surface.self-naming` is checkable (IM-239).
 PROG = "issue admin selftest"
 
-_USAGE = f"Usage: {PROG} [--json] [--help|--version]\n" + """\
-
+_DESCRIPTION = """\
 Post-install functional smoke for issue-mgmt. Creates a throwaway issue
 store in a temp directory and exercises the real workflow end-to-end:
 
@@ -53,14 +48,16 @@ store in a temp directory and exercises the real workflow end-to-end:
   8. body search via `issue search`
 
 Isolation guarantees (the load-bearing safety property):
-  - Runs against a store created under mktemp -d, removed on exit.
+  - Runs against a throwaway store created under mktemp -d, removed on
+    exit.
   - HOME is overridden to a temp dir for the duration of the run, so
     ~/.config/issue-mgmt/config and any tool state under HOME are never
     read or written.
   - ISSUE_STORE_ROOT is pinned to the temp store; any inherited value,
     cwd sentinels, and the operator's configured store are ignored.
-  - No network calls.
+  - No network calls."""
 
+_EPILOG = """\
 git is a required prerequisite (the issue store is a git repo; every
 mutation commits to it); the smoke fails by name when git is absent.
 
@@ -80,8 +77,7 @@ Every key is present in both, so output shape is a function of argv
 alone. The per-check progress lines are replaced by the JSON document,
 not duplicated; the `FAIL:` diagnostic still goes to stderr.
 
-Exit codes: 0 pass; 1 a named check failed; 2 usage error.
-"""
+Exit codes: 0 pass; 1 a named check failed; 2 usage error."""
 
 
 class _Fail(Exception):
@@ -312,40 +308,6 @@ def _emit_json(checks, skipped, failed):
     sys.stdout.write("\n")
 
 
-def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
-
-    # Hand-rolled argv walk (the dispatcher hands this verb its argv
-    # verbatim through a prefix_chars=chr(0) catch-all), so --json is wired
-    # in here rather than through common.add_json_flag.
-    json_mode = False
-    for arg in argv:
-        if arg in ("-h", "--help"):
-            sys.stdout.write(_USAGE)
-            return 0
-        if arg == "--version":
-            print(f"{PROG} {VERSION}")
-            return 0
-        if arg == "--json":
-            json_mode = True
-            continue
-        print(f"Unknown argument: {arg}", file=sys.stderr)
-        print("Run with --help for usage.", file=sys.stderr)
-        return 2
-
-    checks = []
-    try:
-        rc, skipped = _run_smoke(checks, json_mode=json_mode)
-    except _Fail as e:
-        print(f"FAIL: {e}", file=sys.stderr)
-        if json_mode:
-            _emit_json(checks, 0, str(e))
-        return 1
-    if json_mode:
-        _emit_json(checks, skipped, None)
-    return rc
-
-
 # --- consolidated `issue admin selftest` dispatcher glue ----
 
 VERB = "selftest"
@@ -358,38 +320,42 @@ SURFACE_CLASS = "scaffolding"
 # IM-251: deliberately pins its own throwaway store and must refuse
 # --store -- never touching the operator's store is the whole promise.
 SURFACE_STORE = "pinned"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
-# IM-245: this verb has NO parser -- `register()` installs a
-# prefix_chars="\x00" passthrough subparser with one nargs="*" catch-all and
-# `main()` walks argv by hand, so an argparse walk sees zero flags while the
-# verb really accepts these. Declared literally so the manifest records the
-# true surface instead of a false-CLEAN empty flag set. Keep in sync with the
-# argv loop in `main()`.
-SURFACE_MANUAL_FLAGS = (
-    {"names": ["-h", "--help"], "action": "help"},
-    {"names": ["--version"], "action": "version"},
-    {"names": ["--json"], "action": "store_true",
-     "dest": "json_mode", "default": False},
-)
+# IM-260 C3: every failure path carries the branchable payload (a failed
+# check keeps its human `FAIL:` line and adds the payload line; argparse
+# refusals ride `common.structured_parser_errors`). Ratchets: may never
+# revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 
 def register(subparsers):
     p = subparsers.add_parser(
-        VERB, help=SUMMARY, add_help=False, prefix_chars="\x00"
+        VERB,
+        help=SUMMARY,
+        description=_DESCRIPTION,
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("rest", nargs="*")
+    common.add_json_flag(p)
+    common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
 
 def run(args):
+    json_mode = bool(getattr(args, "json_mode", False))
+    checks = []
     try:
-        rc = main(args.rest)
-    except SystemExit as e:
-        rc = e.code
-    if rc is None:
-        return 0
-    return rc if isinstance(rc, int) else 1
+        rc, skipped = _run_smoke(checks, json_mode=json_mode)
+    except _Fail as e:
+        print(f"FAIL: {e}", file=sys.stderr)
+        import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="selftest-failed"),
+            prog=PROG, json_mode=json_mode)
+        if json_mode:
+            _emit_json(checks, 0, str(e))
+        return 1
+    if json_mode:
+        _emit_json(checks, skipped, None)
+    return rc

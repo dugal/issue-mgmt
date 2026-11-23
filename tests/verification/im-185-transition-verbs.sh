@@ -456,6 +456,50 @@ assert_contains "[--summary TEXT]" "$USAGE" \
     "complete usage presents --summary as the canonical spelling"
 
 
+# ---------------------------------------------------------------------------
+# Structured failure payloads (IM-260 C2): the whole transition family is
+# converted, so every non-loser-side failure carries the branchable payload.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- structured failure payloads (surface.structured-errors) ---"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" transition 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$RC" "transition with no ID exits 2"
+assert_contains "reason=missing-id" "$ERR" "transition missing-id payload"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" transition IM-999 done 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq 1 "$RC" "transition on a missing issue exits 1"
+assert_contains "error=not-found" "$ERR" "transition not-found payload"
+assert_contains "id=IM-999" "$ERR" "not-found payload names the id"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" transition IM-001 bogus 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$RC" "unknown state exits 2"
+assert_contains "reason=unknown-state" "$ERR" "unknown-state payload"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" block IM-001 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$RC" "block without --reason exits 2"
+assert_contains "reason=missing-reason" "$ERR" "block missing-reason payload"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" start IM-001 --claim "bad actor!" 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$RC" "start with an invalid claimant exits 2"
+assert_contains "reason=invalid-claimant" "$ERR" "start invalid-claimant payload"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" transition IM-001 --lease-ttl notanint 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$RC" "argparse type refusal exits 2"
+assert_contains "reason=bad-arguments" "$ERR" \
+    "argparse refusal exits through the payload (dispatcher override)"
+
+RC=0; ERR=$(ISSUE_STORE_ROOT="$STORE" "$ISSUE" transition IM-001 bogus --json 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_contains '"reason":"unknown-state"' "$ERR" \
+    "--json failure emits the one-line JSON payload on stderr"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

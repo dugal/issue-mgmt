@@ -265,7 +265,6 @@
     "help-output": {
       "canonical": "--help",
       "dests": [
-        "None",
         "help"
       ],
       "meaning": "Print the verb's usage and flag reference, then exit 0.",
@@ -544,7 +543,6 @@
     "version-output": {
       "canonical": "--version",
       "dests": [
-        "None",
         "version"
       ],
       "meaning": "Print the installed issue-mgmt version, then exit 0.",
@@ -883,11 +881,8 @@
     },
     {
       "clause": "surface.stability",
-      "enforced_by": "the manifest diff test, which sees only that the surface changed",
-      "issues": [
-        "IM-285"
-      ],
-      "note": "IM-284 removed the synonym-window half, and IM-270 retired the six transitional spellings along with the registry records describing them, so nothing here is authority for the clause any more. What survives is the declaration half, which the diff test cannot measure: an undeclared removal turns it red exactly as a declared one does, and regenerating the manifest clears both. IM-285 owns that gap."
+      "enforced_by": "the manifest diff test (detection: any surface change turns make test red until docs/cli-surface.json is regenerated) plus the reviewed-diff discipline in docs/plan.md 'Convention: surface governance -- detect, then validate': regeneration lands only together with a reviewed diff, and a removal or re-meaning ships with an explicit recorded override on its owning issue",
+      "note": "The declaration half is enforced by discipline, by the 2026-11-22 decision: with one consumer who authors every change, human review of the manifest diff IS the measurement, and a mechanical removal ledger would protect nobody while adding per-change ceremony -- the same single-consumer ground as the synonym-window removal. The [implemented] flip is claimed at release prep per the standing measure."
     },
     {
       "clause": "surface.structured-errors",
@@ -899,24 +894,18 @@
     },
     {
       "clause": "surface.no-traceback",
-      "issues": [
-        "IM-282"
-      ],
-      "note": "Needs every failure path exercised, which no manifest shows. IM-248 fixed the last known violation (issue create on non-TTY stdin) in v3.4.1, so the clause carries no live known violation and no waiver -- but no gate measures it, which is why it stays planned. IM-282 owns both that measurement gap and the missing owner check over this table."
+      "enforced_by": "the failure matrix in tests/verification/im-282-no-traceback.sh, which derives every verb from docs/cli-surface.json, drives each through generic and targeted failure inductions, and fails on any traceback reaching the caller",
+      "note": "IM-248 fixed the last known violation in v3.4.1; the clause then stayed planned because nothing MEASURED it -- no known violation is weaker evidence than a measured clean matrix. The 2026-11-22 decision (recorded on the then-owner issue) built the matrix as the measurement; its first full run was clean. The [implemented] flip is claimed at release prep per the standing measure."
     },
     {
       "clause": "surface.non-interactive",
-      "issues": [
-        "IM-282"
-      ],
-      "note": "Behavioral. IM-248, IM-252, and IM-279 closed the three known violations (the last was derive_prefix's EOF loop, a hang rather than a traceback); what stays open, and is what IM-282 carries, is whether the clause as written forbids a PIPED prompt answer, which two admin init-project tests pin as a real capability."
+      "enforced_by": "the exhausted-stdin leg of tests/verification/im-282-no-traceback.sh (every induction runs with stdin exhausted) plus the prompt-refusal and piped-answer checks in tests/verification/init-issue-project.sh (the IM-248 / IM-252 / IM-279 fixes)",
+      "note": "Behavioral. Decided 2026-11-22: a PIPED prompt answer stays a capability -- the clause is to be reworded to forbid only blocking or crashing on an UNANSWERABLE (exhausted or empty) stdin, never a scripted answer, which two admin init-project piped-answer checks pin as intended behavior. Promotion waits on that reword landing in docs/requirements.md, deferred to phase close because another stream owns that file this wave; the agreed text is recorded on the deciding issue."
     },
     {
       "clause": "surface.preview-not-confirmation",
-      "issues": [
-        "IM-259"
-      ],
-      "note": "--dry-run presence is checkable from the manifest, but which verbs have a blast radius beyond one issue file is not; IM-259 owns the three gaps."
+      "enforced_by": "tests/verification/im-259-admin-dry-run.sh, which proves each multi-file admin verb's --dry-run emits the real run's shape while leaving the store and filesystem byte-identical (no file write, no commit, no index regeneration); --dry-run presence itself is readable from the manifest",
+      "note": "Which verbs have a blast radius beyond one issue file is a judgement no manifest can answer; the 2026-11-22 change (recorded on the then-owner issue) closed the three measured gaps -- admin reindex, admin snapshot, admin install-skills -- joining reap, migrate, and init-store, each preview marked by the unconditional dry_run boolean under --json. The [implemented] flip is claimed at release prep per the standing measure."
     },
     {
       "clause": "surface.exit-code-space",

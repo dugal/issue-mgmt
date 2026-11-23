@@ -38,10 +38,12 @@ ORDER = 30
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C3: every failure path carries the branchable payload (the
+# store-resolution refusals raise `PreconditionError` and `run` renders
+# them; argparse refusals ride `common.structured_parser_errors`; the
+# locked-sweep conditions were already structured). Ratchets: may never
+# revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 CONFIG_PATH = storeresolve.CONFIG_PATH
 
@@ -61,13 +63,19 @@ Store-root resolution order (same as `issue admin init-project`):
 
 JSON mode (--json): exactly one object on stdout, shape
 
-  {"store": PATH, "committed": BOOL, "commit": SHA|null, "paths": [PATH, ...]}
+  {"store": PATH, "committed": BOOL, "commit": SHA|null,
+   "paths": [PATH, ...], "dry_run": BOOL}
 
 `committed` is false on a clean store (and on a hook-rejected catchup,
 which warns on stderr and leaves the files on disk), in which case
 `commit` is null. `paths` lists the pending tracked store paths the sweep
 found -- empty on a clean store. Every key is present in both outcomes, so
 the shape is a function of argv alone.
+
+--dry-run reads the same pending set and emits the same shape -- `paths`
+names exactly what the real run would commit -- but stages nothing,
+commits nothing, and takes no lock; `committed` is false and `commit`
+null under a preview.
 
 Exit codes:
   0  clean store, successful catchup commit, or hook-rejected catchup (warned)
@@ -77,6 +85,7 @@ Exit codes:
 
 Examples:
   issue admin snapshot
+  issue admin snapshot --dry-run           # preview the pending set
   issue admin snapshot --commit-timeout 30
   issue admin snapshot --store /Users/me/issues-store
   issue admin snapshot --json
@@ -92,6 +101,12 @@ def register(subparsers):
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Report what would be committed without writing.",
+    )
     common.add_store_flag(p)
     # IM-242: the flag name follows the lock it bounds. This verb takes only
     # the store-wide commit lock, so it carries --commit-timeout; it spelled
@@ -101,13 +116,14 @@ def register(subparsers):
     )
     common.add_json_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
 
-def _die(msg, code=1):
-    print(f"{PROG}: {msg}", file=sys.stderr)
-    sys.exit(code)
+def _die(msg, *, reason, **fields):
+    """Raise the branchable refusal; ``run`` renders it (IM-260 C3)."""
+    raise errors.PreconditionError(msg, reason=reason, **fields)
 
 
 def _read_config_store_root():
@@ -149,30 +165,52 @@ def _resolve_store_root(cli_store):
     _die(
         "no store root resolved; set ISSUE_STORE_ROOT, pass --store, "
         "run inside a project with a .migrated-to-store sentinel, or "
-        f"set store_root in {CONFIG_PATH}"
+        f"set store_root in {CONFIG_PATH}",
+        reason="store-unresolvable",
     )
 
 
 def run(args) -> int:
     json_mode = bool(getattr(args, "json_mode", False))
-    store_root = _resolve_store_root(args.store)
-    if not Path(store_root).is_dir():
-        _die(f"store root does not exist or is not a directory: {store_root}")
-
     try:
-        with concurrency.store_commit_lock(
-                store_root, timeout=args.commit_timeout):
-            # Read the pending set before the sweep claims it, so --json
-            # can name what was swept; the sweep itself returns only a sha.
-            paths = concurrency.pending_tracked_paths(store_root)
-            sha = concurrency.catchup_sweep(store_root)
+        store_root = _resolve_store_root(args.store)
+        if not Path(store_root).is_dir():
+            _die(
+                f"store root does not exist or is not a directory: "
+                f"{store_root}",
+                reason="store-unresolvable", store=str(store_root),
+            )
     except errors.ContractError as e:
-        print(e.format_stderr(PROG, json_mode=json_mode),
-              file=sys.stderr)
+        common.emit_error(e, prog=PROG, json_mode=json_mode)
         return e.exit_code
-    except concurrency.StoreCommitError as e:
-        print(e.format_stderr(PROG), file=sys.stderr)
-        return errors.EXIT_PRECONDITION
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    if dry_run:
+        # Preview (IM-259): read the same pending set the sweep would
+        # stage, write nothing, commit nothing, take no lock -- a preview
+        # contends with nobody and may be marginally stale, exactly like
+        # the read-only verbs.
+        try:
+            paths = concurrency.pending_tracked_paths(store_root)
+        except concurrency.StoreCommitError as e:
+            print(e.format_stderr(PROG), file=sys.stderr)
+            return errors.EXIT_PRECONDITION
+        sha = None
+    else:
+        try:
+            with concurrency.store_commit_lock(
+                    store_root, timeout=args.commit_timeout):
+                # Read the pending set before the sweep claims it, so --json
+                # can name what was swept; the sweep itself returns only a sha.
+                paths = concurrency.pending_tracked_paths(store_root)
+                sha = concurrency.catchup_sweep(store_root)
+        except errors.ContractError as e:
+            print(e.format_stderr(PROG, json_mode=json_mode),
+                  file=sys.stderr)
+            return e.exit_code
+        except concurrency.StoreCommitError as e:
+            print(e.format_stderr(PROG), file=sys.stderr)
+            return errors.EXIT_PRECONDITION
 
     if json_mode:
         json.dump(
@@ -181,6 +219,7 @@ def run(args) -> int:
                 "committed": bool(sha),
                 "commit": sha or None,
                 "paths": paths,
+                "dry_run": dry_run,
             },
             sys.stdout,
             indent=2,
@@ -189,7 +228,14 @@ def run(args) -> int:
         sys.stdout.write("\n")
         return 0
 
-    if sha:
+    if dry_run:
+        if paths:
+            print(f"would make catchup commit: {len(paths)} pending path(s)")
+            for p in paths:
+                print(f"  {p}")
+        else:
+            print("store is clean; no commit made")
+    elif sha:
         print(f"catchup commit: {sha}")
     else:
         print("store is clean; no commit made")

@@ -65,7 +65,7 @@ SURFACE_STRUCTURED_ERRORS     IM-254: ``converted`` | ``unconverted``.
                               waived. Conversion work is IM-260.
 ============================= ==========================================
 
-Five more are optional, declared only by the verbs that need them:
+Three more are optional, declared only by the verbs that need them:
 
 ============================= ==========================================
 SURFACE_GENERATION_FIELDS     IM-250: ambient-derived output fields of the
@@ -94,17 +94,13 @@ SURFACE_SYNONYMS              ``{canonical: (retired, ...)}`` for synonyms
                               IM-270 retired every such spelling, so no
                               module declares this today; the slot stays
                               for the next inline pair.
-SURFACE_PARSER                A zero-arg builder returning the verb's real
-                              ``ArgumentParser``, for a verb whose
-                              dispatcher subparser is a
-                              ``prefix_chars="\x00"`` passthrough
-                              (``admin init-store`` / ``init-project`` /
-                              ``migrate``).
-SURFACE_MANUAL_FLAGS          Literal flag specs for a passthrough verb
-                              with no parser at all, which walks argv by
-                              hand (``admin selftest`` /
-                              ``install-skills``).
 ============================= ==========================================
+
+Two further declarations -- ``SURFACE_PARSER`` and
+``SURFACE_MANUAL_FLAGS`` -- carried the five ``prefix_chars="\x00"``
+passthrough admin verbs through v3.6.x and were retired by IM-272: every
+verb now registers its real flags on its own dispatcher subparser, which
+the extractor walks directly, and declaring either is a hard error.
 """
 
 from __future__ import annotations

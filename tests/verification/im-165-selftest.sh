@@ -36,10 +36,14 @@ else
     fail "--help missing or does not document isolation"
 fi
 
-if "$SELFTEST" --version | grep -q "issue admin selftest"; then
-    pass "--version prints the tool name"
+# IM-272: --version is the shared common.add_version_flag action, so it
+# prints the bare version like every other verb (it printed
+# "issue admin selftest v<ver>" through v3.6.x).
+v=$("$SELFTEST" --version 2>&1)
+if [[ "$v" =~ ^v[0-9] ]]; then
+    pass "--version prints v<digits> ($v)"
 else
-    fail "--version output wrong"
+    fail "--version output wrong (got: $v)"
 fi
 
 "$SELFTEST" --bogus-flag >/dev/null 2>&1

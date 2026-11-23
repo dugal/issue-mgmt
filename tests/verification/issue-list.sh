@@ -433,6 +433,22 @@ assert_eq "1" "$RC" "legacy mode with no match still exits 1 (zero-result)"
 assert_eq "" "$ERR_OUT" "a genuine zero-result stays silent, not a precondition"
 
 # ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE" list --json nosuchfield 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unknown --json field exits 2"
+assert_contains '"reason":"bad-json-field"' "$ERR" \
+    "unknown --json field carries the one-line JSON payload"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE" list --bogus-flag 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unrecognized flag exits 2"
+assert_contains "reason=bad-arguments" "$ERR" \
+    "argparse refusal exits through the payload"
+
+# ---------------------------------------------------------------------------
 echo
 echo "=============================================="
 echo "PASS: $PASS  FAIL: $FAIL"

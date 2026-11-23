@@ -50,6 +50,13 @@ Waivers live in the registry's `waivers` list, each naming the open issue
 that owns the finding. A waiver is itself checked: one that matches no
 finding is obsolete (the baseline shrinks, never grows quietly), and one
 whose issue has been closed is a failure rather than a silent pass.
+
+The `unenforced` table's owners are resolved the same way (IM-282): an
+entry whose only ownership is `issues` is a tracked measurement gap, so
+each named issue that is closed or missing from the store is a failure --
+the drift this closes survived a release because waiver owners were
+resolved and unenforced owners were not. An entry carrying `enforced_by`
+names an existing authority and needs no open issue.
 """
 
 from __future__ import annotations
@@ -698,6 +705,7 @@ UNWAIVABLE_PREFIXES = (
     "obsolete-collision:", "unreachable-exemption:", "unknown-license:",
     "unknown-exemption-decision:",
     "obsolete-positional:",
+    "unowned-unenforced:",
 )
 
 
@@ -707,9 +715,11 @@ def lint(manifest, registry, *, issue_status=None, req_keys=None):
     Returns (unwaived, waived) where `waived` pairs each suppressed finding
     with the waiver that suppressed it. `issue_status` is an optional
     callable mapping an issue id to its status; when given, a waiver naming
-    a closed issue is itself a finding, and so is an exemption whose
-    `decided_by` the store does not have (closed is fine -- the field is
-    provenance, not ownership). It is injected rather than resolved
+    a closed issue is itself a finding, so is an `unenforced` entry whose
+    ownership rests on a closed or missing issue (an entry naming an
+    `enforced_by` authority needs no open issue -- IM-282), and so is an
+    exemption whose `decided_by` the store does not have (closed is fine --
+    that field is provenance, not ownership). It is injected rather than resolved
     here so the checks stay hermetic: tests point it at a fixture, the CLI
     points it at the real store.
     """
@@ -744,6 +754,31 @@ def lint(manifest, registry, *, issue_status=None, req_keys=None):
                     f"the store does not have"))
 
     if issue_status is not None:
+        for entry in registry.get("unenforced", []):
+            if entry.get("enforced_by"):
+                # An existing authority satisfies the entry; its `issues`
+                # list, if any, is context rather than ownership (IM-282).
+                continue
+            for issue_id in entry.get("issues", []):
+                status = issue_status(issue_id)
+                if status in CLOSED_STATUSES:
+                    findings.append(Finding(
+                        entry["clause"], "unenforced-owner",
+                        f"unowned-unenforced:{entry['clause']}:{issue_id}",
+                        f"the `unenforced` entry for {entry['clause']} names "
+                        f"{issue_id} as an owner, and that issue is "
+                        f"{status} -- either the measurement landed (name "
+                        f"it in `enforced_by`) or it did not (give the gap "
+                        f"an open owner). A closed owner is how this table "
+                        f"drifted through a release unnoticed (IM-282)"))
+                elif status is None:
+                    findings.append(Finding(
+                        entry["clause"], "unenforced-owner",
+                        f"unowned-unenforced:{entry['clause']}:{issue_id}",
+                        f"the `unenforced` entry for {entry['clause']} names "
+                        f"{issue_id} as an owner, which the store does not "
+                        f"have"))
+
         for ex in registry.get("class_contract", {}).get("exemptions", []):
             if issue_status(ex["decided_by"]) is None:
                 findings.append(Finding(

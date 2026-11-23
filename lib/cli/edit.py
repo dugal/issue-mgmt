@@ -52,10 +52,10 @@ ORDER = 40
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C2: converted -- every non-loser-side failure path exits through
+# the branchable payload (the loser-side 3-7 contract was already
+# structured). Ratchets: may never revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 # IM-245: this verb declares no SURFACE_SYNONYMS because it registers no
 # synonym spellings. `--dep-type` was its dependency-kind spelling through
 # v3.4.x; IM-270 retired it, and it now exits 2 as an unknown argument.
@@ -176,8 +176,28 @@ def register(subparsers):
     common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
+
+
+def _store_commit_error(e):
+    """Wrap concurrency.StoreCommitError into the branchable payload (IM-260).
+
+    The shared concurrency module predates the ContractError hierarchy;
+    the verbs own the conversion. The message keeps the `store commit
+    failed:` lead so existing greps match inside `detail=`.
+    """
+    detail = e.git_error or e.message
+    recovery = (
+        "file is on disk; fix and rerun any mutation to recover"
+        if e.write_attempted else
+        "no changes were written; fix the store and retry"
+    )
+    return errors.PreconditionError(
+        f"store commit failed: {detail}",
+        reason="store-commit-failed", recovery=recovery,
+    )
 
 
 def _resolve_paths(issue_id, cli_store, *, emit_note=None):
@@ -199,7 +219,10 @@ def _resolve_paths(issue_id, cli_store, *, emit_note=None):
 
 def run(args) -> int:
     if not args.issue_id:
-        print(f"{PROG}: missing issue ID (use -h)", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError("missing issue ID (use -h)",
+                              reason="missing-id"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     try:
@@ -209,10 +232,19 @@ def run(args) -> int:
             ordered_flags
         )
     except _ei.OperandInputError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="unreadable-file"),
+            prog=PROG, json_mode=args.json_mode)
         return 1
     except ValueError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        # The escaping-header refusal (IM-174) surfaces through the same
+        # parse-time ValueError as the argv-shape refusals; give it its
+        # own branchable reason, matching `note` and `create`.
+        reason = ("escaping-header" if "escape the level-2 section" in str(e)
+                  else "bad-operand")
+        common.emit_error(
+            errors.UsageError(str(e), reason=reason),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     # Whole-body replace: exclusive with section ops (the two
@@ -223,34 +255,41 @@ def run(args) -> int:
     replace_body = None
     if args.replace_body_file is not None:
         if section_actions:
-            print(
-                f"{PROG}: --replace-body-file is exclusive with "
-                "section ops (--section/--add-section/--rename-section/"
-                "--remove-section/--move-section); --set and dep ops "
-                "compose",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                errors.UsageError(
+                    "--replace-body-file is exclusive with "
+                    "section ops (--section/--add-section/--rename-section/"
+                    "--remove-section/--move-section); --set and dep ops "
+                    "compose",
+                    reason="conflicting-flags",
+                    flags="--replace-body-file,--section"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
         try:
             replace_body = _ei._read_op_file(args.replace_body_file)
         except _ei.OperandInputError as e:
-            print(f"{PROG}: {e}", file=sys.stderr)
+            common.emit_error(
+                errors.PreconditionError(str(e), reason="unreadable-file",
+                                         flag="--replace-body-file"),
+                prog=PROG, json_mode=args.json_mode)
             return 1
 
     if (not sets and not section_actions and not dep_actions
             and replace_body is None):
-        print(
-            f"{PROG}: nothing to do (specify --set, a section op, "
-            "a dep op, or --replace-body-file)",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            errors.UsageError(
+                "nothing to do (specify --set, a section op, "
+                "a dep op, or --replace-body-file)",
+                reason="nothing-to-do"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     if args.claim_generation is not None and args.claim_generation < 0:
-        print(
-            f"{PROG}: --claim-generation must be a non-negative integer",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            errors.UsageError(
+                "--claim-generation must be a non-negative integer",
+                reason="invalid-value", flag="--claim-generation"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     if_unchanged_since_section = None
@@ -260,12 +299,13 @@ def run(args) -> int:
             or section_actions[0][0] != "edit"
             or section_actions[0][2] != "replace"
         ):
-            print(
-                f"{PROG}: --if-unchanged-since requires --section NAME "
-                "--replace TEXT (and no other section ops in the same "
-                "invocation) or --replace-body-file PATH",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                errors.UsageError(
+                    "--if-unchanged-since requires --section NAME "
+                    "--replace TEXT (and no other section ops in the same "
+                    "invocation) or --replace-body-file PATH",
+                    reason="conflicting-flags", flags="--if-unchanged-since"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
         if_unchanged_since_section = section_actions[0][1]
 
@@ -275,11 +315,13 @@ def run(args) -> int:
     try:
         _rr = _resolve_paths(args.issue_id, args.store, emit_note=_note)
     except ValueError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="invalid-id",
+                              id=str(args.issue_id)),
+            prog=PROG, json_mode=args.json_mode)
         return 2
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr(PROG, json_mode=args.json_mode),
-              file=sys.stderr)
+        common.emit_error(e, prog=PROG, json_mode=args.json_mode)
         return e.exit_code
     issue_file = _rr.issue_file
     lock_path = _rr.lock_path
@@ -288,16 +330,19 @@ def run(args) -> int:
     canonical_id = _rr.canonical_id
 
     if args.if_unchanged_since is not None and store_root is None:
-        print(
-            f"{PROG}: --if-unchanged-since requires store mode "
-            "(no store repo to resolve SHA against)",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            errors.UsageError(
+                "--if-unchanged-since requires store mode "
+                "(no store repo to resolve SHA against)",
+                reason="store-required", flag="--if-unchanged-since"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     if not issue_file.exists():
-        print(f"{PROG}: issue file not found: {issue_file}",
-              file=sys.stderr)
+        common.emit_error(
+            errors.NotFoundError(f"issue file not found: {issue_file}",
+                                 id=canonical_id, file=str(issue_file)),
+            prog=PROG, json_mode=args.json_mode)
         return 1
 
     autocommit_enabled = (
@@ -345,26 +390,39 @@ def run(args) -> int:
             replace_body=replace_body,
         )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr(PROG), file=sys.stderr)
+        common.emit_error(_store_commit_error(e), prog=PROG,
+                          json_mode=args.json_mode)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr(PROG, json_mode=args.json_mode),
-              file=sys.stderr)
+        common.emit_error(e, prog=PROG, json_mode=args.json_mode)
         return e.exit_code
     except _ei.GuardedFieldError as e:
-        print(f"{PROG}: cannot set '{e.field}' -- {e.reason}",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(f"cannot set '{e.field}' -- {e.reason}",
+                              reason="guarded-field", field=e.field),
+            prog=PROG, json_mode=args.json_mode)
         return 2
     except FileNotFoundError as e:
-        print(f"{PROG}: file disappeared between resolve and read: {e}",
-              file=sys.stderr)
+        common.emit_error(
+            errors.NotFoundError(
+                f"file disappeared between resolve and read: {e}",
+                id=canonical_id),
+            prog=PROG, json_mode=args.json_mode)
         return 1
     except ValueError as e:
         msg = str(e)
         if msg.startswith("--if-unchanged-since:"):
-            print(f"{PROG}: {msg}", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(msg, reason="bad-operand",
+                                  flag="--if-unchanged-since"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
-        print(f"{PROG}: {msg}", file=sys.stderr)
+        if "not found" in msg:
+            err = errors.NotFoundError(msg, id=canonical_id)
+        else:
+            err = errors.PreconditionError(msg, reason="edit-failed",
+                                           id=canonical_id)
+        common.emit_error(err, prog=PROG, json_mode=args.json_mode)
         return 1
 
     if args.json_mode:

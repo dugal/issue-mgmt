@@ -54,10 +54,10 @@ ORDER = 30
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C2: converted -- every non-loser-side failure path exits through
+# the branchable payload (the loser-side 3-7 contract was already
+# structured). Ratchets: may never revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 # IM-250 / IM-262: the lease stamps a `--claim` / `--renew` writes into the
 # issue's frontmatter and echoes back. Record content: they describe the
 # claim, not this invocation's rendering.
@@ -174,6 +174,7 @@ def register(subparsers):
     common.add_lock_timeout_flag(p)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -658,6 +659,28 @@ def format_lease_human(op, result):
 # --- shared execution cores (used by the convenience verbs too) ------------
 
 
+def _store_commit_error(e):
+    """Wrap a concurrency.StoreCommitError into the branchable payload.
+
+    IM-260: StoreCommitError predates the ContractError hierarchy and
+    renders prose; the verbs own the conversion so the shared concurrency
+    module stays untouched. The old guidance text rides in `recovery=`
+    and the message keeps the `store commit failed:` lead so existing
+    greps still match inside `detail=`.
+    """
+    detail = e.git_error or e.message
+    recovery = (
+        "file is on disk; fix and rerun any mutation to recover"
+        if e.write_attempted else
+        "no changes were written; fix the store and retry"
+    )
+    return errors.PreconditionError(
+        f"store commit failed: {detail}",
+        reason="store-commit-failed", recovery=recovery,
+    )
+
+
+
 def _commit_plan(issue_id, store_root, issue_file, autocommit_enabled,
                  *, lease_op, new_state, reason):
     """Compute (commit_paths, commit_message) for one mutation, byte-for-
@@ -697,8 +720,11 @@ def _execute_transition(issue_id, new_state, *, branch=None, reason=None,
         lock_timeout = concurrency.DEFAULT_LOCK_TIMEOUT
 
     if new_state == "blocked" and not reason:
-        print(f"{prog}: --reason is required when transitioning to 'blocked'",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--reason is required when transitioning to 'blocked'",
+                reason="missing-reason", flag="--reason"),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_USAGE
 
     def _note(before, after):
@@ -709,14 +735,20 @@ def _execute_transition(issue_id, new_state, *, branch=None, reason=None,
             issue_id, store, emit_note=_note
         )
     except ValueError as e:
-        print(f"{prog}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="invalid-id", id=str(issue_id)),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_USAGE
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr(prog, json_mode=json_mode), file=sys.stderr)
+        common.emit_error(e, prog=prog, json_mode=json_mode)
         return e.exit_code
 
     if not issue_file.exists():
-        print(f"{prog}: issue file not found: {issue_file}", file=sys.stderr)
+        common.emit_error(
+            errors.NotFoundError(
+                f"issue file not found: {issue_file}",
+                id=issue_id, file=str(issue_file)),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_PRECONDITION
 
     autocommit_enabled = (
@@ -755,20 +787,30 @@ def _execute_transition(issue_id, new_state, *, branch=None, reason=None,
                 reindex_fn=reindex_fn,
             )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr(prog), file=sys.stderr)
+        common.emit_error(_store_commit_error(e), prog=prog,
+                          json_mode=json_mode)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr(prog, json_mode=json_mode), file=sys.stderr)
+        common.emit_error(e, prog=prog, json_mode=json_mode)
         return e.exit_code
     except IllegalTransition as e:
-        print(f"{prog}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="illegal-transition",
+                              current=e.current, target=e.target),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_USAGE
     except FileNotFoundError as e:
-        print(f"{prog}: file disappeared between resolve and read: {e}",
-              file=sys.stderr)
+        common.emit_error(
+            errors.NotFoundError(
+                f"file disappeared between resolve and read: {e}",
+                id=issue_id),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_PRECONDITION
     except ValueError as e:
-        print(f"{prog}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="unreadable-issue",
+                                     id=issue_id),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_PRECONDITION
 
     if json_mode:
@@ -801,17 +843,19 @@ def _execute_lease(issue_id, op, *, claimant=None, lease_ttl=None,
             issue_id, store, emit_note=_note
         )
     except ValueError as e:
-        print(f"{prog}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="invalid-id", id=str(issue_id)),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_USAGE
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr(prog, json_mode=json_mode), file=sys.stderr)
+        common.emit_error(e, prog=prog, json_mode=json_mode)
         return e.exit_code
 
     if not issue_file.exists():
         e = errors.IssueNotFoundError(
             f"issue file not found: {issue_file}", issue_id=issue_id,
         )
-        print(e.format_stderr(prog, json_mode=json_mode), file=sys.stderr)
+        common.emit_error(e, prog=prog, json_mode=json_mode)
         return e.exit_code
 
     autocommit_enabled = (
@@ -848,13 +892,17 @@ def _execute_lease(issue_id, op, *, claimant=None, lease_ttl=None,
             reindex_fn=reindex_fn,
         )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr(prog), file=sys.stderr)
+        common.emit_error(_store_commit_error(e), prog=prog,
+                          json_mode=json_mode)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr(prog, json_mode=json_mode), file=sys.stderr)
+        common.emit_error(e, prog=prog, json_mode=json_mode)
         return e.exit_code
     except ValueError as e:
-        print(f"{prog}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="unreadable-issue",
+                                     id=issue_id),
+            prog=prog, json_mode=json_mode)
         return errors.EXIT_PRECONDITION
 
     if json_mode:
@@ -873,7 +921,10 @@ def run(args):
     prog = PROG
 
     if not args.issue_id:
-        print(f"{prog}: missing issue ID (use -h for usage)", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError("missing issue ID (use -h for usage)",
+                              reason="missing-id"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
 
     lease_ops = [
@@ -884,49 +935,87 @@ def run(args):
         ) if active
     ]
     if len(lease_ops) > 1:
-        print(f"{prog}: --claim, --renew, and --release are mutually "
-              "exclusive", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--claim, --renew, and --release are mutually exclusive",
+                reason="conflicting-flags",
+                flags="--claim,--renew,--release"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
     lease_op = lease_ops[0] if lease_ops else None
 
     if lease_op is not None:
         if args.new_state:
-            print(f"{prog}: --{lease_op} does not take a target state (the "
-                  "lease operation manages status itself)", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    f"--{lease_op} does not take a target state (the "
+                    "lease operation manages status itself)",
+                    reason="conflicting-flags",
+                    flags=f"--{lease_op},STATE"),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
         if args.branch is not None or args.reason is not None:
-            print(f"{prog}: --branch/--reason are not valid with --{lease_op}",
-                  file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    f"--branch/--reason are not valid with --{lease_op}",
+                    reason="conflicting-flags",
+                    flags=f"--branch,--reason,--{lease_op}"),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
         if args.lease_ttl is not None and lease_op == "release":
-            print(f"{prog}: --lease-ttl is not valid with --release",
-                  file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    "--lease-ttl is not valid with --release",
+                    reason="conflicting-flags",
+                    flags="--lease-ttl,--release"),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
         if args.claim is not None and not lease.CLAIMANT_RE.match(args.claim):
-            print(f"{prog}: invalid claimant {args.claim!r} (must match "
-                  f"{lease.CLAIMANT_RE.pattern})", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    f"invalid claimant {args.claim!r} (must match "
+                    f"{lease.CLAIMANT_RE.pattern})",
+                    reason="invalid-claimant", flag="--claim"),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
     else:
         if args.lease_ttl is not None:
-            print(f"{prog}: --lease-ttl requires --claim or --renew",
-                  file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    "--lease-ttl requires --claim or --renew",
+                    reason="conflicting-flags",
+                    flags="--lease-ttl"),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
         if not args.new_state:
-            print(f"{prog}: missing target state (use -h for usage)",
-                  file=sys.stderr)
+            common.emit_error(
+                errors.UsageError("missing target state (use -h for usage)",
+                                  reason="missing-state"),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
         if args.new_state not in CANONICAL_STATES:
-            print(f"{prog}: unknown state {args.new_state!r}; legal: "
-                  f"{{{', '.join(CANONICAL_STATES)}}}", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    f"unknown state {args.new_state!r}; legal: "
+                    f"{{{', '.join(CANONICAL_STATES)}}}",
+                    reason="unknown-state", state=args.new_state,
+                    legal=",".join(CANONICAL_STATES)),
+                prog=prog, json_mode=args.json_mode)
             return errors.EXIT_USAGE
 
     if args.lease_ttl is not None and args.lease_ttl <= 0:
-        print(f"{prog}: --lease-ttl must be a positive integer of seconds",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--lease-ttl must be a positive integer of seconds",
+                reason="invalid-value", flag="--lease-ttl"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
     if args.claim_generation is not None and args.claim_generation < 0:
-        print(f"{prog}: --claim-generation must be a non-negative integer",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--claim-generation must be a non-negative integer",
+                reason="invalid-value", flag="--claim-generation"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
 
     if lease_op is not None:

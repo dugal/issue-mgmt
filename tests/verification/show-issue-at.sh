@@ -402,6 +402,20 @@ assert_contains "did not exist" "$OUT_ERR" \
 # Summary
 # ---------------------------------------------------------------------------
 echo
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$SHOW_ISSUE_AT" IM-100 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "missing --at exits 2"
+assert_contains "reason=missing-ref" "$ERR" "missing --at carries the payload"
+# COVERS: surface.structured-errors
+ERR=$("$SHOW_ISSUE_AT" IM-100 --at no-such-ref-zz 2>&1 >/dev/null); RC=$?
+assert_eq 1 "$RC" "unresolvable ref exits 1"
+assert_contains "reason=git-error" "$ERR" "unresolvable ref carries the payload"
+
 echo "----- show-issue-at verification summary -----"
 echo "PASS: $PASS"
 echo "FAIL: $FAIL"

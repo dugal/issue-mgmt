@@ -9,11 +9,12 @@ or landing a new verb turns `make test` red until the manifest is
 deliberately regenerated (`make cli-surface`) together with a lint pass.
 
 The rest pin the extractor's own guarantees -- determinism, fail-loud on a
-missing verb-class declaration, and faithful representation of the five
-passthrough admin verbs whose dispatcher subparsers are invisible to an
-argparse walk. That last one is the whole reason the extractor refuses
-rather than guessing: an empty flag set reads as false-CLEAN, and that
-blindness already produced one wrong issue (IM-240's count).
+missing verb-class declaration, and the refusal to represent a verb whose
+flags an argparse walk cannot see (IM-272 ported the five passthrough
+admin verbs onto normal subparsers, so the refusal is now a guard against
+a future regression rather than a live escape hatch). The refusal matters
+because an empty flag set reads as false-CLEAN, and that blindness already
+produced one wrong issue (IM-240's count).
 
 Run:
     python3 -m unittest tests.test_cli_surface -v
@@ -300,12 +301,15 @@ class ProgNameHarvestTests(unittest.TestCase):
     """Every hand-written program name a module prints is in the manifest.
 
     `prog.declared` alone was blind in exactly the place it mattered.
-    `admin selftest` and `admin install-skills` build their parsers with
-    `prefix_chars=chr(0)` and pass no `prog=` keyword, so their declared
-    list is EMPTY -- while `admin selftest`'s entire PASS report names seven
-    retired binaries and both print a hand-written `Usage:` line naming a
-    retired flat binary. A self-naming lint reading `prog.declared` would
-    have reported clean on the two worst offenders (IM-261 audit, 5.3).
+    Through v3.6.x `admin selftest` and `admin install-skills` built their
+    parsers with `prefix_chars=chr(0)` and passed no `prog=` keyword, so
+    their declared list was EMPTY -- while `admin selftest`'s entire PASS
+    report named seven retired binaries and both printed a hand-written
+    `Usage:` line naming a retired flat binary. A self-naming lint reading
+    `prog.declared` would have reported clean on the two worst offenders
+    (IM-261 audit, 5.3). IM-272 retired the passthrough parsers; both
+    modules still print their name in diagnostics, so the PROG constant and
+    this harvest stay load-bearing.
 
     So the manifest also records, derived by AST from the source: every
     command-name-shaped message prefix the module prints, and the program
@@ -314,24 +318,25 @@ class ProgNameHarvestTests(unittest.TestCase):
     are why an empty declared list is no longer readable as clean.
     """
 
-    PASSTHROUGH = ("issue admin selftest", "issue admin install-skills")
+    # Formerly the two passthrough verbs; still the two whose diagnostics
+    # print hand-written names rather than argparse-generated text.
+    HAND_NAMED = ("issue admin selftest", "issue admin install-skills")
 
     @classmethod
     def setUpClass(cls):
         cls.manifest = json.loads(cli_surface.render_current())
         cls.by_path = {v["path"]: v for v in cls.manifest["verbs"]}
 
-    def test_passthrough_verbs_are_not_silently_nameless(self):
+    def test_hand_named_verbs_are_not_silently_nameless(self):
         """The two verbs a `prog.declared` lint used to read as clean.
 
-        Both build their parser with `prefix_chars=chr(0)` and pass no
-        `prog=` keyword, so before IM-262 the manifest recorded NO name for
-        either -- while `admin selftest`'s PASS report named seven retired
-        binaries. IM-239 gave each a `PROG` constant and routed its
-        hand-written usage line through it, so the name is now both correct
-        and visible.
+        Before IM-262 the manifest recorded NO name for either (their
+        then-passthrough parsers passed no `prog=` keyword) -- while
+        `admin selftest`'s PASS report named seven retired binaries. IM-239
+        gave each a `PROG` constant, so the names their diagnostics print
+        are both correct and visible to the self-naming lint.
         """
-        for path in self.PASSTHROUGH:
+        for path in self.HAND_NAMED:
             with self.subTest(verb=path):
                 prog = self.by_path[path]["prog"]
                 self.assertIn(
@@ -339,18 +344,19 @@ class ProgNameHarvestTests(unittest.TestCase):
                     f"{path} records no name, so a manifest-driven "
                     f"self-naming lint reads it as clean")
 
-    def test_interpolated_usage_leaves_no_literal_to_drift(self):
-        """A usage line built from PROG contributes no harvested literal.
+    def test_no_hand_written_usage_literal_survives(self):
+        """argparse generates the usage line, so none is left to drift.
 
-        This is the shape that makes the collapse worth doing rather than
-        merely correcting the text: there is no second copy left to drift.
+        Through v3.6.x each of these verbs interpolated PROG into a
+        hand-written `_USAGE` string; IM-272 deleted the strings outright,
+        so the harvest must find no usage literal at all.
         """
-        for path in self.PASSTHROUGH:
+        for path in self.HAND_NAMED:
             with self.subTest(verb=path):
                 self.assertEqual(
                     self.by_path[path]["prog"]["usage_names"], [],
-                    f"{path} still hand-writes a literal program name in "
-                    f"its usage block; route it through PROG")
+                    f"{path} hand-writes a literal program name in a usage "
+                    f"block; argparse owns usage generation since IM-272")
 
     def test_local_prog_assignment_is_harvested(self):
         """`transition.py` binds its prefix as a lowercase local.
@@ -416,8 +422,9 @@ class ProgNameHarvestTests(unittest.TestCase):
 class StructuredErrorDeclarationTests(unittest.TestCase):
     """The conversion ratchet is checked against the clause that owns it.
 
-    `SURFACE_STRUCTURED_ERRORS` reads `unconverted` on all 28 verbs, which
-    `_require_declaration` validates only as "one of two legal strings". So
+    `SURFACE_STRUCTURED_ERRORS` read `unconverted` on all 28 verbs when
+    this guard was written (IM-260 C0 flipped the first, `show`), and
+    `_require_declaration` validates only "one of two legal strings". So
     nothing could fail: the ratchet was unfalsifiable, and the manifest and
     the requirement could drift apart freely -- the requirement names the
     read verbs' `unknown-prefix` path as converted at adoption, and that
@@ -450,14 +457,13 @@ class StructuredErrorDeclarationTests(unittest.TestCase):
             f"removed, so this check no longer knows what to compare against")
 
     def enumerated_converted(self):
-        """Verb paths the clause names as converted, longest match first.
+        """Verb paths the clause names as converted.
 
-        The clause enumerates by naming verbs; today it names none (it
-        converts one PATH -- `unknown-prefix` -- on the read verbs, which
-        verb-level granularity cannot express, and explicitly declares the
-        mutating verbs unconverted). Deriving the set from the sentence means
-        the day someone writes a verb into it, the manifest has to follow or
-        this fails.
+        The clause enumerates by naming verbs (plus one PATH --
+        `unknown-prefix` on the read verbs -- which verb-level granularity
+        cannot express). Deriving the set from the sentence means a verb
+        written into it forces the manifest to follow, and a manifest flip
+        forces the sentence to follow, or this fails.
         """
         clause = self.clause()
         start = clause.find(self.MARKER)
@@ -485,32 +491,58 @@ class StructuredErrorDeclarationTests(unittest.TestCase):
         unconverted = [v["path"] for v in self.manifest["verbs"]
                        if v["structured_errors"] == "unconverted"]
         self.assertEqual(
-            sorted(unconverted) + sorted(self.declared_converted()),
+            sorted(set(unconverted) | self.declared_converted()),
             sorted(self.paths),
             "every verb must carry one of the two states, so the unconverted "
             "set stays enumerated in the manifest rather than waived")
 
     def test_drift_in_either_direction_is_caught(self):
-        """Gate-bites: both halves of the comparison are proven live."""
-        # A verb declared converted that the clause does not name.
-        mod = verb_module("issue show")
-        with patched(mod, "SURFACE_STRUCTURED_ERRORS", "converted"):
+        """Gate-bites: both halves of the comparison are proven live.
+
+        State-agnostic by design (IM-260 C0): the fixture flips one verb's
+        declaration to the OPPOSITE of whatever it currently is, so the
+        check stays live at every point of the C1-C3 conversion sweep and
+        after C4 empties the unconverted set -- no assumption about which
+        verbs are converted today.
+        """
+        # A manifest flip with no clause edit must disagree with the clause.
+        mod = verb_module("issue list")
+        current = getattr(mod, "SURFACE_STRUCTURED_ERRORS")
+        flipped = ("unconverted" if current == "converted" else "converted")
+        with patched(mod, "SURFACE_STRUCTURED_ERRORS", flipped):
             drifted = json.loads(
                 cli_surface.render(cli_surface.build_manifest()))
         declared = {v["path"] for v in drifted["verbs"]
                     if v["structured_errors"] == "converted"}
-        self.assertEqual(declared, {"issue show"})
-        self.assertNotIn("issue show", self.enumerated_converted(),
-                         "fixture assumes the clause does not name `show`")
-        # A clause naming a verb the manifest leaves unconverted.
+        self.assertNotEqual(declared, self.enumerated_converted(),
+                            "the drifted manifest must disagree with the "
+                            "clause, or the ratchet comparison cannot bite")
+        # The sentence parser extracts verb paths from clause prose.
         sentence = " the issue transition verb, and nothing else"
         named = {path for path in self.paths if path in sentence}
         self.assertEqual(named, {"issue transition"})
-        self.assertNotIn("issue transition", self.declared_converted())
 
 
-class PassthroughVerbTests(unittest.TestCase):
-    """The five prefix_chars="\\x00" verbs are represented, never flagless."""
+class PortedAdminVerbTests(unittest.TestCase):
+    """The five formerly-passthrough admin verbs register normally (IM-272).
+
+    Through v3.6.x these verbs hid their flags from the argparse walk behind
+    a prefix_chars="\\x00" catch-all and were represented via the
+    SURFACE_PARSER / SURFACE_MANUAL_FLAGS declarations plus three parallel
+    policing mechanisms. IM-272 ported all five onto normal dispatcher
+    subparsers, so the extractor holds one rule -- every verb's surface is
+    its own subparser, walked directly -- and what is left to pin is that
+    the five stay ported, and that the fail-loud refusal survives for any
+    future verb that regresses to a shape the walk cannot see.
+    """
+
+    PORTED = (
+        "issue admin init-store",
+        "issue admin init-project",
+        "issue admin migrate",
+        "issue admin selftest",
+        "issue admin install-skills",
+    )
 
     @classmethod
     def setUpClass(cls):
@@ -520,135 +552,88 @@ class PassthroughVerbTests(unittest.TestCase):
     def flags(self, path):
         return {f["name"] for f in self.by_path[path]["flags"]}
 
-    def test_manual_argv_verbs_carry_help_and_version(self):
-        for path in ("issue admin selftest", "issue admin install-skills"):
+    def test_every_verb_is_a_plain_dispatcher_subparser(self):
+        """One parser kind across the whole surface -- no special cases."""
+        for path, verb in sorted(self.by_path.items()):
             with self.subTest(verb=path):
-                self.assertEqual(self.by_path[path]["parser"]["kind"], "manual")
-                self.assertTrue(self.by_path[path]["parser"]["passthrough"])
-                self.assertIn("--help", self.flags(path))
-                self.assertIn("--version", self.flags(path))
+                self.assertEqual(verb["parser"]["kind"], "argparse")
+                self.assertFalse(verb["parser"]["passthrough"])
+                self.assertTrue(verb["parser"]["add_help"])
 
-    def test_manual_argv_verbs_match_the_real_cli(self):
-        """The hand-maintained declaration must track the hand-walked argv.
-
-        SURFACE_MANUAL_FLAGS is the extractor's escape hatch for the two
-        verbs an argparse walk cannot see, and nothing derives it from the
-        code -- so it can drift the moment someone adds a branch to the argv
-        loop without touching the declaration. That is not hypothetical: it
-        happened on the IM-245/IM-240 integration merge, where IM-240 taught
-        both verbs --json and the declaration still said --help/--version.
-        The manifest went false-CLEAN again, through the escape hatch rather
-        than through the blindness it was built to cover.
-
-        So probe the real CLI: every flag name on the surface that this verb
-        does NOT declare must be rejected by it. An undeclared flag the verb
-        actually accepts fails here, naming the drift.
-        """
-        manifest = json.loads(cli_surface.render_current())
-        every_name = {f["name"] for v in manifest["verbs"] for f in v["flags"]}
-        for path in ("issue admin selftest", "issue admin install-skills"):
-            declared = self.flags(path)
-            argv = path.split()[1:]
-            for name in sorted(every_name - declared):
-                with self.subTest(verb=path, flag=name):
-                    code = _probe(argv + [name])
-                    self.assertEqual(
-                        code, 2,
-                        f"{path} accepted undeclared flag {name} "
-                        f"(exit {code}); add it to SURFACE_MANUAL_FLAGS "
-                        f"and regenerate the manifest",
-                    )
-
-    def test_manual_argv_verbs_accept_what_they_declare(self):
-        """The cheap half of the same contract, in the other direction.
-
-        IM-262: this used to iterate the literal `("--help", "--version")`,
-        so a flag removed from the argv loop but left declared was the one
-        flag never probed -- the declaration could claim `--json` while the
-        verb rejected it and this test stayed green. Iterate the declaration
-        instead, so every declared flag is proven reachable.
-        """
-        for path in ("issue admin selftest", "issue admin install-skills"):
-            argv = path.split()[1:]
-            for name in sorted(self.flags(path)):
-                with self.subTest(verb=path, flag=name):
-                    self.assertEqual(
-                        _probe(argv + [name]), 0,
-                        f"{path} declares {name} but the CLI rejects it; "
-                        f"the argv loop in main() and "
-                        f"SURFACE_MANUAL_FLAGS have drifted",
-                    )
-
-    def test_internal_parser_verbs_extract_their_real_flags(self):
+    def test_ported_verbs_keep_their_flag_surfaces(self):
+        """The port moved help registration, not the flag surface."""
         for path, expected in (
-            ("issue admin init-store", {"--non-interactive", "--dry-run"}),
-            ("issue admin init-project", {"--prefix", "--repo", "--store"}),
-            ("issue admin migrate", {"--project", "--json", "--lock-timeout"}),
+            ("issue admin init-store",
+             {"--store", "--non-interactive", "--dry-run"}),
+            ("issue admin init-project",
+             {"--prefix", "--repo", "--store", "--non-interactive"}),
+            ("issue admin migrate",
+             {"--project", "--store", "--prefix", "--repo", "--dry-run",
+              "--lock-timeout", "--message"}),
         ):
             with self.subTest(verb=path):
-                self.assertEqual(self.by_path[path]["parser"]["kind"],
-                                 "argparse-internal")
                 self.assertTrue(expected <= self.flags(path))
+        with self.subTest(verb="issue admin selftest"):
+            self.assertEqual(self.flags("issue admin selftest"),
+                             {"--help", "--version", "--json"})
+        # IM-259 added --dry-run after the port; the port itself moved
+        # nothing, so the pinned set is the ported trio plus that addition.
+        with self.subTest(verb="issue admin install-skills"):
+            self.assertEqual(self.flags("issue admin install-skills"),
+                             {"--help", "--version", "--json", "--dry-run"})
 
-    def test_declaration_is_derived_from_the_argv_loop(self):
-        """IM-262: the declaration is checked against the code, not the manifest.
+    def test_ported_verbs_accept_their_global_flags_live(self):
+        """`--help` and `--version` are argparse-generated and exit 0."""
+        for path in self.PORTED:
+            argv = path.split()[1:]
+            for name in ("--help", "--version"):
+                with self.subTest(verb=path, flag=name):
+                    self.assertEqual(_probe(argv + [name]), 0)
 
-        `test_manual_argv_verbs_match_the_real_cli` probes the real CLI, which
-        is the right instinct, but it draws its probe set from the manifest --
-        the artifact built from the declaration under test. So it can only
-        catch drift that reuses a flag name already present on some other
-        verb. `--json` was such a name, which is the only reason instance 5
-        was caught at all.
-        """
-        for path in ("issue admin selftest", "issue admin install-skills"):
+    def test_ported_verbs_reject_an_unknown_flag(self):
+        """argparse owns the unknown-argument refusal now: exit 2."""
+        for path in self.PORTED:
+            argv = path.split()[1:]
             with self.subTest(verb=path):
-                mod = verb_module(path)
-                declared = {name
-                            for spec in mod.SURFACE_MANUAL_FLAGS
-                            for name in spec["names"]}
-                self.assertEqual(cli_surface._argv_flag_literals(mod),
-                                 declared)
+                self.assertEqual(_probe(argv + ["--no-such-flag"]), 2)
 
-    def test_undeclared_argv_flag_fails_loud(self):
-        """Direction A: a flag the loop accepts and the declaration omits.
+    def test_passthrough_registration_fails_loud(self):
+        """Gate-bites: a verb whose flags the walk cannot see is refused.
 
-        The injected name is deliberately absent from every other verb, so
-        the manifest-derived probe set could never contain it.
+        The port removed the five live passthroughs, not the protection: an
+        empty flag set would read as false-CLEAN (the IM-240 blindness), so
+        a future verb registering a prefix_chars catch-all must fail the
+        manifest BUILD rather than be recorded flagless.
         """
-        mod = verb_module("issue admin selftest")
-        surfaced = {f["name"]
-                    for v in json.loads(cli_surface.render_current())["verbs"]
-                    for f in v["flags"]}
-        self.assertNotIn("--quiet", surfaced,
-                         "pick a name novel to the surface for this fixture")
-        with patched(cli_surface, "_argv_flag_literals",
-                     lambda m, *a, **k: {"-h", "--help", "--version",
-                                         "--json", "--quiet"}):
-            with self.assertRaises(cli_surface.SurfaceError) as ctx:
-                cli_surface.build_manifest()
-        message = str(ctx.exception)
-        self.assertIn("--quiet", message)
-        self.assertIn("not declared", message)
+        mod = verb_module("issue show")
 
-    def test_unreachable_declared_flag_fails_loud(self):
-        """Direction B: a flag declared but no longer accepted by the loop."""
-        with patched(cli_surface, "_argv_flag_literals",
-                     lambda m, *a, **k: {"-h", "--help", "--version"}):
-            with self.assertRaises(cli_surface.SurfaceError) as ctx:
-                cli_surface.build_manifest()
-        message = str(ctx.exception)
-        self.assertIn("--json", message)
-        self.assertIn("not accepted by main()", message)
+        def passthrough_register(subparsers):
+            p = subparsers.add_parser(
+                mod.VERB, add_help=False, prefix_chars="\x00"
+            )
+            p.add_argument("rest", nargs="*")
+            p.set_defaults(_run=mod.run)
+            return p
 
-    def test_passthrough_without_a_declaration_fails_loud(self):
-        """An empty flag set must never be emitted for a passthrough verb."""
-        mod = verb_module("issue admin selftest")
-        with patched(mod, "SURFACE_MANUAL_FLAGS", _DELETE):
+        with patched(mod, "register", passthrough_register):
             with self.assertRaises(cli_surface.SurfaceError) as ctx:
                 cli_surface.build_manifest()
         message = str(ctx.exception)
         self.assertIn("prefix_chars", message)
-        self.assertIn("SURFACE_MANUAL_FLAGS", message)
+        self.assertIn("cli.show", message)
+
+    def test_retired_declaration_fails_loud(self):
+        """A module resurrecting a retired declaration is refused, not
+        silently ignored -- ignoring it would let the declaration shadow
+        the registrations it used to replace."""
+        for attr in ("SURFACE_PARSER", "SURFACE_MANUAL_FLAGS"):
+            mod = verb_module("issue admin selftest")
+            with self.subTest(declaration=attr):
+                with patched(mod, attr, ({"names": ["--json"]},)):
+                    with self.assertRaises(cli_surface.SurfaceError) as ctx:
+                        cli_surface.build_manifest()
+                self.assertIn(attr, str(ctx.exception))
+                self.assertIn("retired", str(ctx.exception))
 
 
 class FlagRepresentationTests(unittest.TestCase):
@@ -672,8 +657,10 @@ class FlagRepresentationTests(unittest.TestCase):
         `--lock-timeout` inline; measurement on 2026-11-07 shows IM-242 (Leg 2)
         already converged all three onto `common.add_lock_timeout_flag`, so
         that specific instance is closed. The pattern itself survives in
-        `--no-reindex` on the same three verbs, and across the three
-        internal-parser admin verbs, which import no `common` at all.
+        `--no-reindex` on the same three verbs. (`admin migrate`'s local
+        `--lock-timeout` was the other measured instance -- its hand-rolled
+        parser could not render a helper's help= string -- until IM-272's
+        argparse port re-attached it to the helper.)
 
         Either way the extractor reads the resulting registrations, so it
         reports what IS registered rather than what a call-site grep would
@@ -685,13 +672,11 @@ class FlagRepresentationTests(unittest.TestCase):
                                  "local")
         self.assertEqual(self.flag("issue block", "--no-reindex")["source"],
                          "common.add_no_reindex_flag")
-        for path in ("issue dep", "issue edit", "issue admin reap"):
+        for path in ("issue dep", "issue edit", "issue admin reap",
+                     "issue admin migrate"):
             with self.subTest(verb=path, flag="--lock-timeout"):
                 self.assertEqual(self.flag(path, "--lock-timeout")["source"],
                                  "common.add_lock_timeout_flag")
-        self.assertEqual(
-            self.flag("issue admin migrate", "--lock-timeout")["source"],
-            "local")
 
     def test_argparse_aliases_land_in_names(self):
         """One action, several spellings: the closing-note flag."""

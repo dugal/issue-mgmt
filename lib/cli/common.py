@@ -23,7 +23,7 @@ import storeresolve  # noqa: E402
 
 # Single source of the consolidated CLI version. `stamp-version` rewrites
 # this line at release time (directory-wide scan; see docs/releases.md).
-VERSION = "v3.6.2"
+VERSION = "v3.7.0"
 
 # <PREFIX>-NNN, prefix ^[A-Z][A-Z0-9]{1,7}$. Aliased to the single shared
 # grammar in lib/idresolve.py -- do not re-derive it here.
@@ -218,6 +218,30 @@ def emit_error(err, *, prog, json_mode=False):
     same code rather than re-derived per verb.
     """
     print(err.format_stderr(prog, json_mode=json_mode), file=sys.stderr)
+
+
+def structured_parser_errors(parser):
+    """Make a subparser's own argument errors exit through the payload.
+
+    IM-260: a converted verb carries the branchable payload on EVERY
+    failure path, and argparse's own refusals (`unrecognized arguments`,
+    a bad `type=` value, a missing required operand) are failure paths --
+    the IM-254 measurement counted `ready --limit notanumber` among them.
+    argparse funnels every such refusal through ``parser.error(message)``,
+    so overriding it on the verb's subparser converts them all at once:
+    the usage line still prints for humans, then a ``UsageError`` carrying
+    the argparse message rides up to the dispatcher backstop, which
+    renders the `key=value` line (or the one-line JSON object when argv
+    carries `--json`) and exits 2. Call it from a converted verb's
+    ``register()``; unconverted verbs keep argparse's prose exit.
+    """
+    import errors  # noqa: E402  (lazy: keeps common.py import-cheap)
+
+    def _error(message):
+        parser.print_usage(sys.stderr)
+        raise errors.UsageError(message, reason="bad-arguments")
+
+    parser.error = _error
 
 
 def store_precondition_error(store_root):

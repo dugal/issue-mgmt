@@ -86,7 +86,10 @@ echo "[B] Explicit missing directory -> exit 1"
 RC=0
 ERR=$("$REINDEX" "$WORKDIR/does-not-exist/.issues" 2>&1 >/dev/null) || RC=$?
 assert_eq 1 "$RC" "reindex of a missing legacy dir exits 1"
-assert_contains "Error" "$ERR" "missing-dir stderr carries an Error message"
+# IM-260 C3: the bare `Error: ...` prose became the branchable payload.
+# COVERS: surface.structured-errors
+assert_contains "error=not-found" "$ERR" \
+    "missing-dir stderr carries the not-found payload"
 
 # ---------------------------------------------------------------------------
 echo "[C] No-arg legacy mode (nearest .issues/ from cwd)"

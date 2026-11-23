@@ -13,7 +13,8 @@ from __future__ import annotations
 import json
 import sys
 
-import frontmatter  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import frontmatter  # noqa: E402
 
 import editcore
 
@@ -28,13 +29,28 @@ def cmd_list(args):
             args.issue_id
         )
     except ValueError as e:
-        print(f"issue dep: {e}", file=sys.stderr)
+        # IM-260: `dep` is a converted verb, so the list subcommand's
+        # failure paths carry the branchable payload too.
+        err = errors.UsageError(str(e), reason="invalid-id",
+                                id=str(args.issue_id))
+        print(err.format_stderr("issue dep", json_mode=args.json_mode),
+              file=sys.stderr)
         return 2
     if not issue_file.exists():
-        print(f"issue dep: issue file not found: {issue_file}",
+        err = errors.NotFoundError(f"issue file not found: {issue_file}",
+                                   id=str(args.issue_id),
+                                   file=str(issue_file))
+        print(err.format_stderr("issue dep", json_mode=args.json_mode),
               file=sys.stderr)
         return 1
-    fm_lines, _body = frontmatter.read_issue(issue_file)
+    try:
+        fm_lines, _body = frontmatter.read_issue(issue_file)
+    except ValueError as e:
+        err = errors.PreconditionError(str(e), reason="unreadable-issue",
+                                       id=str(args.issue_id))
+        print(err.format_stderr("issue dep", json_mode=args.json_mode),
+              file=sys.stderr)
+        return 1
     edges = frontmatter.parse_frontmatter_lines(fm_lines).get("depends_on")
     if not isinstance(edges, list):
         edges = []

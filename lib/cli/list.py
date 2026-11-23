@@ -23,7 +23,8 @@ import argparse
 import json
 import sys
 
-import jsonfields  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import jsonfields  # noqa: E402
 import search  # noqa: E402
 
 from . import common
@@ -36,10 +37,11 @@ ORDER = 40
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "enumeration-read"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C1: every failure path carries the branchable payload (argparse
+# refusals via `common.structured_parser_errors`, the store gate, the
+# prefix scope, the field selection). A zero-result exit 1 is a RESULT
+# under the grep convention, not a failure. Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 # Top-level keys of each per-issue --json object, derived from the row
 # builder itself (search.IssueMatch.to_dict) rather than restated, so a
@@ -98,6 +100,7 @@ def register(subparsers):
     common.add_json_field_flag(p)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -150,8 +153,11 @@ def run(args) -> int:
                 args.json_mode, VALID_JSON_FIELDS, prog="issue list"
             )
         except jsonfields.FieldSelectionError as e:
-            print(e.message, file=sys.stderr)
-            return 2
+            common.emit_error(
+                errors.UsageError(e.message, flag="--json",
+                                  reason="bad-json-field"),
+                prog="issue list", json_mode=True)
+            return errors.EXIT_USAGE
         emit_json(matches, sys.stdout, fields)
     else:
         emit_tsv(matches, sys.stdout)

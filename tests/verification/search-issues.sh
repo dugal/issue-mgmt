@@ -548,6 +548,20 @@ assert_eq "1" "$RC" "legacy mode with no match still exits 1 (zero-result)"
 assert_eq "" "$ERR_OUT" "a genuine zero-result stays silent, not a precondition"
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$SEARCH" 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "missing QUERY exits 2"
+assert_contains "reason=missing-query" "$ERR" "missing QUERY carries the payload"
+# COVERS: surface.structured-errors
+ERR=$("$SEARCH" "(" --syntax regex 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "invalid regex exits 2"
+assert_contains "reason=bad-arguments" "$ERR" "invalid regex carries the payload"
+
 echo
 echo "=============================================="
 echo "PASS: $PASS  FAIL: $FAIL"

@@ -18,7 +18,8 @@ import json
 import sys
 from pathlib import Path
 
-import validate  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import validate  # noqa: E402
 
 from . import common
 
@@ -38,10 +39,12 @@ SURFACE_CLASS = "point-read"
 # already carry their own location. Corrects this verb's row in IM-251's
 # own gap table, which had assumed it resolved one.
 SURFACE_STORE = "none"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C3: every failure path carries the branchable payload (the
+# missing-operand refusal, argparse refusals via
+# `common.structured_parser_errors`, and each per-file tool error).
+# Exit 1 on violations is the verb's documented RESULT, rendered as
+# diagnostics/--json, not a failure payload. Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 _DESCRIPTION = """\
 Validate the YAML frontmatter and ID/filename consistency of one or more
@@ -79,17 +82,19 @@ def register(subparsers):
     p.add_argument("files", nargs="*", metavar="FILE", help="One or more issue files.")
     common.add_json_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
 
 def run(args) -> int:
+    json_mode = bool(getattr(args, "json_mode", False))
     if not args.files:
-        print(
-            f"{PROG}: no files given (use -h for usage)",
-            file=sys.stderr,
-        )
-        return 2
+        common.emit_error(
+            errors.UsageError("no files given (use -h for usage)",
+                              reason="missing-operand", operand="FILE"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_USAGE
 
     results = []
     had_tool_error = False
@@ -101,22 +106,31 @@ def run(args) -> int:
             result = validate.validate_file(path)
         except FileNotFoundError:
             had_tool_error = True
-            print(f"{PROG}: file not found: {path}", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(f"file not found: {path}",
+                                  reason="file-not-found", file=str(path)),
+                prog=PROG, json_mode=json_mode)
             continue
         except IsADirectoryError:
             had_tool_error = True
-            print(f"{PROG}: is a directory: {path}", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(f"is a directory: {path}",
+                                  reason="unreadable-file", file=str(path)),
+                prog=PROG, json_mode=json_mode)
             continue
         except OSError as e:
             had_tool_error = True
-            print(f"{PROG}: cannot read {path}: {e}", file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(f"cannot read {path}: {e}",
+                                  reason="unreadable-file", file=str(path)),
+                prog=PROG, json_mode=json_mode)
             continue
         except UnicodeDecodeError as e:
             had_tool_error = True
-            print(
-                f"{PROG}: cannot decode {path} as utf-8: {e}",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                errors.UsageError(f"cannot decode {path} as utf-8: {e}",
+                                  reason="unreadable-file", file=str(path)),
+                prog=PROG, json_mode=json_mode)
             continue
 
         results.append(result)

@@ -33,7 +33,7 @@ Public import path:
         ContractError, ConcurrentEdit, LostRaceError, StaleViewError,
         DependencyChangedError, NotClaimableError, LeaseExpiredError,
         IssueNotFoundError, DependencyCycleError, PreconditionError,
-        UsageError,
+        UsageError, NotFoundError,
     )
 
 `ConcurrentEdit` moved here from lib/concurrency.py; its
@@ -138,6 +138,26 @@ class UsageError(ContractError):
 
     exit_code = EXIT_USAGE
     error_class = "usage-error"
+
+
+class NotFoundError(ContractError):
+    """A point read named a record that does not exist.
+
+    IM-260: the shared not-found condition for the point-read verbs
+    (`show`, `history show`, `history at`) and for per-record misses
+    inside a batch (a missing file, a missing section). Maps to exit 1
+    per `output.exit-codes` -- a point read exits 1 when the named record
+    was not found -- with `error=not-found` as the branchable
+    discriminator, distinct from the generic `precondition-failed`
+    because "retry will not help until the record exists" is a different
+    caller action from "fix the precondition and retry". The claim-path
+    counterpart (exit 7) stays `IssueNotFoundError`; the two are
+    different contracts and must not merge. Fields are caller-supplied
+    (`id=`, `section=`, `file=`, ...), naming what was looked up.
+    """
+
+    exit_code = EXIT_PRECONDITION
+    error_class = "not-found"
 
 
 class UnknownPrefixError(ContractError):

@@ -41,10 +41,12 @@ SURFACE_CLASS = "mutating"
 # with `--store` (IM-251 measured the absent flag as a real gap; IM-275
 # added it).
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C3: every failure path carries the branchable payload (the two
+# store-resolution refusals; argparse refusals via
+# `common.structured_parser_errors`; the prefix scope and the locked reap
+# were already structured). The per-file skip notices are warnings on a
+# successful pass, not failure exits. Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 NOTES_SECTION = "Implementation Notes"
 
@@ -101,6 +103,7 @@ def register(subparsers):
     )
     common.add_no_reindex_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -230,21 +233,24 @@ def run(args) -> int:
     )
     if store_root is not None:
         store_root = store_root.expanduser()
+    json_mode = bool(getattr(args, "json_mode", False))
     if store_root is None:
-        print(
-            "issue admin reap: store mode required -- set ISSUE_STORE_ROOT "
-            "or run inside a project with a .issues/.migrated-to-store "
-            "sentinel (see `issue admin migrate`)",
-            file=sys.stderr,
-        )
-        return 1
+        common.emit_error(
+            errors.PreconditionError(
+                "store mode required -- set ISSUE_STORE_ROOT or run inside "
+                "a project with a .issues/.migrated-to-store sentinel (see "
+                "`issue admin migrate`)",
+                reason="store-unresolvable"),
+            prog="issue admin reap", json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
     if not store_root.is_dir():
-        print(
-            f"issue admin reap: store root does not exist or is not a "
-            f"directory: {store_root}",
-            file=sys.stderr,
-        )
-        return 1
+        common.emit_error(
+            errors.PreconditionError(
+                f"store root does not exist or is not a directory: "
+                f"{store_root}",
+                reason="store-unresolvable", store=str(store_root)),
+            prog="issue admin reap", json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     # IM-238 (an absent scope is an argument error, exit 2), IM-277 (the
     # scope case-folds, so `--prefix im` reaps the IM prefix), and IM-236

@@ -54,10 +54,11 @@ ORDER = 70
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "enumeration-read"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C1: every failure path carries the branchable payload (argparse
+# refusals via `common.structured_parser_errors`, the limit value check,
+# the store gate, the prefix scope, the field selection; the empty ready
+# set already carried `error=no-ready-work`). Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 # Top-level keys of each per-issue object in the `ready` list; the
 # field-selection set for `--json <fields>`. Projection applies to
@@ -166,6 +167,7 @@ def register(subparsers):
     )
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -327,8 +329,12 @@ def run(args):
     text_mode = not json_stderr
 
     if args.limit < 0:
-        print("%s: invalid --limit %d (expected 0 for unlimited, or a "
-              "positive cap)" % (prog, args.limit), file=sys.stderr)
+        emit_error(
+            errors.UsageError(
+                "invalid --limit %d (expected 0 for unlimited, or a "
+                "positive cap)" % args.limit,
+                flag="--limit", reason="bad-arguments"),
+            json_stderr)
         return errors.EXIT_USAGE
 
     # Field selection is a usage error before any side effect (the reap).
@@ -339,7 +345,10 @@ def run(args):
                 args.json_mode, VALID_JSON_FIELDS, prog=prog
             )
         except jsonfields.FieldSelectionError as e:
-            print(e.message, file=sys.stderr)
+            emit_error(
+                errors.UsageError(e.message, flag="--json",
+                                  reason="bad-json-field"),
+                True)
             return errors.EXIT_USAGE
 
     store_root = resolve_store_root(args.store)

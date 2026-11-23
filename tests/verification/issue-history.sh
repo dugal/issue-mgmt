@@ -400,6 +400,24 @@ assert_eq "3" "$SENTINEL_LINES" "sentinel-mode returns the same 3 commits"
 # Summary
 # ---------------------------------------------------------------------------
 echo
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_HISTORY" 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "missing ID exits 2"
+assert_contains "reason=missing-id" "$ERR" "missing ID carries the payload"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_HISTORY" IM-100 --limit abc 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "non-numeric --limit exits 2"
+assert_contains "reason=bad-arguments" "$ERR" "bad --limit carries the payload"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_HISTORY" IM-999 2>&1 >/dev/null); RC=$?
+assert_eq 1 "$RC" "missing issue exits 1 (point-read not-found rule)"
+assert_contains "error=not-found" "$ERR" "missing issue carries not-found"
+
 echo "----- issue-history verification summary -----"
 echo "PASS: $PASS"
 echo "FAIL: $FAIL"

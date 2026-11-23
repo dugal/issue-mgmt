@@ -13,9 +13,10 @@
 #   admin snapshot        admin init-store        admin reindex
 #   admin init-project    admin install-skills    admin selftest
 #
-# `admin selftest` and `admin install-skills` build their parser with
-# prefix_chars=chr(0) plus an nargs="*" catch-all and walk argv by hand, so a
-# source-level flag sweep is blind to them -- which is how IM-240 was filed
+# `admin selftest` and `admin install-skills` built their parser with
+# prefix_chars=chr(0) plus an nargs="*" catch-all and walked argv by hand
+# through v3.6.x (ported to argparse-native subparsers in IM-272), so a
+# source-level flag sweep was blind to them -- which is how IM-240 was filed
 # naming five verbs and listing `selftest` as already compliant. Every check
 # below DRIVES the CLI rather than reading registrations, for that reason.
 #
@@ -239,7 +240,7 @@ rc=$?
 assert_one_json "snapshot --json (clean)" "$WORKDIR/sn-clean.out"
 # COVERS: output.json-stable
 assert_keys "snapshot --json (clean)" "$WORKDIR/sn-clean.out" \
-    store committed commit paths
+    store committed commit paths dry_run
 assert_json_field "snapshot --json clean store: committed false, commit null" \
     "$WORKDIR/sn-clean.out" \
     'obj["committed"] is False and obj["commit"] is None
@@ -276,7 +277,7 @@ rc=$?
 assert_one_json "reindex --json (store)" "$WORKDIR/rx-store.out"
 # COVERS: output.json-stable
 assert_keys "reindex --json (store)" "$WORKDIR/rx-store.out" \
-    mode targets indexes_written issues
+    mode targets indexes_written issues dry_run
 assert_json_field "reindex --json store mode: one store target" \
     "$WORKDIR/rx-store.out" \
     'obj["mode"] == "store" and len(obj["targets"]) == 1
@@ -301,7 +302,7 @@ EOF
 assert_one_json "reindex --json (legacy)" "$WORKDIR/rx-legacy.out"
 # COVERS: output.json-stable
 assert_keys "reindex --json (legacy)" "$WORKDIR/rx-legacy.out" \
-    mode targets indexes_written issues
+    mode targets indexes_written issues dry_run
 assert_json_field "reindex --json legacy mode: one legacy target, 1 issue" \
     "$WORKDIR/rx-legacy.out" \
     'obj["mode"] == "legacy" and obj["issues"] == 1
@@ -371,7 +372,7 @@ rc=$?
 assert_one_json "install-skills --json" "$WORKDIR/sk.out"
 # COVERS: output.json-stable
 assert_keys "install-skills --json" "$WORKDIR/sk.out" \
-    source dest installed count cheatsheet
+    source dest installed count cheatsheet dry_run
 assert_json_field "install-skills --json lists each installed skill" \
     "$WORKDIR/sk.out" \
     'obj["count"] == 2

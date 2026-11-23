@@ -26,26 +26,24 @@ IM-236 index/ready split). This extractor walks the RESULTING argparse
 actions, and attributes each one to its shared helper by instrumenting the
 helpers during extraction -- so `source` is observed, never inferred.
 
-The five passthrough verbs
---------------------------
-Five admin verbs register a dispatcher subparser with `prefix_chars="\\x00"`
-plus a single `nargs="*"` catch-all, so an argparse walk over the SUBPARSER
-sees zero flags. IM-247 names three such parsers; there are five, and they
-split into two different problems:
+No passthrough verbs
+--------------------
+Through v3.6.x five admin verbs registered their dispatcher subparser with
+`prefix_chars="\\x00"` plus a single `nargs="*"` catch-all, so an argparse
+walk over the SUBPARSER saw zero flags; each carried a `SURFACE_PARSER` or
+`SURFACE_MANUAL_FLAGS` declaration the extractor read instead. IM-272
+ported all five to argparse-native registration and retired both
+declarations, so the extractor holds one rule: every verb's surface is its
+own dispatcher subparser, walked directly.
 
-* `admin init-store`, `admin init-project`, `admin migrate` build a real
-  argparse parser inside the module and parse the catch-all with it. They
-  declare `SURFACE_PARSER` (a zero-arg builder) and extract faithfully from
-  it.
-* `admin selftest`, `admin install-skills` have no parser at all -- they walk
-  argv by hand in `main()`. They declare `SURFACE_MANUAL_FLAGS`.
-
-A passthrough verb declaring neither is a hard error. Emitting an empty flag
-set for one would make the manifest false-CLEAN rather than visibly
-incomplete, and that exact blindness has already produced a wrong issue:
-IM-240 was filed from a source-level flag sweep and concluded five verbs lack
-`--json`, listing `admin selftest` among the compliant ones. The true count is
-six and `selftest` is a gap.
+The fail-loud protection survives the port: a subparser whose prefix_chars
+hides its flags from the walk, or a module still carrying one of the
+retired declarations, is a hard error. Emitting an empty flag set would
+make the manifest false-CLEAN rather than visibly incomplete, and that
+exact blindness has already produced a wrong issue: IM-240 was filed from a
+source-level flag sweep and concluded five verbs lack `--json`, listing
+`admin selftest` among the compliant ones. The true count was six and
+`selftest` was a gap.
 """
 
 from __future__ import annotations
@@ -270,52 +268,6 @@ def _prog_literals(module) -> list:
     return sorted(found)
 
 
-def _argv_flag_literals(module, func_name="main") -> set:
-    """Every flag name a hand-walked argv loop actually compares against.
-
-    Ground truth for `SURFACE_MANUAL_FLAGS`. The two `prefix_chars=chr(0)`
-    verbs register no argparse actions, so the declaration is the only thing
-    the manifest can report -- and a declaration nothing derives drifts the
-    moment someone adds a branch to the loop. That is instance 5 of the
-    declaration-drift class (IM-245/IM-240) and it is why IM-262 exists.
-
-    Collected by AST, deterministically and without import side effects:
-    every string constant beginning with "-" that appears as a comparator in
-    a `Compare` node inside the named function. That covers both shapes the
-    loops use -- `arg == "--json"` and `arg in ("-h", "--help")`. A
-    `startswith("-")` test is a `Call`, not a `Compare`, so prefix probes are
-    correctly ignored rather than mistaken for flag names.
-    """
-    source = Path(module.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    target = None
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name == func_name:
-                target = node
-                break
-    if target is None:
-        raise SurfaceError(
-            f"{module.__name__}: no {func_name}() to derive argv flags from; "
-            f"SURFACE_MANUAL_FLAGS cannot be checked against the code"
-        )
-    found = set()
-    for node in ast.walk(target):
-        if not isinstance(node, ast.Compare):
-            continue
-        for operand in node.comparators:
-            items = (operand.elts
-                     if isinstance(operand, (ast.Tuple, ast.List, ast.Set))
-                     else [operand])
-            for item in items:
-                if (isinstance(item, ast.Constant)
-                        and isinstance(item.value, str)
-                        and item.value.startswith("-")
-                        and item.value != "-"):
-                    found.add(item.value)
-    return found
-
-
 # A command-name-shaped token: the `issue ...` dispatcher form, or a single
 # hyphenated word (which is what every retired flat binary looks like --
 # `new-issue`, `migrate-to-store`, `issue-mgmt-selftest`). Deliberately
@@ -357,10 +309,11 @@ def _message_prefixes(module) -> list:
 
     Derived from the source, never declared. This is the ground truth
     `surface.self-naming` needs and the reason an empty `prog.declared` must
-    not be read as clean: `admin selftest` and `admin install-skills` build
-    their parsers with `prefix_chars=chr(0)` and emit no `prog=` keyword, so
-    their declared list is empty while they print roughly thirty hand-written
-    names between them (IM-261 audit, section 5.3).
+    not be read as clean: through v3.6.x `admin selftest` and
+    `admin install-skills` built their parsers with `prefix_chars=chr(0)`
+    and emitted no `prog=` keyword, so their declared list was empty while
+    they printed roughly thirty hand-written names between them (IM-261
+    audit, section 5.3).
 
     Shape-matched, so a handful of hyphenated error-condition keys
     (`concurrent-edit`) ride along. Separating a condition key from a command
@@ -396,9 +349,11 @@ def _usage_names(module) -> list:
     """Program names appearing in hand-written usage / synopsis text.
 
     argparse generates a correct usage line from `prog`; these are the ones
-    it does not generate -- `admin migrate`'s `Synopsis:` block, the two
-    passthrough verbs' `_USAGE` strings -- which are exactly the ones that
-    drifted (IM-239).
+    it does not generate. Through v3.6.x that meant `admin migrate`'s
+    `Synopsis:` block and the two hand-walked verbs' `_USAGE` strings --
+    exactly the ones that drifted (IM-239); post-IM-272 no module
+    hand-writes one, and this harvest is what catches the next one that
+    does.
     """
     found = set()
     for text in _string_constants(module):
@@ -512,58 +467,6 @@ def _helper_synonyms(parser, probe) -> dict:
             if dest in canonical}
 
 
-def _manual_flags(module) -> list:
-    """Flag entries for a verb that walks argv by hand.
-
-    The declaration is checked against the argv loop itself (IM-262), so it
-    cannot go false-CLEAN in either direction: a flag added to the loop and
-    not declared, or declared and removed from the loop, fails the build
-    rather than the manifest silently misreporting the verb.
-    """
-    declared = getattr(module, "SURFACE_MANUAL_FLAGS", None)
-    declared_names = {name for spec in declared for name in spec["names"]}
-    argv_names = _argv_flag_literals(module)
-    if declared_names != argv_names:
-        undeclared = sorted(argv_names - declared_names)
-        unreachable = sorted(declared_names - argv_names)
-        detail = []
-        if undeclared:
-            detail.append(
-                f"accepted by main() but not declared: {', '.join(undeclared)}"
-            )
-        if unreachable:
-            detail.append(
-                f"declared but not accepted by main(): {', '.join(unreachable)}"
-            )
-        raise SurfaceError(
-            f"{module.__name__}: SURFACE_MANUAL_FLAGS has drifted from the "
-            f"argv loop in main() -- " + "; ".join(detail)
-            + ". Update the declaration to match the code, then regenerate "
-            "the manifest."
-        )
-    entries = []
-    for spec in declared:
-        names = list(spec["names"])
-        entries.append({
-            "action": spec.get("action", "store"),
-            "dest": spec.get("dest"),
-            "nargs": spec.get("nargs"),
-            "const": spec.get("const"),
-            "default": spec.get("default"),
-            "default_suppressed": False,
-            "choices": spec.get("choices"),
-            "metavar": spec.get("metavar"),
-            "type": spec.get("type"),
-            "name": _primary_name(names),
-            "names": names,
-            "hidden": bool(spec.get("hidden", False)),
-            "source": "manual-declaration",
-            "mutex_group": None,
-            "synonym_of": spec.get("synonym_of"),
-        })
-    return entries
-
-
 def _extract_parser(parser, *, module, probe) -> dict:
     """Flag / positional / grouping entries for one real argparse parser."""
     mutex_index = {}
@@ -641,64 +544,33 @@ def _extract_verb(module, tier, parser, probe) -> dict:
         },
     }
 
-    passthrough = "-" not in parser.prefix_chars
-    surface_parser = getattr(module, "SURFACE_PARSER", None)
-    manual = getattr(module, "SURFACE_MANUAL_FLAGS", None)
-
-    if not passthrough:
-        if surface_parser is not None or manual is not None:
+    for retired in ("SURFACE_PARSER", "SURFACE_MANUAL_FLAGS"):
+        if getattr(module, retired, None) is not None:
             raise SurfaceError(
-                f"{module.__name__}: declares SURFACE_PARSER / "
-                f"SURFACE_MANUAL_FLAGS but its dispatcher subparser is a "
-                f"normal argparse parser; the declaration would shadow the "
+                f"{module.__name__}: declares {retired}, which IM-272 "
+                f"retired with the passthrough subparsers. Register the "
+                f"verb's flags on its dispatcher subparser; the extractor "
+                f"walks them directly and the declaration would shadow the "
                 f"real registrations."
             )
-        verb["parser"] = {
-            "kind": "argparse",
-            "add_help": bool(parser.add_help),
-            "passthrough": False,
-        }
-        verb.update(_extract_parser(parser, module=module, probe=probe))
-        return verb
 
-    # Passthrough: the dispatcher subparser carries prefix_chars="\x00" and a
-    # single nargs="*" catch-all, so its action list is NOT this verb's
-    # surface. Refuse to guess.
-    if surface_parser is not None:
-        real = surface_parser()
-        verb["parser"] = {
-            "kind": "argparse-internal",
-            "add_help": bool(real.add_help),
-            "passthrough": True,
-            "internal_prog": real.prog,
-        }
-        verb.update(_extract_parser(real, module=module, probe=probe))
-        return verb
+    if "-" not in parser.prefix_chars:
+        raise SurfaceError(
+            f"{module.__name__}: dispatcher subparser uses prefix_chars="
+            f"{parser.prefix_chars!r}, so an argparse walk sees none of this "
+            f"verb's flags. Register the verb's flags on the dispatcher "
+            f"subparser itself (the passthrough declarations were retired by "
+            f"IM-272). Emitting an empty flag set would read as false-CLEAN "
+            f"rather than visibly incomplete -- see IM-245."
+        )
 
-    if manual is not None:
-        flags = _manual_flags(module)
-        flags.sort(key=lambda f: f["name"])
-        verb["parser"] = {
-            "kind": "manual",
-            "add_help": False,
-            "passthrough": True,
-        }
-        verb["flags"] = flags
-        verb["positionals"] = [
-            _jsonable(p) for p in
-            (getattr(module, "SURFACE_MANUAL_POSITIONALS", ()) or ())
-        ]
-        verb["mutually_exclusive_groups"] = []
-        return verb
-
-    raise SurfaceError(
-        f"{module.__name__}: dispatcher subparser uses prefix_chars="
-        f"{parser.prefix_chars!r}, so an argparse walk sees none of this "
-        f"verb's flags. Declare SURFACE_PARSER (a zero-arg builder returning "
-        f"the real parser) or SURFACE_MANUAL_FLAGS (for a hand-walked argv). "
-        f"Emitting an empty flag set would read as false-CLEAN rather than "
-        f"visibly incomplete -- see IM-245."
-    )
+    verb["parser"] = {
+        "kind": "argparse",
+        "add_help": bool(parser.add_help),
+        "passthrough": False,
+    }
+    verb.update(_extract_parser(parser, module=module, probe=probe))
+    return verb
 
 
 # --- manifest assembly -----------------------------------------------------

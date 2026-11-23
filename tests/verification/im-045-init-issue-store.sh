@@ -52,11 +52,15 @@ out=$("$INIT_STORE" 2>&1); rc=$?
 # --- Test 3b: the retired positional spelling exits 2 as unrecognized ---
 # The store root is named --store on this verb exactly as on every other
 # verb that names one; the bare positional was a second shape for the one
-# registered concept and was retired on IM-287.
+# registered concept and was retired on IM-287. The probe supplies --store
+# too, so the refusal measured is the positional itself -- since IM-272 made
+# --store argparse-required, a bare positional alone trips the
+# missing-required diagnostic first (still exit 2, still nothing created,
+# asserted by Test 3 above).
 # COVERS: surface.one-meaning-per-flag
-out=$("$INIT_STORE" "$WORKDIR/retired-form" 2>&1); rc=$?
+out=$("$INIT_STORE" "$WORKDIR/retired-form" --store "$WORKDIR/retired-dest" 2>&1); rc=$?
 [[ $rc -eq 2 ]] && [[ "$out" == *"unrecognized arguments"* ]] \
-    && [[ ! -e "$WORKDIR/retired-form" ]] \
+    && [[ ! -e "$WORKDIR/retired-form" ]] && [[ ! -e "$WORKDIR/retired-dest" ]] \
     && pass "retired positional form exits 2 as an unrecognized argument" \
     || fail "retired positional form (rc=$rc out=$out)"
 

@@ -636,6 +636,17 @@ fi
 # Summary
 # ---------------------------------------------------------------------------
 echo
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$ACTIVITY" --limit abc 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "non-numeric --limit exits 2"
+assert_contains "reason=bad-arguments" "$ERR" "bad --limit carries the payload"
+assert_contains "flag=--limit" "$ERR" "bad --limit names the flag"
+
 echo "----- activity-issues verification summary -----"
 echo "PASS: $PASS"
 echo "FAIL: $FAIL"

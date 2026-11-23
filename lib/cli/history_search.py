@@ -17,7 +17,8 @@ import json
 import subprocess
 import sys
 
-import history  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+import history  # noqa: E402
 import jsonfields  # noqa: E402
 
 from . import common
@@ -36,10 +37,12 @@ ORDER = 20
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "enumeration-read"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C1: every failure path carries the branchable payload (argparse
+# refusals via `common.structured_parser_errors`, the missing term, the
+# legacy-mode refusal, the store gate, the prefix scope, the field
+# selection, and the git failures). A zero-result exit 1 is a RESULT
+# under the grep convention, not a failure. Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 # Top-level keys of each per-commit object under `commits`; the
 # field-selection set for `--json <fields>`. Projection applies to
@@ -104,18 +107,24 @@ def register(subparsers):
     common.add_json_field_flag(p)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
 
-def legacy_mode_error(term: str) -> str:
-    return (
-        f"{PROG}: store mode not active "
+def legacy_mode_error(term: str):
+    """The structured legacy-mode refusal (history.legacy-refuse).
+
+    The actionable git fallback stays in the message (flattened to one
+    line so the key=value payload stays a single stderr line).
+    """
+    return errors.PreconditionError(
+        "store mode not active "
         "(ISSUE_STORE_ROOT unset and no .issues/.migrated-to-store sentinel). "
         "This subcommand operates only on the issue store. "
-        f"For pre-migration history, run the following inside the "
-        f"originating project repo:\n"
-        f'    git log -S "{term}" -- .issues/'
+        "For pre-migration history, run inside the originating project "
+        f'repo: git log -S "{term}" -- .issues/',
+        reason="legacy-mode",
     )
 
 
@@ -130,36 +139,40 @@ def emit_json(payload, out):
 
 
 def run(args) -> int:
+    json_mode = jsonfields.json_enabled(args.json_mode)
+
     if args.term is None:
-        print(
-            f"{PROG}: missing TERM (use --help for usage)",
-            file=sys.stderr,
-        )
-        return 2
+        common.emit_error(
+            errors.UsageError("missing TERM (use --help for usage)",
+                              reason="missing-query"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_USAGE
 
     json_fields = None
-    if jsonfields.json_enabled(args.json_mode):
+    if json_mode:
         try:
             json_fields = jsonfields.parse_fields(
                 args.json_mode, VALID_JSON_FIELDS, prog=PROG
             )
         except jsonfields.FieldSelectionError as e:
-            print(e.message, file=sys.stderr)
-            return 2
+            common.emit_error(
+                errors.UsageError(e.message, flag="--json",
+                                  reason="bad-json-field"),
+                prog=PROG, json_mode=True)
+            return errors.EXIT_USAGE
 
     anchor = common.find_project_anchor()
     store_root = common.resolve_store_root(anchor, args.store)
     if store_root is None:
-        print(legacy_mode_error(args.term), file=sys.stderr)
-        return 1
+        common.emit_error(legacy_mode_error(args.term),
+                          prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     store_root = store_root.expanduser().resolve()
     if not store_root.is_dir():
-        print(
-            f"{PROG}: store root does not exist: {store_root}",
-            file=sys.stderr,
-        )
-        return 1
+        common.emit_error(common.store_precondition_error(store_root),
+                          prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     # Parse, refuse an absent scope (IM-238; exit 1 here through v3.3.x),
     # and case-fold -- one call to the shared resolver (IM-236). This verb
@@ -182,15 +195,18 @@ def run(args) -> int:
             since=args.since,
         )
     except history.HistoryError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
-        return 1
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="git-error"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "").strip().splitlines()[-1:] or [""]
-        print(
-            f"{PROG}: git log failed ({e.returncode}): {stderr_tail[0]}",
-            file=sys.stderr,
-        )
-        return 1
+        common.emit_error(
+            errors.PreconditionError(
+                f"git log failed ({e.returncode}): {stderr_tail[0]}",
+                reason="git-error"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     if jsonfields.json_enabled(args.json_mode):
         payload = {

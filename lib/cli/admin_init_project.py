@@ -1,17 +1,55 @@
-"""
-issue admin init-project -- register a project into the issue store
+"""`issue admin init-project` -- register a project into the issue store.
 
-Synopsis:
-  issue admin init-project [--repo NAME] [--prefix PREFIX]
-                           [--store ROOT] [--non-interactive] [--json]
-                           [-h | --help] [--version]
+Registers the current git repository into the issue store's project
+registry (``<store>/.repos``) under a short uppercase prefix, lazy-seeds
+the store template, and writes the project's ``.prefix`` +
+``.migrated-to-store`` routing primitives. The arg surface is a normal
+argparse subparser since IM-272 (the hand-written ``__doc__`` help and
+the ``SURFACE_PARSER`` declaration are retired).
+"""
+
+import argparse
+import errno
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import errors  # noqa: E402
+import migrate as migrate_lib  # noqa: E402
+import repo as repo_lib  # noqa: E402
+import storeresolve  # noqa: E402
+
+from . import common
+
+PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
+RESERVED_PREFIXES = {"ISSUE"}
+
+CONCURRENT_EDIT_EXIT = errors.EXIT_CONCURRENT_EDIT
+LOCK_TIMEOUT_SECONDS = 5.0
+LOCK_POLL_INTERVAL = 0.05
+
+CONFIG_PATH = storeresolve.CONFIG_PATH
+
+
+PROG = "issue admin init-project"
+
+_DESCRIPTION = """\
+Register a project into the issue store registry.
 
 Registers the current git repository into the issue store's project
 registry (`<store>/.repos`) under a short uppercase prefix. After
 registration, `issue create` and `issue admin reindex` in store mode resolve
 the project's prefix via the registry rather than walking up to a
-project-local `.issues/.prefix` file.
+project-local `.issues/.prefix` file."""
 
+_EPILOG = """\
 Store-root resolution order:
   1. --store ROOT
   2. ISSUE_STORE_ROOT environment variable
@@ -69,52 +107,18 @@ stderr.
 Exit codes:
   0  success (including idempotent "already registered" re-run)
   1  configuration / validation error (see stderr message)
+  2  argument/usage error
   3  lock acquisition timeout (`concurrent-edit`; was 17 through v2.4.1)
 
 Examples:
   ISSUE_STORE_ROOT=/path/to/store issue admin init-project --prefix IM
   issue admin init-project --repo my-project --prefix MP --non-interactive
-  issue admin init-project --prefix MP --non-interactive --json
-"""
-
-import argparse
-import errno
-import fcntl
-import hashlib
-import json
-import os
-import re
-import shutil
-import subprocess
-import sys
-import time
-from pathlib import Path
-
-import errors  # noqa: E402
-import migrate as migrate_lib  # noqa: E402
-import repo as repo_lib  # noqa: E402
-import storeresolve  # noqa: E402
-
-from . import common
-
-VERSION = "v3.6.2"
-
-PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
-RESERVED_PREFIXES = {"ISSUE"}
-
-CONCURRENT_EDIT_EXIT = errors.EXIT_CONCURRENT_EDIT
-LOCK_TIMEOUT_SECONDS = 5.0
-LOCK_POLL_INTERVAL = 0.05
-
-CONFIG_PATH = storeresolve.CONFIG_PATH
+  issue admin init-project --prefix MP --non-interactive --json"""
 
 
-PROG = "issue admin init-project"
-
-
-def die(msg, code=1):
-    print(f"{PROG}: {msg}", file=sys.stderr)
-    sys.exit(code)
+def die(msg, *, reason, **fields):
+    """Raise the branchable refusal; ``run`` renders it (IM-260 C3)."""
+    raise errors.PreconditionError(msg, reason=reason, **fields)
 
 
 def die_store(store_root, detail):
@@ -125,47 +129,8 @@ def die_store(store_root, detail):
     caller expects a payload it can branch on. Same `reason=` the read
     verbs emit (IM-253), so one rule covers the whole surface.
     """
-    err = errors.PreconditionError(detail, reason="store-unresolvable",
+    raise errors.PreconditionError(detail, reason="store-unresolvable",
                                    store=store_root)
-    print(err.format_stderr(PROG), file=sys.stderr)
-    sys.exit(errors.EXIT_PRECONDITION)
-
-
-def build_parser():
-    """The verb's real argparse parser.
-
-    Split out of `parse_args` for the surface manifest (IM-245): the
-    dispatcher subparser for this verb is a `prefix_chars="\\x00"`
-    passthrough, so an argparse walk over it sees none of these flags.
-    `SURFACE_PARSER` below points the extractor here instead of letting it
-    emit a false-CLEAN empty flag set.
-    """
-    p = argparse.ArgumentParser(
-        prog=PROG,
-        description="Register a project into the issue store registry.",
-        add_help=False,
-    )
-    p.add_argument("--repo", metavar="NAME",
-                   help="Override the cwd-derived repo basename.")
-    p.add_argument("--prefix", metavar="PREFIX",
-                   help="Issue ID prefix (uppercase, 2-8 chars).")
-    p.add_argument("--store", metavar="ROOT",
-                   help="Override store-root resolution.")
-    p.add_argument("--non-interactive", action="store_true",
-                   help="Fail rather than prompt.")
-    common.add_json_flag(p)
-    p.add_argument("-h", "--help", action="store_true")
-    p.add_argument("--version", action="store_true")
-    return p
-
-
-def parse_args(argv):
-    return build_parser().parse_args(argv)
-
-
-def show_help():
-    sys.stdout.write(__doc__.lstrip())
-    sys.exit(0)
 
 
 def read_config_store_root():
@@ -197,13 +162,15 @@ def git_toplevel():
             check=True, capture_output=True, text=True,
         )
     except FileNotFoundError:
-        die("git is not installed or not on PATH")
+        die("git is not installed or not on PATH",
+            reason="missing-dependency", dependency="git")
     except subprocess.CalledProcessError:
         die(
             "not inside a git repository. issue-mgmt keys the project "
             "registry on git identity, so a project must be a git repo -- "
             "run 'git init' first (or cd into an existing repository), then "
-            "re-run this command."
+            "re-run this command.",
+            reason="not-a-git-repo",
         )
     return r.stdout.strip()
 
@@ -274,9 +241,11 @@ def resolve_store_root(cli_store, anchor, non_interactive):
 
 def validate_prefix(value):
     if not PREFIX_RE.match(value):
-        die(f"invalid prefix {value!r}: must match {PREFIX_RE.pattern}")
+        die(f"invalid prefix {value!r}: must match {PREFIX_RE.pattern}",
+            reason="invalid-prefix", prefix=value)
     if value in RESERVED_PREFIXES:
-        die(f"prefix {value!r} is reserved")
+        die(f"prefix {value!r} is reserved",
+            reason="invalid-prefix", prefix=value)
 
 
 def derive_prefix(cli_prefix, anchor, non_interactive):
@@ -288,13 +257,15 @@ def derive_prefix(cli_prefix, anchor, non_interactive):
     if cli_prefix and local_prefix and cli_prefix != local_prefix:
         die(
             f"--prefix {cli_prefix!r} disagrees with "
-            f"{local_prefix_file} (contains {local_prefix!r})"
+            f"{local_prefix_file} (contains {local_prefix!r})",
+            reason="prefix-mismatch",
         )
 
     chosen = cli_prefix or local_prefix
     if not chosen:
         if non_interactive:
-            die("no prefix derivable; pass --prefix or run interactively")
+            die("no prefix derivable; pass --prefix or run interactively",
+                reason="missing-prefix")
         while True:
             sys.stderr.write(
                 "Enter the issue prefix for this project "
@@ -347,7 +318,8 @@ def parse_registry(path):
         if not line or line.startswith("#"):
             continue
         if ":" not in line:
-            die(f"malformed registry line in {path}: {raw!r}")
+            die(f"malformed registry line in {path}: {raw!r}",
+                reason="corrupt-registry", registry=str(path))
         name, _, prefix = line.partition(":")
         entries.append((name.strip(), prefix.strip()))
     return entries
@@ -395,11 +367,12 @@ class RegistryLock:
                         pass
                     self.fh.close()
                     self.fh = None
-                    msg = "concurrent-edit: registry lock timeout"
+                    msg = "registry lock timeout"
                     if holder:
                         msg += f" (held by pid {holder})"
-                    print(f"{PROG}: {msg}", file=sys.stderr)
-                    sys.exit(CONCURRENT_EDIT_EXIT)
+                    raise errors.ConcurrentEdit(
+                        msg, resource=str(self.lock_path),
+                        contender_pid=holder or None)
                 time.sleep(LOCK_POLL_INTERVAL)
 
     def __exit__(self, exc_type, exc, tb):
@@ -455,7 +428,8 @@ def ensure_local_prefix_file(anchor, prefix):
             return prefix_file, False
         die(
             f"{prefix_file} contains {existing!r}; registry would write "
-            f"{prefix!r} -- refusing to overwrite"
+            f"{prefix!r} -- refusing to overwrite",
+            reason="refusing-overwrite", file=str(prefix_file),
         )
     prefix_file.write_text(prefix + "\n", encoding="utf-8")
     return prefix_file, True
@@ -483,7 +457,8 @@ def ensure_local_sentinel_file(anchor, store_root):
             return sentinel, True
         die(
             f"{sentinel} contains {existing!r}; would write {expected!r} "
-            f"-- refusing to overwrite a divergent sentinel"
+            f"-- refusing to overwrite a divergent sentinel",
+            reason="refusing-overwrite", file=str(sentinel),
         )
     sentinel.write_text(expected + "\n", encoding="utf-8")
     return sentinel, True
@@ -508,24 +483,12 @@ def _autocommit_registration(store_root, repo_name, prefix, already):
         with concurrency.store_commit_lock(store_root):
             concurrency.catchup_sweep(store_root, exclude=paths)
             concurrency.commit_after_write(store_root, paths, message)
-    except errors.ContractError as e:
-        print(e.format_stderr(PROG), file=sys.stderr)
-        sys.exit(e.exit_code)
     except concurrency.StoreCommitError as e:
         print(e.format_stderr(PROG), file=sys.stderr)
         sys.exit(errors.EXIT_PRECONDITION)
 
 
-def main(argv=None):
-    if argv is None:
-        argv = sys.argv[1:]
-    args = parse_args(argv)
-    if args.help:
-        show_help()
-    if args.version:
-        print(VERSION)
-        sys.exit(0)
-
+def _register_project(args):
     toplevel = git_toplevel()
     if args.repo:
         repo_name = args.repo
@@ -535,7 +498,7 @@ def main(argv=None):
         # worktree directory's name.
         repo_name = repo_lib.resolve_main_basename()
     if not repo_name:
-        die("could not derive repo basename")
+        die("could not derive repo basename", reason="unresolvable-repo")
 
     anchor = resolve_anchor(toplevel)
     store_root = resolve_store_root(args.store, anchor, args.non_interactive)
@@ -564,12 +527,14 @@ def main(argv=None):
             die(
                 f"repo {repo_name!r} is already registered with prefix "
                 f"{by_name[repo_name]!r}; refusing to re-register as "
-                f"{prefix!r}"
+                f"{prefix!r}",
+                reason="registry-conflict", repo=repo_name,
             )
         elif prefix in by_prefix:
             die(
                 f"prefix {prefix!r} is already used by repo "
-                f"{by_prefix[prefix]!r}; choose a different prefix"
+                f"{by_prefix[prefix]!r}; choose a different prefix",
+                reason="registry-conflict", prefix=prefix,
             )
         else:
             entries.append((repo_name, prefix))
@@ -625,12 +590,10 @@ def main(argv=None):
 
 # --- consolidated `issue admin init-project` dispatcher glue ------
 #
-# Dispatcher port, not a rewrite (design section 6): the entire flat-binary
-# body above is unchanged except for the sibling-path resolution fixes noted
-# inline; only the arg-surface glue is new. The subparser uses a null
-# prefix_chars + nargs="*" catch-all so the flat binary's own argparse (its
-# flags, exit codes, and __doc__ help) stays the single source of truth and
-# every byte of --help / --json / exit behavior is preserved.
+# The registration body above is the v3.0.0 dispatcher port of the flat
+# binary, unchanged; IM-272 moved the arg surface onto a normal argparse
+# subparser (the passthrough catch-all and the __doc__ help it preserved
+# are retired, so --help is generated from the registrations).
 
 VERB = "init-project"
 TIER = "admin"
@@ -640,29 +603,46 @@ ORDER = 20
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "scaffolding"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
-# IM-245: this verb's dispatcher subparser is a prefix_chars="\x00"
-# passthrough, so point the extractor at the real parser.
-SURFACE_PARSER = build_parser
+# IM-260 C3: every failure path carries the branchable payload (the
+# `die` refusals and the registry-lock timeout raise typed errors and
+# `run` renders them; the two prompts already refuse exhausted stdin
+# with payloads; argparse refusals ride
+# `common.structured_parser_errors`). Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 
 def register(subparsers):
     p = subparsers.add_parser(
-        VERB, help=SUMMARY, add_help=False, prefix_chars="\x00"
+        VERB,
+        help=SUMMARY,
+        description=_DESCRIPTION,
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("rest", nargs="*")
+    p.add_argument("--repo", metavar="NAME",
+                   help="Override the cwd-derived repo basename.")
+    p.add_argument("--prefix", metavar="PREFIX",
+                   help="Issue ID prefix (uppercase, 2-8 chars).")
+    common.add_store_flag(p)
+    p.add_argument("--non-interactive", action="store_true",
+                   help="Fail rather than prompt.")
+    common.add_json_flag(p)
+    common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
 
 def run(args):
     try:
-        rc = main(args.rest)
-    except SystemExit as e:  # flat main()/die()/show_help() exit in place
+        _register_project(args)
+    except errors.ContractError as e:
+        common.emit_error(e, prog=PROG,
+                          json_mode=bool(getattr(args, "json_mode", False)))
+        return e.exit_code
+    except SystemExit as e:  # legacy in-place exits
         rc = e.code
-    if rc is None:
-        return 0
-    return rc if isinstance(rc, int) else 1
+        if rc is None:
+            return 0
+        return rc if isinstance(rc, int) else 1
+    return 0

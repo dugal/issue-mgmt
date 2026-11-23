@@ -288,6 +288,26 @@ case "$(cat "$TMPDIR_ROOT/legacy.txt")" in
 esac
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE" index --limit -5 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "negative --limit exits 2"
+assert_contains "flag=--limit" "$ERR" "bad --limit names the flag"
+assert_contains "reason=bad-arguments" "$ERR" "bad --limit carries the payload"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE" index --status nosuchstatus 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unknown --status exits 2"
+assert_contains "flag=--status" "$ERR" "bad --status names the flag"
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE" index --bogus-flag 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unrecognized flag exits 2"
+assert_contains "reason=bad-arguments" "$ERR" \
+    "argparse refusal exits through the payload"
+
 echo
 echo "=============================================="
 echo "PASS: $PASS  FAIL: $FAIL"

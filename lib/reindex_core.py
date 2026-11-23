@@ -122,13 +122,21 @@ def render_status_sections(groups):
     return lines
 
 
-def reindex_store_detail(store_root, *, suppress_commit: bool = False) -> dict:
+def reindex_store_detail(store_root, *, suppress_commit: bool = False,
+                         dry_run: bool = False) -> dict:
     """Regenerate the store root + every per-prefix INDEX.md in-process.
 
     Under the store index lock, exactly like the bash wrapper. When
     ``suppress_commit`` is False the writes are wrapped in the per-mutation
     ``reindex INDEX.md`` store commit; when True (an outer mutation owns the
     commit) the writes run bare.
+
+    Under ``dry_run`` (IM-259) the same scan runs and the same structured
+    result comes back -- counts, prefixes, the index paths that WOULD be
+    written -- but nothing touches disk: no index write, no commit, and no
+    lock (a preview contends with nobody). ``indexes_written`` then counts
+    the indexes the real run would write, mirroring `admin init-store`'s
+    ``seeded`` convention.
 
     Returns the structured result `issue admin reindex --json` renders
     (IM-240), carrying the human summary line under ``summary`` so the
@@ -164,7 +172,8 @@ def reindex_store_detail(store_root, *, suppress_commit: bool = False) -> dict:
                     total += 1
             per_prefix_index = pdir / "INDEX.md"
             body = _header(f"Issues Index -- {pdir.name}") + render_status_sections(groups)
-            atomic_write(per_prefix_index, "\n".join(body))
+            if not dry_run:
+                atomic_write(per_prefix_index, "\n".join(body))
             per_prefix.append((pdir.name, count))
 
         root_lines = _header("Issues Index")
@@ -183,19 +192,25 @@ def reindex_store_detail(store_root, *, suppress_commit: bool = False) -> dict:
         root_lines.append("## Aggregate")
         root_lines.append("")
         root_lines.extend(render_status_sections(aggregate))
-        atomic_write(store_root / "INDEX.md", "\n".join(root_lines))
+        if not dry_run:
+            atomic_write(store_root / "INDEX.md", "\n".join(root_lines))
         return per_prefix, total
 
-    with concurrency.index_lock(store_root):
-        if suppress_commit:
-            per_prefix, total = do_writes()
-        else:
-            commit_paths = ["INDEX.md"] + [
-                f"{p.name}/INDEX.md" for p in prefix_dirs
-            ]
-            with concurrency.store_mutation(store_root, commit_paths, "reindex INDEX.md"):
+    if dry_run:
+        # Preview: same scan, no lock, no write, no commit (IM-259).
+        per_prefix, total = do_writes()
+    else:
+        with concurrency.index_lock(store_root):
+            if suppress_commit:
                 per_prefix, total = do_writes()
+            else:
+                commit_paths = ["INDEX.md"] + [
+                    f"{p.name}/INDEX.md" for p in prefix_dirs
+                ]
+                with concurrency.store_mutation(store_root, commit_paths, "reindex INDEX.md"):
+                    per_prefix, total = do_writes()
 
+    verb = "Would reindex" if dry_run else "Reindexed"
     return {
         "mode": "store",
         "store": str(store_root),
@@ -206,7 +221,7 @@ def reindex_store_detail(store_root, *, suppress_commit: bool = False) -> dict:
         "indexes_written": 1 + len(per_prefix),
         "issues": total,
         "summary": (
-            f"Reindexed {store_root}/INDEX.md and {len(per_prefix)} "
+            f"{verb} {store_root}/INDEX.md and {len(per_prefix)} "
             f"per-prefix index(es) -- {total} issue(s) total."
         ),
     }
@@ -223,12 +238,13 @@ def reindex_store(store_root, *, suppress_commit: bool = False) -> str:
     )["summary"]
 
 
-def reindex_legacy_dir_detail(issues_dir) -> dict:
+def reindex_legacy_dir_detail(issues_dir, *, dry_run: bool = False) -> dict:
     """Regenerate a single legacy ``.issues/INDEX.md`` in-process.
 
     Preserved verbatim from the v1.5.1 generator: plain ``write_text`` (no
     lock, no store commit), and the em-dash summary line the legacy binary
-    printed (carried under ``summary``).
+    printed (carried under ``summary``). Under ``dry_run`` (IM-259) the
+    same scan runs and the same result comes back, but nothing is written.
     """
     issues_dir = Path(str(issues_dir).rstrip("/"))
     if not issues_dir.is_dir():
@@ -255,14 +271,16 @@ def reindex_legacy_dir_detail(issues_dir) -> dict:
         "",
     ]
     lines.extend(render_status_sections(groups))
-    index_path.write_text("\n".join(lines))
+    if not dry_run:
+        index_path.write_text("\n".join(lines))
+    verb = "Would reindex" if dry_run else "Reindexed"
     return {
         "mode": "legacy",
         "issues_dir": str(issues_dir),
         "index": str(index_path),
         "indexes_written": 1,
         "issues": count,
-        "summary": f"Reindexed {index_path} — {count} issue(s) found.",
+        "summary": f"{verb} {index_path} — {count} issue(s) found.",
     }
 
 

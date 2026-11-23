@@ -411,6 +411,22 @@ OUT=$(run_ready --version)
 assert_eq 0 "$?" "--version exits 0"
 assert_contains "v" "$OUT" "--version prints a version string"
 
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$(run_ready --limit -1 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "negative --limit exits 2"
+assert_contains "flag=--limit" "$ERR" "bad --limit names the flag"
+assert_contains "reason=bad-arguments" "$ERR" "bad --limit carries the payload"
+# COVERS: surface.structured-errors
+ERR=$(run_ready --bogus-flag 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unrecognized flag exits 2"
+assert_contains "reason=bad-arguments" "$ERR" \
+    "argparse refusal exits through the payload"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

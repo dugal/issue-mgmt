@@ -1,10 +1,38 @@
-"""
-issue admin init-store -- scaffold a new issues store / converge an existing one
+"""`issue admin init-store` -- scaffold a new issues store / converge one.
 
-Synopsis:
-  issue admin init-store --store ROOT [--non-interactive]
-                         [--dry-run] [--json]
-                         [-h | --help] [--version]
+Creates a fresh issues store at the ``--store`` root: makes the
+directory, initializes a git repo (``-b main``), and seeds the canonical
+README.md, LAYOUT.md, .gitignore, INDEX.md, and ISSUE-TEMPLATE.md
+scaffolds. Idempotent convergence on an existing store; never
+overwrites. The arg surface is a normal argparse subparser since IM-272
+(the hand-written ``__doc__`` help and the ``SURFACE_PARSER``
+declaration are retired).
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import errors  # noqa: E402  (lib/ is on sys.path via the entrypoint)
+
+from . import common
+
+# The one place this verb names itself. Every diagnostic formats through
+# it, so the surface manifest sees exactly one name per verb and
+# `surface.self-naming` is checkable rather than a ~90-site grep (IM-239).
+PROG = "issue admin init-store"
+
+GITIGNORE_BODY = ".locks/\n.DS_Store\n"
+INDEX_BODY = ""  # the reindex populates it on first run
+
+SCAFFOLD_FILES = ("README.md", "LAYOUT.md")
+
+_DESCRIPTION = """\
+Scaffold a new issues store / converge an existing one.
 
 Creates a fresh issues store at ROOT: makes the directory, initializes
 a git repo (`-b main`), and seeds the canonical README.md, LAYOUT.md,
@@ -20,20 +48,9 @@ The seeded README.md and LAYOUT.md carry the architectural principles
 (P1 distribution, P2 concurrency) inline so the store carries its
 contract independent of any project workspace. ISSUE-TEMPLATE.md is
 copied byte-identically from the Homebrew generic so the seed matches
-the default template that ships with this release.
+the default template that ships with this release."""
 
-Options:
-  --store ROOT       Destination store root to scaffold or converge.
-                     Required; the scaffolder never falls through the
-                     store-resolution chain, so the target is always
-                     explicit. (Named the way every verb names a store
-                     root; the bare positional form was retired in favor
-                     of --store.)
-  --non-interactive  Never prompt.
-  --dry-run          Report every scaffold action that would run and
-                     change nothing.
-  --json             Emit a single JSON object on stdout.
-
+_EPILOG = """\
 JSON mode (--json): exactly one object on stdout, shape
 
   {
@@ -72,71 +89,12 @@ Examples:
   issue admin init-store --store ~/issues-store
   issue admin init-store --store /tmp/new-store --non-interactive
   issue admin init-store --dry-run --store ~/issues-store
-  issue admin init-store --json --store ~/issues-store
-"""
-
-import argparse
-import json
-import os
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-from . import common
-
-VERSION = "v3.6.2"
-
-# The one place this verb names itself. Every diagnostic, usage line,
-# and `prog=` keyword formats through it, so the surface manifest sees
-# exactly one name per verb and `surface.self-naming` is checkable
-# rather than a ~90-site grep (IM-239).
-PROG = "issue admin init-store"
-
-GITIGNORE_BODY = ".locks/\n.DS_Store\n"
-INDEX_BODY = ""  # the reindex populates it on first run
-
-SCAFFOLD_FILES = ("README.md", "LAYOUT.md")
+  issue admin init-store --json --store ~/issues-store"""
 
 
-def die(msg, code=1):
-    print(f"{PROG}: {msg}", file=sys.stderr)
-    sys.exit(code)
-
-
-def build_parser():
-    """The verb's real argparse parser.
-
-    Split out of `parse_args` for the surface manifest (IM-245): the
-    dispatcher subparser for this verb is a `prefix_chars="\\x00"`
-    passthrough, so an argparse walk over it sees none of these flags.
-    `SURFACE_PARSER` below points the extractor here instead of letting it
-    emit a false-CLEAN empty flag set.
-    """
-    p = argparse.ArgumentParser(
-        prog=PROG,
-        description="Scaffold a new issues store / converge an existing one.",
-        add_help=False,
-    )
-    p.add_argument("--store", default=None, metavar="ROOT",
-                   help="Destination store root to scaffold or converge.")
-    p.add_argument("--non-interactive", action="store_true",
-                   help="Never prompt.")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Report planned actions; change nothing.")
-    common.add_json_flag(p)
-    p.add_argument("-h", "--help", action="store_true")
-    p.add_argument("--version", action="store_true")
-    return p
-
-
-def parse_args(argv):
-    return build_parser().parse_args(argv)
-
-
-def show_help():
-    sys.stdout.write(__doc__.lstrip())
-    sys.exit(0)
+def die(msg, *, reason, **fields):
+    """Raise the branchable refusal; ``run`` renders it (IM-260 C3)."""
+    raise errors.PreconditionError(msg, reason=reason, **fields)
 
 
 def script_prefix():
@@ -158,8 +116,9 @@ def resolve_store_template_dir(prefix):
         if (c / "README.md").is_file() and (c / "LAYOUT.md").is_file():
             return c
     die(
-        "could not locate store-template scaffolds; looked in:\n  "
-        + "\n  ".join(str(c) for c in candidates)
+        "could not locate store-template scaffolds; looked in: "
+        + "; ".join(str(c) for c in candidates),
+        reason="missing-resource",
     )
 
 
@@ -172,8 +131,9 @@ def resolve_issue_template(prefix):
         if c.is_file():
             return c
     die(
-        "could not locate ISSUE-TEMPLATE.md; looked in:\n  "
-        + "\n  ".join(str(c) for c in candidates)
+        "could not locate ISSUE-TEMPLATE.md; looked in: "
+        + "; ".join(str(c) for c in candidates),
+        reason="missing-resource",
     )
 
 
@@ -280,7 +240,8 @@ def scaffold_dry_run_plan(store, template_dir, issue_template):
         if not dir_is_empty(store):
             die(
                 f"{store} is not a git repo and is not empty; refusing to "
-                "scaffold over existing content"
+                "scaffold over existing content",
+                reason="non-empty-target", store=str(store),
             )
         git_initialized = True
     plan = [(name, template_dir / name) for name in SCAFFOLD_FILES]
@@ -348,11 +309,13 @@ def scaffold(store, template_dir, issue_template):
     store_created = False
     if store.exists():
         if not store.is_dir():
-            die(f"{store} exists and is not a directory")
+            die(f"{store} exists and is not a directory",
+                reason="not-a-directory", store=str(store))
         if not is_git_repo(store) and not dir_is_empty(store):
             die(
                 f"{store} is not a git repo and is not empty; refusing to "
-                "scaffold over existing content"
+                "scaffold over existing content",
+                reason="non-empty-target", store=str(store),
             )
     else:
         store.mkdir(parents=True)
@@ -397,47 +360,12 @@ def scaffold(store, template_dir, issue_template):
     }
 
 
-def main(argv=None):
-    if argv is None:
-        argv = sys.argv[1:]
-    args = parse_args(argv)
-    if args.help:
-        show_help()
-    if args.version:
-        print(VERSION)
-        sys.exit(0)
-
-    if not args.store:
-        die("missing required --store ROOT argument; see --help", code=2)
-
-    store = Path(args.store).expanduser().resolve()
-
-    prefix = script_prefix()
-    template_dir = resolve_store_template_dir(prefix)
-    issue_template = resolve_issue_template(prefix)
-
-    if args.dry_run:
-        record = scaffold_dry_run_plan(store, template_dir, issue_template)
-        emitter = emit_dry_run_report
-    else:
-        record = scaffold(store, template_dir, issue_template)
-        emitter = emit_scaffold_report
-
-    if getattr(args, "json_mode", False):
-        emit_json(record)
-    else:
-        emitter(record)
-
-
-
 # --- consolidated `issue admin init-store` dispatcher glue ------
 #
-# Dispatcher port, not a rewrite (design section 6): the entire flat-binary
-# body above is unchanged except for the sibling-path resolution fixes noted
-# inline; only the arg-surface glue is new. The subparser uses a null
-# prefix_chars + nargs="*" catch-all so the flat binary's own argparse (its
-# flags, exit codes, and __doc__ help) stays the single source of truth and
-# every byte of --help / --json / exit behavior is preserved.
+# The scaffold/convergence body above is the v3.0.0 dispatcher port of the
+# flat binary, unchanged; IM-272 moved the arg surface onto a normal
+# argparse subparser (the passthrough catch-all and the __doc__ help it
+# preserved are retired, so --help is generated from the registrations).
 
 VERB = "init-store"
 TIER = "admin"
@@ -450,29 +378,62 @@ SURFACE_CLASS = "scaffolding"
 # for a store root. "flag" rather than resolution-chain semantics: the
 # scaffolder requires the flag and never falls through the chain.
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
-# IM-245: this verb's dispatcher subparser is a prefix_chars="\x00"
-# passthrough, so point the extractor at the real parser.
-SURFACE_PARSER = build_parser
+# IM-260 C3: every failure path carries the branchable payload (the
+# `die` refusals raise `PreconditionError` and `run` renders them;
+# argparse refusals, including the required --store, ride
+# `common.structured_parser_errors`). Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 
 def register(subparsers):
     p = subparsers.add_parser(
-        VERB, help=SUMMARY, add_help=False, prefix_chars="\x00"
+        VERB,
+        help=SUMMARY,
+        description=_DESCRIPTION,
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("rest", nargs="*")
+    p.add_argument("--store", required=True, metavar="ROOT",
+                   help="Destination store root to scaffold or converge "
+                        "(required; the scaffolder never falls through the "
+                        "store-resolution chain).")
+    p.add_argument("--non-interactive", action="store_true",
+                   help="Never prompt.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Report planned actions; change nothing.")
+    common.add_json_flag(p)
+    common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
 
 def run(args):
     try:
-        rc = main(args.rest)
-    except SystemExit as e:  # flat main()/die()/show_help() exit in place
+        store = Path(args.store).expanduser().resolve()
+
+        prefix = script_prefix()
+        template_dir = resolve_store_template_dir(prefix)
+        issue_template = resolve_issue_template(prefix)
+
+        if args.dry_run:
+            record = scaffold_dry_run_plan(store, template_dir, issue_template)
+            emitter = emit_dry_run_report
+        else:
+            record = scaffold(store, template_dir, issue_template)
+            emitter = emit_scaffold_report
+
+        if getattr(args, "json_mode", False):
+            emit_json(record)
+        else:
+            emitter(record)
+    except errors.ContractError as e:
+        common.emit_error(e, prog=PROG,
+                          json_mode=bool(getattr(args, "json_mode", False)))
+        return e.exit_code
+    except SystemExit as e:  # legacy in-place exits
         rc = e.code
-    if rc is None:
-        return 0
-    return rc if isinstance(rc, int) else 1
+        if rc is None:
+            return 0
+        return rc if isinstance(rc, int) else 1
+    return 0

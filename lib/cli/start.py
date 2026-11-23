@@ -35,10 +35,10 @@ ORDER = 10
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C2: converted -- every non-loser-side failure path exits through
+# the branchable payload (the loser-side 3-7 contract was already
+# structured). Ratchets: may never revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 # IM-250 / IM-262: `start` claims as it transitions, so it echoes the same
 # two lease stamps `transition --claim` writes.
 SURFACE_RECORD_FIELDS = ("claim.claimed_at", "claim.lease_until")
@@ -79,6 +79,7 @@ def register(subparsers):
     common.add_lock_timeout_flag(p)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -86,22 +87,34 @@ def register(subparsers):
 def run(args):
     prog = "issue start"
     if not args.issue_id:
-        print(f"{prog}: missing issue ID (use -h for usage)",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError("missing issue ID (use -h for usage)",
+                              reason="missing-id"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
 
     claimant = args.claimant or os.environ.get("USER") or "unknown"
     if not lease.CLAIMANT_RE.match(claimant):
-        print(f"{prog}: invalid claimant {claimant!r} (must match "
-              f"{lease.CLAIMANT_RE.pattern})", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                f"invalid claimant {claimant!r} (must match "
+                f"{lease.CLAIMANT_RE.pattern})",
+                reason="invalid-claimant", flag="--claim"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
     if args.lease_ttl is not None and args.lease_ttl <= 0:
-        print(f"{prog}: --lease-ttl must be a positive integer of seconds",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--lease-ttl must be a positive integer of seconds",
+                reason="invalid-value", flag="--lease-ttl"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
     if args.claim_generation is not None and args.claim_generation < 0:
-        print(f"{prog}: --claim-generation must be a non-negative integer",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--claim-generation must be a non-negative integer",
+                reason="invalid-value", flag="--claim-generation"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
 
     # Opportunistic auto-reap of the target's prefix before claiming

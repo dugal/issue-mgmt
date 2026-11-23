@@ -286,11 +286,12 @@ HOME="$TMPDIR_ROOT/home3" PATH="$EMPTY_PKGSHARE/bin:$PATH" \
 assert_eq "1" "$?" "install-skills exits 1 when pkgshare empty"
 assert_contains "no skill files found" "$(cat "$TMPDIR_ROOT/empty.err")" "stderr names the empty-pkgshare condition"
 
-# Unknown argument -> exit 2.
+# Unknown argument -> exit 2. argparse owns the refusal since IM-272 (the
+# hand-walked loop printed "Unknown argument: ..." through v3.6.x).
 HOME="$TMPDIR_ROOT/home4" PATH="$FAKE_BREW_PREFIX/bin:$PATH" \
     "$INSTALL_SKILLS" --bogus > "$TMPDIR_ROOT/bogus.out" 2> "$TMPDIR_ROOT/bogus.err"
 assert_eq "2" "$?" "install-skills exits 2 on unknown argument"
-assert_contains "Unknown argument" "$(cat "$TMPDIR_ROOT/bogus.err")" "stderr names the unknown argument"
+assert_contains "unrecognized arguments: --bogus" "$(cat "$TMPDIR_ROOT/bogus.err")" "stderr names the unknown argument"
 
 # ---------------------------------------------------------------------------
 # Block 5: installed-layout mutation refreshes INDEX.md in-process

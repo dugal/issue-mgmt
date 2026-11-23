@@ -33,10 +33,12 @@ ORDER = 60
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "point-read"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C0: the exemplar conversion. Every failure path -- the pre-read
+# usage refusals, argparse's own refusals (via
+# `common.structured_parser_errors`), the store gate, and each per-id
+# miss -- exits through the branchable payload. Ratchets: may never
+# revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 # Top-level keys of each per-id --json object; the field-selection set for
 # `--json <fields>`. The shape is conditional: `sections_requested`
@@ -110,6 +112,7 @@ def register(subparsers):
     common.add_json_field_flag(p)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -118,10 +121,12 @@ def register(subparsers):
 
 
 class IdError(Exception):
-    def __init__(self, message, file_label=None, store_label=None):
+    def __init__(self, message, file_label=None, store_label=None,
+                 section=None):
         super().__init__(message)
         self.file_label = file_label
         self.store_label = store_label
+        self.section = section
 
 
 def resolve_issue_file(issue_id, anchor, store_root, *, emit_note=None):
@@ -212,7 +217,7 @@ def render_one_text(
             if chunk is None:
                 raise IdError(
                     f"section '{name}' not found in {issue_id}",
-                    file_label, store_label,
+                    file_label, store_label, section=name,
                 )
             chunks.append(chunk.rstrip("\n"))
         section_text = "\n\n".join(chunks) + "\n"
@@ -244,7 +249,7 @@ def render_one_json(
             if chunk is None:
                 raise IdError(
                     f"section '{name}' not found in {issue_id}",
-                    file_label, store_label,
+                    file_label, store_label, section=name,
                 )
             rendered[name] = chunk
         obj["sections_requested"] = list(sections)
@@ -261,6 +266,16 @@ def process_one(
     issue_id, anchor, store_root,
     sections, want_frontmatter, no_body, json_mode,
 ):
+    """Render one id. Returns (True, payload) or (False, ContractError).
+
+    IM-260: a per-id failure is returned as the typed error that names its
+    condition (`not-found` for a missing file or section,
+    `precondition-failed` for an unreadable or shape-invalid record,
+    `store-integrity` for a dup-padding collision), so the caller renders
+    one branchable payload per failed id instead of prose. Every variant
+    maps to exit 1, matching the documented batch rule (exit 1 if any id
+    failed) and the point-read not-found rule in `output.exit-codes`.
+    """
     def _note(before, after):
         print(f"issue show: resolved {before} -> {after}", file=sys.stderr)
 
@@ -269,23 +284,26 @@ def process_one(
             issue_id, anchor, store_root, emit_note=_note
         )
     except ValueError as e:
-        return False, (str(e), None, None)
+        return False, errors.PreconditionError(
+            str(e), reason="invalid-id", id=str(issue_id))
     except errors.StoreIntegrityError as e:
-        # str(e) is the human-readable message naming every colliding file;
-        # show's caller re-prefixes with "issue show:" (single prefix).
-        return False, (str(e), None, None)
+        # The typed error already names every colliding file in its fields.
+        return False, e
     issue_id = canonical_id
 
     if not issue_file.is_file():
-        return False, (
+        return False, errors.NotFoundError(
             f"issue file not found: {issue_file}",
-            file_label, store_label,
+            id=issue_id, file=file_label, store=store_label,
         )
 
     try:
         fm_lines, body_text = frontmatter.read_issue(issue_file)
     except ValueError as e:
-        return False, (str(e), file_label, store_label)
+        return False, errors.PreconditionError(
+            str(e), reason="unreadable-issue",
+            id=issue_id, file=file_label, store=store_label,
+        )
 
     try:
         if json_mode:
@@ -299,47 +317,65 @@ def process_one(
                 sections, want_frontmatter, no_body,
             )
     except IdError as e:
-        return False, (str(e), e.file_label, e.store_label)
+        return False, errors.NotFoundError(
+            str(e), id=issue_id, section=e.section,
+            file=e.file_label, store=e.store_label,
+        )
 
     return True, payload
 
 
 def run(args) -> int:
+    json_mode = jsonfields.json_enabled(args.json_mode)
+    prog = "issue show"
+
     if not args.ids:
-        print("issue show: missing ID (use -h for usage)", file=sys.stderr)
-        return 2
+        common.emit_error(
+            errors.UsageError("missing ID (use -h for usage)",
+                              reason="missing-id"),
+            prog=prog, json_mode=json_mode)
+        return errors.EXIT_USAGE
 
     if args.no_body and args.sections:
-        print(
-            "issue show: --no-body is mutually exclusive with --section",
-            file=sys.stderr,
-        )
-        return 2
+        common.emit_error(
+            errors.UsageError("--no-body is mutually exclusive with --section",
+                              reason="conflicting-flags",
+                              flags="--no-body,--section"),
+            prog=prog, json_mode=json_mode)
+        return errors.EXIT_USAGE
 
     for issue_id in args.ids:
         # Case-insensitive shape check; canonicalization happens in
         # process_one -> resolve_issue_file.
         if idresolve.split_id(issue_id) is None:
-            print(
-                f"issue show: invalid ID '{issue_id}' "
-                f"(expected <PREFIX>-NNN, e.g. ABC-123 or XYZ-9)",
-                file=sys.stderr,
-            )
-            return 2
+            common.emit_error(
+                errors.UsageError(
+                    f"invalid ID '{issue_id}' "
+                    f"(expected <PREFIX>-NNN, e.g. ABC-123 or XYZ-9)",
+                    reason="invalid-id", id=str(issue_id)),
+                prog=prog, json_mode=json_mode)
+            return errors.EXIT_USAGE
 
     anchor = common.find_project_anchor()
     store_root = common.resolve_store_root(anchor, args.store)
+    rc = common.require_store(store_root, prog=prog, json_mode=json_mode,
+                              legacy_anchor=anchor)
+    if rc is not None:
+        return rc
 
     multi = len(args.ids) > 1
 
-    if jsonfields.json_enabled(args.json_mode):
+    if json_mode:
         try:
             fields = jsonfields.parse_fields(
-                args.json_mode, VALID_JSON_FIELDS, prog="issue show"
+                args.json_mode, VALID_JSON_FIELDS, prog=prog
             )
         except jsonfields.FieldSelectionError as e:
-            print(e.message, file=sys.stderr)
-            return 2
+            common.emit_error(
+                errors.UsageError(e.message, flag="--json",
+                                  reason="bad-json-field"),
+                prog=prog, json_mode=True)
+            return errors.EXIT_USAGE
         results = []
         any_failed = False
         for issue_id in args.ids:
@@ -351,13 +387,13 @@ def run(args) -> int:
             if ok:
                 results.append(jsonfields.project_object(payload, fields))
             else:
-                msg, file_label, store_label = payload
                 any_failed = True
+                common.emit_error(payload, prog=prog, json_mode=True)
                 results.append(jsonfields.project_object({
                     "id": issue_id,
-                    "file": file_label,
-                    "store": store_label,
-                    "error": msg,
+                    "file": payload.fields.get("file"),
+                    "store": payload.fields.get("store"),
+                    "error": payload.message,
                 }, fields))
         if multi:
             json.dump(results, sys.stdout, indent=2, sort_keys=False)
@@ -375,21 +411,16 @@ def run(args) -> int:
             args.sections, args.want_frontmatter, args.no_body,
             json_mode=False,
         )
-        if multi:
-            header = f"=== {issue_id} ===\n"
-            if ok:
-                text_chunks.append(header + payload)
+        if ok:
+            if multi:
+                text_chunks.append(f"=== {issue_id} ===\n" + payload)
             else:
-                msg, _file_label, _store_label = payload
-                any_failed = True
-                print(f"=== {issue_id} === [error: {msg}]", file=sys.stderr)
-        else:
-            if ok:
                 text_chunks.append(payload)
-            else:
-                msg, _file_label, _store_label = payload
-                any_failed = True
-                print(f"issue show: {msg}", file=sys.stderr)
+        else:
+            # One branchable payload line per failed id; the `id=` field
+            # replaces the former `=== <id> ===` stderr header.
+            any_failed = True
+            common.emit_error(payload, prog=prog, json_mode=False)
 
     if multi:
         sys.stdout.write("\n".join(text_chunks))

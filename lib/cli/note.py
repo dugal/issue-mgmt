@@ -40,10 +40,10 @@ ORDER = 50
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C2: converted -- every non-loser-side failure path exits through
+# the branchable payload (the loser-side 3-7 contract was already
+# structured). Ratchets: may never revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 # IM-250 / IM-262: both clock-derived and both persisted into the issue --
 # `date` is the note's date and `note` is the `<date>: <text>` line appended
 # to the body, so the date rides inside it too.
@@ -93,8 +93,31 @@ def register(subparsers):
     common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
+
+
+
+
+def _store_commit_error(e):
+    """Wrap concurrency.StoreCommitError into the branchable payload (IM-260).
+
+    The shared concurrency module predates the ContractError hierarchy;
+    the verbs own the conversion. The message keeps the `store commit
+    failed:` lead so existing greps match inside `detail=`.
+    """
+    import errors as _errors
+    detail = e.git_error or e.message
+    recovery = (
+        "file is on disk; fix and rerun any mutation to recover"
+        if e.write_attempted else
+        "no changes were written; fix the store and retry"
+    )
+    return _errors.PreconditionError(
+        f"store commit failed: {detail}",
+        reason="store-commit-failed", recovery=recovery,
+    )
 
 
 def _resolve_paths(issue_id, cli_store, *, emit_note=None):
@@ -113,24 +136,32 @@ def _resolve_paths(issue_id, cli_store, *, emit_note=None):
 
 def run(args) -> int:
     if not args.issue_id:
-        print(f"{PROG}: missing issue ID (use -h)", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError("missing issue ID (use -h)",
+                              reason="missing-id"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
     if args.text is None:
-        print(
-            f"{PROG}: missing note text (positional arg, or '-' for stdin)",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            errors.UsageError(
+                "missing note text (positional arg, or '-' for stdin)",
+                reason="missing-text"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     try:
         date = _note.resolve_date(args.date)
     except ValueError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="invalid-value", flag="--date"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     text = _note.read_text(args.text)
     if not text.strip():
-        print(f"{PROG}: note text is empty", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError("note text is empty", reason="missing-text"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     payload = f"{date}: {text}"
@@ -141,8 +172,11 @@ def run(args) -> int:
         if name in seen:
             # Appending one dated line to one section twice is never the
             # intent, and apply_edits would do it silently.
-            print(f"{PROG}: --section {name!r} named more than once",
-                  file=sys.stderr)
+            common.emit_error(
+                errors.UsageError(
+                    f"--section {name!r} named more than once",
+                    reason="bad-operand", flag="--section"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
         seen.add(name)
 
@@ -150,7 +184,9 @@ def run(args) -> int:
     try:
         _EI._check_body_nests(payload, "note", label)
     except ValueError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="escaping-header"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     def _resolved_note(before, after):
@@ -159,11 +195,13 @@ def run(args) -> int:
     try:
         _rr = _resolve_paths(args.issue_id, args.store, emit_note=_resolved_note)
     except ValueError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(str(e), reason="invalid-id",
+                              id=str(args.issue_id)),
+            prog=PROG, json_mode=args.json_mode)
         return 2
     except errors.StoreIntegrityError as e:
-        print(e.format_stderr(PROG, json_mode=args.json_mode),
-              file=sys.stderr)
+        common.emit_error(e, prog=PROG, json_mode=args.json_mode)
         return e.exit_code
     issue_file = _rr.issue_file
     lock_path = _rr.lock_path
@@ -172,8 +210,10 @@ def run(args) -> int:
     canonical_id = _rr.canonical_id
 
     if not issue_file.exists():
-        print(f"{PROG}: issue file not found: {issue_file}",
-              file=sys.stderr)
+        common.emit_error(
+            errors.NotFoundError(f"issue file not found: {issue_file}",
+                                 id=canonical_id, file=str(issue_file)),
+            prog=PROG, json_mode=args.json_mode)
         return 1
 
     autocommit_enabled = (
@@ -219,17 +259,27 @@ def run(args) -> int:
             reindex_fn=reindex_fn,
         )
     except concurrency.StoreCommitError as e:
-        print(e.format_stderr(PROG), file=sys.stderr)
+        common.emit_error(_store_commit_error(e), prog=PROG,
+                          json_mode=args.json_mode)
         return errors.EXIT_PRECONDITION
     except errors.ContractError as e:
-        print(e.format_stderr(PROG), file=sys.stderr)
+        common.emit_error(e, prog=PROG, json_mode=args.json_mode)
         return e.exit_code
     except FileNotFoundError as e:
-        print(f"{PROG}: file disappeared between resolve and read: {e}",
-              file=sys.stderr)
+        common.emit_error(
+            errors.NotFoundError(
+                f"file disappeared between resolve and read: {e}",
+                id=canonical_id),
+            prog=PROG, json_mode=args.json_mode)
         return 1
     except ValueError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
+        msg = str(e)
+        if "not found" in msg:
+            err = errors.NotFoundError(msg, id=canonical_id)
+        else:
+            err = errors.PreconditionError(msg, reason="edit-failed",
+                                           id=canonical_id)
+        common.emit_error(err, prog=PROG, json_mode=args.json_mode)
         return 1
 
     if args.json_mode:

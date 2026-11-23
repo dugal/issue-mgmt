@@ -1,53 +1,66 @@
-"""issue admin migrate -- copy a project's .issues/ corpus into the issue store.
+"""`issue admin migrate` -- copy a project's .issues/ corpus into the store.
 
-Synopsis:
-  issue admin migrate --project PATH [--store ROOT] [--prefix PREFIX]
-                      [--repo NAME] [--dry-run] [--json]
-                      [--lock-timeout SECONDS] [--message MSG]
-  issue admin migrate [-h | --help]
-  issue admin migrate [--version]
+One-shot, idempotent migration of a project's legacy ``.issues/`` corpus
+into the central store: validates before writing, verifies byte-identity
+on every copy, drives the two store-side commits, and writes the
+``.migrated-to-store`` sentinel last. The arg surface is a normal
+argparse subparser since IM-272 (the hand-written ``__doc__`` help and
+the ``SURFACE_PARSER`` declaration are retired).
+"""
 
-What it does:
-  Copies every `<PREFIX>-NNN.md` issue file from `<project>/.issues/`
-  into `<store>/<PREFIX>/`, plus optional `.prefix` and
-  `ISSUE-TEMPLATE.md` companions if present. Validates every issue
-  file before writing anything.
+from __future__ import annotations
 
-  On a successful apply, the tool drives two store-side git commits:
-    1. The migration commit -- the migrated issue files + companions.
-    2. A `chore: record .migrations entry` commit -- appends one TSV
-       line to `<store>/.migrations` capturing the source repo's
-       canonical path, its pre-migration HEAD sha, the migration
-       commit's sha, and an ISO 8601 timestamp.
-  Both commits are path-restricted; any other dirty state in the
-  store working tree is preserved untouched.
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
 
-  Last, the tool writes `<project>/.issues/.migrated-to-store`
-  (containing the store-root path) so any failure before that point
-  leaves the project unmigrated and safe to re-run.
+import concurrency  # noqa: E402
+import errors  # noqa: E402
+import migrate as migrate_lib  # noqa: E402
+import storeresolve  # noqa: E402
 
-Flags:
-  --project PATH        Project root (the directory that contains
-                        `.issues/`). Required.
-  --store ROOT          Override store-root resolution. Otherwise
-                        resolves from $ISSUE_STORE_ROOT, then
-                        ~/.config/issue-mgmt/config (key store_root).
-  --prefix PREFIX       Override the prefix. Otherwise resolves from
-                        `<project>/.issues/.prefix`, then from
-                        `<store>/.repos` keyed by the project's
-                        basename (or --repo). Hard-fails on mismatch
-                        when more than one source disagrees.
-  --repo NAME           Override the basename used for registry
-                        lookup. Defaults to `basename(<project>)`.
-  --dry-run             Print the plan; write nothing, commit nothing.
-  --json                Emit a single JSON object on stdout (plan +
-                        result). Default output is a human-readable
-                        plan summary.
-  --lock-timeout SECONDS
-                        Per-issue lock acquisition timeout. Default 5s.
-  --message MSG         Override the auto-generated migration commit
-                        message. Default is
-                        `feat: migrate <repo> to store (<PFX>-MIN..<PFX>-MAX)`.
+from . import common
+
+# The one place this verb names itself. Every diagnostic formats through
+# it, so the surface manifest sees exactly one name per verb and
+# `surface.self-naming` is checkable rather than a ~90-site grep (IM-239).
+PROG = "issue admin migrate"
+
+CONFIG_PATH = storeresolve.CONFIG_PATH
+
+_DESCRIPTION = """\
+Copy a project's .issues/ corpus into the issue store.
+
+Copies every `<PREFIX>-NNN.md` issue file from `<project>/.issues/`
+into `<store>/<PREFIX>/`, plus optional `.prefix` and
+`ISSUE-TEMPLATE.md` companions if present. Validates every issue
+file before writing anything.
+
+On a successful apply, the tool drives two store-side git commits:
+  1. The migration commit -- the migrated issue files + companions.
+  2. A `chore: record .migrations entry` commit -- appends one TSV
+     line to `<store>/.migrations` capturing the source repo's
+     canonical path, its pre-migration HEAD sha, the migration
+     commit's sha, and an ISO 8601 timestamp.
+Both commits are path-restricted; any other dirty state in the
+store working tree is preserved untouched.
+
+Last, the tool writes `<project>/.issues/.migrated-to-store`
+(containing the store-root path) so any failure before that point
+leaves the project unmigrated and safe to re-run."""
+
+_EPILOG = """\
+Store-root resolution (documented deviation from the shared chain):
+  Migration targets a project that is not yet migrated, so there is no
+  sentinel leg by construction; after --store and ISSUE_STORE_ROOT it
+  falls through to ~/.config/issue-mgmt/config (key store_root).
+
+Prefix resolution when --prefix is not given:
+  `<project>/.issues/.prefix`, then `<store>/.repos` keyed by the
+  project's basename (or --repo). Hard-fails on mismatch when more than
+  one source disagrees.
 
 Idempotency:
   If `<project>/.issues/.migrated-to-store` already exists, exit 0
@@ -69,9 +82,9 @@ Cross-reference sweep:
 Concurrency:
   Each issue copy acquires the per-issue advisory lock at
   `<store>/<PREFIX>/.locks/<ID>.lock`. Lock-acquisition timeout
-  exits 3 (`concurrent-edit`; was 17 through v2.4.1). Companion-file copies (.prefix,
-  ISSUE-TEMPLATE.md) are unlocked -- they are not concurrent-write
-  targets.
+  exits 3 (`concurrent-edit`; was 17 through v2.4.1). Companion-file
+  copies (.prefix, ISSUE-TEMPLATE.md) are unlocked -- they are not
+  concurrent-write targets.
 
 Exit codes:
   0   success, including the already-migrated no-op
@@ -90,29 +103,6 @@ Examples:
   issue admin migrate --project /path/to/repo \\
       --message "feat: migrate foo to store (FOO-001..FOO-042)"
 """
-
-from __future__ import annotations
-
-import argparse
-import json
-import os
-import sys
-from pathlib import Path
-
-import concurrency  # noqa: E402
-import errors  # noqa: E402
-import migrate as migrate_lib  # noqa: E402
-import storeresolve  # noqa: E402
-
-VERSION = "v3.6.2"
-
-# The one place this verb names itself. Every diagnostic, usage line,
-# and `prog=` keyword formats through it, so the surface manifest sees
-# exactly one name per verb and `surface.self-naming` is checkable
-# rather than a ~90-site grep (IM-239).
-PROG = "issue admin migrate"
-
-CONFIG_PATH = storeresolve.CONFIG_PATH
 
 
 def resolve_canonical_template() -> Path | None:
@@ -135,49 +125,6 @@ def resolve_canonical_template() -> Path | None:
         if candidate.is_file():
             return candidate
     return None
-
-
-def build_parser():
-    """The verb's real argparse parser.
-
-    Split out of `parse_args` for the surface manifest (IM-245): the
-    dispatcher subparser for this verb is a `prefix_chars="\\x00"`
-    passthrough, so an argparse walk over it sees none of these flags.
-    `SURFACE_PARSER` below points the extractor here instead of letting it
-    emit a false-CLEAN empty flag set.
-    """
-    p = argparse.ArgumentParser(prog=PROG, add_help=False)
-    p.add_argument("--project", metavar="PATH", default=None)
-    p.add_argument("--store", metavar="ROOT", default=None)
-    p.add_argument("--prefix", metavar="PREFIX", default=None)
-    p.add_argument("--repo", metavar="NAME", default=None)
-    p.add_argument("--dry-run", action="store_true", dest="dry_run")
-    p.add_argument("--json", action="store_true", dest="json_mode")
-    # Hand-rolled parser (add_help=False + a hand-written usage string), so
-    # common.add_lock_timeout_flag's help= would never render and importing
-    # `common` here buys nothing. Registered locally with the same name and
-    # meaning: the per-record advisory lock (IM-242). The hand-rolled-parser
-    # question itself is IM-239 / IM-245.
-    p.add_argument(
-        "--lock-timeout",
-        type=float,
-        default=concurrency.DEFAULT_LOCK_TIMEOUT,
-        metavar="SECONDS",
-    )
-    p.add_argument("--message", metavar="MSG", default=None,
-                   help="Override the migration commit message")
-    p.add_argument("-h", "--help", action="store_true")
-    p.add_argument("--version", action="store_true")
-    return p
-
-
-def parse_args(argv):
-    return build_parser().parse_args(argv)
-
-
-def show_help():
-    sys.stdout.write(__doc__.lstrip())
-    sys.exit(0)
 
 
 def read_config_store_root():
@@ -293,35 +240,26 @@ def emit_human_result(result: migrate_lib.MigrationResult):
         print("  sentinel NOT written.")
 
 
-def main(argv=None):
-    args = parse_args(sys.argv[1:] if argv is None else argv)
-
-    if args.help:
-        show_help()
-    if args.version:
-        print(VERSION)
-        return 0
-
-    if not args.project:
-        print(f"{PROG}: --project PATH is required", file=sys.stderr)
-        return 2
-
+def run(args):
+    json_mode = bool(getattr(args, "json_mode", False))
     project_path = Path(args.project).expanduser().resolve()
     if not project_path.is_dir():
-        print(
-            f"{PROG}: project path is not a directory: {project_path}",
-            file=sys.stderr,
-        )
-        return 1
+        common.emit_error(
+            errors.PreconditionError(
+                f"project path is not a directory: {project_path}",
+                reason="not-a-directory", path=str(project_path)),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     store_root = resolve_store_root(args.store)
     if store_root is None:
-        print(
-            f"{PROG}: no store root resolved; set ISSUE_STORE_ROOT, "
-            "pass --store, or configure ~/.config/issue-mgmt/config",
-            file=sys.stderr,
-        )
-        return 1
+        common.emit_error(
+            errors.PreconditionError(
+                "no store root resolved; set ISSUE_STORE_ROOT, pass "
+                "--store, or configure ~/.config/issue-mgmt/config",
+                reason="store-unresolvable"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     try:
         plan = migrate_lib.plan_migration(
@@ -347,14 +285,17 @@ def main(argv=None):
             print(f"already migrated; sentinel at {e.sentinel_path}")
         return 0
     except migrate_lib.MigrationError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
-        return 1
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="migration-failed"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     if plan.has_validation_errors:
-        print(
-            f"{PROG}: validation errors -- no files written.",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            errors.PreconditionError(
+                "validation errors -- no files written.",
+                reason="validation-failed"),
+            prog=PROG, json_mode=json_mode)
         for r in plan.validation_results:
             if r.ok:
                 continue
@@ -377,11 +318,13 @@ def main(argv=None):
             commit_message=args.message,
         )
     except errors.ContractError as e:
-        print(e.format_stderr(PROG), file=sys.stderr)
+        common.emit_error(e, prog=PROG, json_mode=json_mode)
         return e.exit_code
     except migrate_lib.MigrationError as e:
-        print(f"{PROG}: {e}", file=sys.stderr)
-        return 1
+        common.emit_error(
+            errors.PreconditionError(str(e), reason="migration-failed"),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
 
     if args.json_mode:
         json.dump(result.to_dict(), sys.stdout, indent=2)
@@ -396,12 +339,11 @@ def main(argv=None):
 
 # --- consolidated `issue admin migrate` dispatcher glue ------
 #
-# Dispatcher port, not a rewrite (design section 6): the entire flat-binary
-# body above is unchanged except for the sibling-path resolution fixes noted
-# inline; only the arg-surface glue is new. The subparser uses a null
-# prefix_chars + nargs="*" catch-all so the flat binary's own argparse (its
-# flags, exit codes, and __doc__ help) stays the single source of truth and
-# every byte of --help / --json / exit behavior is preserved.
+# The migration body above is the v3.0.0 dispatcher port of the flat
+# binary, unchanged; IM-272 moved the arg surface onto a normal argparse
+# subparser (the passthrough catch-all and the __doc__ help it preserved
+# are retired, so --help is generated from the registrations) and
+# re-attached the shared flags to their `common.add_*` helpers.
 
 VERB = "migrate"
 TIER = "admin"
@@ -411,29 +353,42 @@ ORDER = 30
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
-# IM-245: this verb's dispatcher subparser is a prefix_chars="\x00"
-# passthrough, so point the extractor at the real parser.
-SURFACE_PARSER = build_parser
+# IM-260 C3: every failure path carries the branchable payload (bad
+# project path, unresolvable store, every MigrationError, the
+# validation-errors abort; argparse refusals ride
+# `common.structured_parser_errors`; the locked-copy conditions were
+# already structured). Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 
 def register(subparsers):
     p = subparsers.add_parser(
-        VERB, help=SUMMARY, add_help=False, prefix_chars="\x00"
+        VERB,
+        help=SUMMARY,
+        description=_DESCRIPTION,
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("rest", nargs="*")
+    p.add_argument("--project", required=True, metavar="PATH",
+                   help="Project root (the directory that contains "
+                        ".issues/). Required.")
+    common.add_store_flag(p)
+    # Registered locally, single-valued: a project migrates under exactly
+    # one prefix (the registry.basename-prefix-unique licence in
+    # docs/cli-vocabulary.json), so this deliberately does NOT use the
+    # repeatable add_prefix_scope_flag the read verbs share.
+    p.add_argument("--prefix", metavar="PREFIX", default=None,
+                   help="Override the prefix resolved from .issues/.prefix "
+                        "or the store registry.")
+    p.add_argument("--repo", metavar="NAME", default=None,
+                   help="Override the basename used for registry lookup.")
+    p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                   help="Print the plan; write nothing, commit nothing.")
+    common.add_json_flag(p)
+    common.add_lock_timeout_flag(p, default=concurrency.DEFAULT_LOCK_TIMEOUT)
+    p.add_argument("--message", metavar="MSG", default=None,
+                   help="Override the migration commit message.")
+    common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
-
-
-def run(args):
-    try:
-        rc = main(args.rest)
-    except SystemExit as e:  # flat main()/die()/show_help() exit in place
-        rc = e.code
-    if rc is None:
-        return 0
-    return rc if isinstance(rc, int) else 1

@@ -169,6 +169,11 @@ class RealTreeTests(unittest.TestCase):
         self.assertEqual(provenance, [],
                          "an exemption records a decision issue the store "
                          "does not have")
+        unowned = sorted(f.key for f in unwaived
+                         if f.key.startswith("unowned-unenforced:"))
+        self.assertEqual(unowned, [],
+                         "an `unenforced` entry rests its ownership on a "
+                         "closed or missing issue (IM-282)")
 
     def test_lint_is_deterministic(self):
         first, _ = surface_lint.lint(self.manifest, self.registry)
@@ -694,6 +699,145 @@ class ExemptionProvenanceTests(unittest.TestCase):
                       "outlive the record of who granted it")
 
 
+class UnenforcedOwnerTests(unittest.TestCase):
+    """The `unenforced` table's owners are resolved like waiver owners.
+
+    An entry whose only ownership is `issues` is a tracked measurement gap,
+    so a named issue that is closed or missing fails as unowned -- the
+    asymmetry IM-282 closes: two entries named only closed owners through a
+    release while the waiver side would have gone red. An entry carrying
+    `enforced_by` names an existing authority and needs no open issue, so
+    its `issues` list (if any) is context, not ownership.
+
+    Fixtures replace the table wholesale with synthetic entries rather than
+    keying on whatever the committed table carries today -- a mechanism test
+    that depends on a live entry's ownership shape dies when that entry is
+    updated (the IM-269 / IM-239 lesson).
+    """
+
+    FIXTURE_CLAUSE = "surface.no-traceback"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base_manifest = surface_lint.manifest_from_disk()
+        cls.base_registry = surface_lint.load_registry()
+        cls.req_keys = surface_lint.requirement_keys()
+
+    def lint_with_table(self, table, issue_status):
+        registry = copy.deepcopy(self.base_registry)
+        registry["unenforced"] = table
+        return surface_lint.lint(
+            copy.deepcopy(self.base_manifest), registry,
+            issue_status=issue_status, req_keys=self.req_keys)
+
+    def owner_keys(self, findings):
+        return {f.key for f in findings
+                if f.key.startswith("unowned-unenforced:")}
+
+    def entry(self, **kw):
+        row = {"clause": self.FIXTURE_CLAUSE, "note": "fixture"}
+        row.update(kw)
+        return row
+
+    def test_closed_owner_in_issues_only_entry_fails(self):
+        """The IM-282 drift shape: the entry's only owner has closed."""
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=[FIXTURE_ISSUE])],
+            issue_status=lambda i: "done" if i == FIXTURE_ISSUE else "open")
+        self.assertIn(
+            f"unowned-unenforced:{self.FIXTURE_CLAUSE}:{FIXTURE_ISSUE}",
+            self.owner_keys(unwaived))
+
+    def test_cancelled_owner_counts_as_closed(self):
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=[FIXTURE_ISSUE])],
+            issue_status=lambda i: (
+                "cancelled" if i == FIXTURE_ISSUE else "open"))
+        self.assertIn(
+            f"unowned-unenforced:{self.FIXTURE_CLAUSE}:{FIXTURE_ISSUE}",
+            self.owner_keys(unwaived))
+
+    def test_owner_the_store_lacks_fails(self):
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=[FIXTURE_ISSUE])],
+            issue_status=lambda i: None if i == FIXTURE_ISSUE else "open")
+        self.assertIn(
+            f"unowned-unenforced:{self.FIXTURE_CLAUSE}:{FIXTURE_ISSUE}",
+            self.owner_keys(unwaived))
+
+    def test_open_owner_is_not_a_finding(self):
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=[FIXTURE_ISSUE])],
+            issue_status=lambda i: "open")
+        self.assertEqual(self.owner_keys(unwaived), set())
+
+    def test_in_progress_owner_still_owns_its_entry(self):
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=[FIXTURE_ISSUE])],
+            issue_status=lambda i: "in-progress")
+        self.assertEqual(self.owner_keys(unwaived), set())
+
+    def test_each_closed_owner_reports_even_beside_an_open_one(self):
+        """Per issue, not per entry: a stale closed reference cannot hide
+        behind a sibling that is still open."""
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=["IM-998", FIXTURE_ISSUE])],
+            issue_status=lambda i: "done" if i == FIXTURE_ISSUE else "open")
+        keys = self.owner_keys(unwaived)
+        self.assertIn(
+            f"unowned-unenforced:{self.FIXTURE_CLAUSE}:{FIXTURE_ISSUE}", keys)
+        self.assertNotIn(
+            f"unowned-unenforced:{self.FIXTURE_CLAUSE}:IM-998", keys)
+
+    def test_enforced_by_entry_needs_no_open_issue(self):
+        """An authority satisfies the entry; closed `issues` are context."""
+        unwaived, _ = self.lint_with_table(
+            [self.entry(enforced_by="FixtureTests in tests/test_x.py",
+                        issues=[FIXTURE_ISSUE])],
+            issue_status=lambda i: "done")
+        self.assertEqual(self.owner_keys(unwaived), set())
+
+    def test_without_issue_status_owners_are_not_checked(self):
+        """No store resolved downgrades the check, like the waiver-owner
+        check -- the store-backed run is the authoritative one."""
+        unwaived, _ = self.lint_with_table(
+            [self.entry(issues=[FIXTURE_ISSUE])], issue_status=None)
+        self.assertEqual(self.owner_keys(unwaived), set())
+
+    def test_unowned_unenforced_cannot_be_waived(self):
+        registry = copy.deepcopy(self.base_registry)
+        registry["unenforced"] = [self.entry(issues=[FIXTURE_ISSUE])]
+        key = f"unowned-unenforced:{self.FIXTURE_CLAUSE}:{FIXTURE_ISSUE}"
+        registry["waivers"].append(fixture_waiver(
+            key=key, clause=self.FIXTURE_CLAUSE,
+            note="fixture: tries to keep a dead owner"))
+        unwaived, _ = surface_lint.lint(
+            copy.deepcopy(self.base_manifest), registry,
+            issue_status=lambda i: "done" if i == FIXTURE_ISSUE else "open",
+            req_keys=self.req_keys)
+        self.assertIn(key, {f.key for f in unwaived},
+                      "waiving an unowned-unenforced finding would let the "
+                      "table drift behind a closed owner again")
+
+    def test_committed_table_is_owner_clean_against_any_closed_store(self):
+        """Every committed issues-only entry would fail if its owner closed.
+
+        Resolving EVERY issue as done must produce exactly one finding per
+        issue named by an entry without `enforced_by` -- proving the check
+        reads the committed table (not just fixtures), while the real
+        store-backed verdict lives in RealTreeTests.
+        """
+        registry = copy.deepcopy(self.base_registry)
+        expected = {
+            f"unowned-unenforced:{e['clause']}:{issue_id}"
+            for e in registry["unenforced"] if not e.get("enforced_by")
+            for issue_id in e.get("issues", [])}
+        unwaived, _ = surface_lint.lint(
+            copy.deepcopy(self.base_manifest), registry,
+            issue_status=lambda i: "done", req_keys=self.req_keys)
+        self.assertEqual(self.owner_keys(unwaived), expected)
+
+
 class RegistryIntegrityTests(unittest.TestCase):
     """Authoring errors fail loud instead of becoming findings."""
 
@@ -891,6 +1035,44 @@ class ClausePartitionTests(unittest.TestCase):
         source = (REPO_ROOT / "tests" / "test_cli_surface.py").read_text(
             encoding="utf-8")
         self.assertIn("class SelfNamingTests", source)
+
+    def test_no_traceback_authority_exists(self):
+        """The failure-matrix gate the entry names is a real, runnable file.
+
+        IM-282 built the matrix as the clause's measurement; a pointer that
+        went stale would leave the clause unchecked with the table still
+        claiming coverage, exactly the drift the unenforced-owner check
+        exists to prevent.
+        """
+        entry = next(e for e in self.registry["unenforced"]
+                     if e["clause"] == "surface.no-traceback")
+        self.assertIn("im-282-no-traceback.sh", entry["enforced_by"])
+        script = (REPO_ROOT / "tests" / "verification"
+                  / "im-282-no-traceback.sh")
+        self.assertTrue(script.is_file())
+        import os
+        self.assertTrue(os.access(script, os.X_OK))
+        source = script.read_text(encoding="utf-8")
+        self.assertIn("cli-surface.json", source,
+                      "the matrix must derive its verb list from the "
+                      "manifest, not restate it")
+        self.assertIn("COVERS: surface.no-traceback", source)
+
+    def test_stability_discipline_pointer_exists(self):
+        """The reviewed-diff convention the entry names is a real heading.
+
+        IM-285 settled that human review of the manifest diff IS the
+        declaration measurement, so the entry's authority is a discipline
+        recorded in docs/plan.md rather than a check -- and a pointer to a
+        renamed or deleted convention would leave the clause resting on
+        prose that no longer exists.
+        """
+        entry = next(e for e in self.registry["unenforced"]
+                     if e["clause"] == "surface.stability")
+        heading = "Convention: surface governance -- detect, then validate"
+        self.assertIn(heading, entry["enforced_by"])
+        plan = (REPO_ROOT / "docs" / "plan.md").read_text(encoding="utf-8")
+        self.assertIn(f"## {heading}", plan)
 
     def test_store_column_authority_exists(self):
         """Likewise for the `--store` column IM-245 owns.

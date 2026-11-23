@@ -399,8 +399,14 @@ assert_eq "1" "$LEGACY_RC" "legacy mode -> exit 1"
 assert_eq "" "$LEGACY_OUT" "legacy mode keeps stdout empty"
 assert_contains "store mode not active" "$LEGACY_ERR" \
     "legacy error names the precondition"
-assert_contains 'git log -S "FALLBACK_TERM" -- .issues/' "$LEGACY_ERR" \
+# IM-260: the refusal is a one-line payload, so the fallback command's inner
+# quotes arrive backslash-escaped inside detail="...".
+# COVERS: surface.structured-errors
+assert_contains 'git log -S \"FALLBACK_TERM\" -- .issues/' "$LEGACY_ERR" \
     "legacy error carries the exact fallback command (with the requested term)"
+# COVERS: surface.structured-errors
+assert_contains "reason=legacy-mode" "$LEGACY_ERR" \
+    "legacy refusal carries the branchable payload"
 assert_contains "operates only on the issue store" "$LEGACY_ERR" \
     "legacy error names the store-only boundary"
 
@@ -469,6 +475,16 @@ assert_eq "5" "$SENTINEL_LINES" "sentinel-mode returns the same 5 matches"
 # Summary
 # ---------------------------------------------------------------------------
 echo
+# ---------------------------------------------------------------------------
+# IM-260: structured failure payloads (surface.structured-errors)
+# ---------------------------------------------------------------------------
+echo
+echo "--- IM-260: structured failure payloads ---"
+# COVERS: surface.structured-errors
+ERR=$("$SEARCH_HISTORY" 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "missing TERM exits 2"
+assert_contains "reason=missing-query" "$ERR" "missing TERM carries the payload"
+
 echo "----- search-history verification summary -----"
 echo "PASS: $PASS"
 echo "FAIL: $FAIL"

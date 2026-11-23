@@ -21,8 +21,8 @@ Exit codes:
 usage:
   scripts/surface-lint                  # lint; one line per finding
   scripts/surface-lint --waived         # also list what the baseline hides
-  scripts/surface-lint --check-issues   # waiver owners open; exemption
-                                        # decision issues exist
+  scripts/surface-lint --check-issues   # waiver + unenforced owners open;
+                                        # exemption decision issues exist
   scripts/surface-lint --json           # machine-readable findings
   scripts/surface-lint --help
 
@@ -92,8 +92,9 @@ def main(argv=None):
     p.add_argument("--check-issues", action="store_true",
                    help="Resolve each waiver's issue in the store and fail "
                         "when one is done or cancelled (an unowned waiver); "
-                        "also fail an exemption whose decided_by issue the "
-                        "store does not have.")
+                        "likewise each unenforced-table owner issue; also "
+                        "fail an exemption whose decided_by issue the store "
+                        "does not have.")
     p.add_argument("--json", action="store_true",
                    help="Emit a machine-readable JSON document on stdout.")
     p.add_argument("--version", action="version", version=common.VERSION)
@@ -115,8 +116,9 @@ def main(argv=None):
         return 1
 
     if args.check_issues and lookup is None:
-        print("surface-lint: no store resolved, so waiver owners and "
-              "exemption decision issues were not checked", file=sys.stderr)
+        print("surface-lint: no store resolved, so waiver owners, "
+              "unenforced-table owners, and exemption decision issues "
+              "were not checked", file=sys.stderr)
 
     if args.json:
         json.dump({

@@ -241,6 +241,53 @@ class UsageErrorShape(unittest.TestCase):
         self.assertEqual(obj["tool"], "issue create")
 
 
+class NotFoundShape(unittest.TestCase):
+    """IM-260: the point-read not-found condition, distinct on both sides.
+
+    Exit 1 per `output.exit-codes` (a point read exits 1 when the named
+    record was not found), but with its own `not-found` condition key so a
+    caller can tell "the record does not exist" from the generic
+    `precondition-failed` without reading prose. The claim-path
+    counterpart stays `IssueNotFoundError` at exit 7 -- different
+    contract, must not merge.
+    """
+
+    def test_is_a_contract_error_at_exit_1(self):
+        self.assertTrue(issubclass(errors.NotFoundError,
+                                   errors.ContractError))
+        self.assertEqual(errors.NotFoundError("x").exit_code,
+                         errors.EXIT_PRECONDITION)
+        self.assertEqual(errors.NotFoundError("x").error_class, "not-found")
+
+    def test_distinct_from_the_claim_path_class(self):
+        self.assertFalse(issubclass(errors.NotFoundError,
+                                    errors.NotClaimableError))
+        self.assertNotEqual(errors.NotFoundError("x").exit_code,
+                            errors.IssueNotFoundError("x").exit_code)
+
+    def test_key_value_line_names_the_lookup(self):
+        e = errors.NotFoundError("issue file not found: /s/IM/IM-999.md",
+                                 id="IM-999", file="IM/IM-999.md",
+                                 section=None)
+        line = e.format_stderr("issue show")
+        self.assertTrue(line.startswith("issue show: error=not-found"))
+        self.assertIn("id=IM-999", line)
+        self.assertIn("file=IM/IM-999.md", line)
+        self.assertNotIn("section", line)  # None fields are dropped
+        self.assertEqual(len(line.splitlines()), 1)
+
+    def test_json_line(self):
+        e = errors.NotFoundError("section 'X' not found in IM-001",
+                                 id="IM-001", section="X")
+        obj = json.loads(e.format_stderr("issue show", json_mode=True))
+        self.assertEqual(obj["exit"], 1)
+        self.assertEqual(obj["class"], "not-found")
+        self.assertEqual(obj["error"], "not-found")
+        self.assertEqual(obj["id"], "IM-001")
+        self.assertEqual(obj["section"], "X")
+        self.assertEqual(obj["tool"], "issue show")
+
+
 class CreateNonInteractiveGuard(unittest.TestCase):
     """IM-248: `issue create`'s zero-positional prompt needs a TTY.
 

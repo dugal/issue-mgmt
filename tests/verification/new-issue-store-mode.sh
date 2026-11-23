@@ -417,6 +417,52 @@ else
     fail "non-TTY stdin --json (out=$json_out err=$json_err)"
 fi
 
+# --- Structured failure payloads (IM-260 C2): `create` is converted -------
+echo "--- structured failure payloads (surface.structured-errors) ---"
+
+se_err=$( "$SCRIPT" "t" bug high --set-section noequals 2>&1 >/dev/null ); se_rc=$?
+# COVERS: surface.structured-errors
+if [ "$se_rc" -eq 2 ] && printf '%s' "$se_err" | grep -q "reason=bad-operand"; then
+    pass "malformed --set-section exits 2 with the bad-operand payload"
+else
+    fail "malformed --set-section payload (rc=$se_rc err=$se_err)"
+fi
+
+se_err=$( "$SCRIPT" "t" bug high --set-section "A=b" --from-file x 2>&1 >/dev/null ); se_rc=$?
+# COVERS: surface.structured-errors
+if [ "$se_rc" -eq 2 ] && printf '%s' "$se_err" | grep -q "reason=conflicting-flags"; then
+    pass "--set-section with --from-file exits 2 with the conflicting-flags payload"
+else
+    fail "mutual-exclusion payload (rc=$se_rc err=$se_err)"
+fi
+
+SE_DIR="$WORKDIR/structured-legacy"
+mkdir -p "$SE_DIR/.issues"
+echo ZZ > "$SE_DIR/.issues/.prefix"
+se_err=$( cd "$SE_DIR" && env -u ISSUE_STORE_ROOT "$SCRIPT" "t" bogus high 2>&1 >/dev/null ); se_rc=$?
+# COVERS: surface.structured-errors
+if [ "$se_rc" -eq 1 ] && printf '%s' "$se_err" | grep -q "reason=invalid-type"; then
+    pass "invalid type exits 1 with the invalid-type payload"
+else
+    fail "invalid-type payload (rc=$se_rc err=$se_err)"
+fi
+
+se_err=$( cd "$SE_DIR" && env -u ISSUE_STORE_ROOT "$SCRIPT" "t" bug 2>&1 >/dev/null ); se_rc=$?
+# COVERS: surface.structured-errors
+if [ "$se_rc" -eq 1 ] && printf '%s' "$se_err" | grep -q "reason=bad-positional-count"; then
+    pass "wrong positional count exits 1 with the bad-positional-count payload"
+else
+    fail "bad-positional-count payload (rc=$se_rc err=$se_err)"
+fi
+
+se_err=$( "$SCRIPT" "t" bug high --set-section noequals --json 2>&1 >/dev/null ); se_rc=$?
+# COVERS: surface.structured-errors
+if printf '%s' "$se_err" | grep -q '"reason":"bad-operand"'; then
+    pass "--json failure emits the one-line JSON payload on stderr"
+else
+    fail "--json payload (err=$se_err)"
+fi
+
 # --- Summary ---------------------------------------------------------
 echo "---"
 if [[ $fail_count -eq 0 ]]; then

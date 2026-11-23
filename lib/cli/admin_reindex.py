@@ -36,10 +36,11 @@ SURFACE_CLASS = "mutating"
 # store root, which is why `positional` would be the wrong declaration and
 # why IM-251 measured the absent flag as a real gap (added by IM-275).
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C3: every failure path carries the branchable payload (the
+# conflicting store/positional refusal, argparse refusals via
+# `common.structured_parser_errors`, and each missing-directory error).
+# Ratchets: may never revert.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 _DESCRIPTION = """\
 Regenerate INDEX.md from issue-file frontmatter.
@@ -67,7 +68,8 @@ JSON mode (--json): exactly one object on stdout, shape
        "indexes_written": 1, "issues": N}
     ],
     "indexes_written": N,              # summed over targets
-    "issues": N                        # summed over targets
+    "issues": N,                       # summed over targets
+    "dry_run": BOOL                    # true when --dry-run was passed
   }
 
 `targets` is always a list, with a single entry outside --all mode; an
@@ -75,11 +77,16 @@ JSON mode (--json): exactly one object on stdout, shape
 key is present in every mode, so the shape is a function of argv alone.
 The human summary lines are replaced by the JSON document, not duplicated.
 
+--dry-run runs the same scan and emits the same shape -- the counts and
+index paths the real run would write -- but writes no index, makes no
+commit, and takes no lock; `indexes_written` then counts planned writes.
+
 Examples:
   issue admin reindex                    # auto: store mode or nearest .issues/
   issue admin reindex ~/src/issues/      # explicit legacy dir
   issue admin reindex --store ~/personal/issues-store
   issue admin reindex --all              # all .issues/ dirs + the named store
+  issue admin reindex --dry-run          # preview: scan + counts, no writes
   issue admin reindex --json             # machine-readable counts
 """
 
@@ -105,9 +112,16 @@ def register(subparsers):
         help="Walk the workspace for every .issues/ dir (+ the store, when "
              "one is named by --store or ISSUE_STORE_ROOT).",
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Report what would be reindexed without writing.",
+    )
     common.add_store_flag(p)
     common.add_json_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -123,7 +137,7 @@ def _workspace_root() -> Path:
     return cwd
 
 
-def _emit_json(mode, targets) -> None:
+def _emit_json(mode, targets, dry_run) -> None:
     """One JSON document on stdout; informational lines never ride along."""
     payload = {
         "mode": mode,
@@ -132,6 +146,7 @@ def _emit_json(mode, targets) -> None:
         ],
         "indexes_written": sum(t["indexes_written"] for t in targets),
         "issues": sum(t["issues"] for t in targets),
+        "dry_run": dry_run,
     }
     json.dump(payload, sys.stdout, indent=2, sort_keys=False)
     sys.stdout.write("\n")
@@ -139,18 +154,20 @@ def _emit_json(mode, targets) -> None:
 
 def run(args) -> int:
     json_mode = bool(getattr(args, "json_mode", False))
+    dry_run = bool(getattr(args, "dry_run", False))
 
     # The positional and --store select different MODES (a legacy .issues/
     # directory versus a store root), so one invocation naming both has no
     # single meaning -- refuse it rather than silently preferring one
     # (IM-275).
     if args.issues_dir is not None and args.store:
-        print(
-            f"{PROG}: --store names a store root and the positional "
-            f"issues-dir names a legacy .issues/ directory -- pass one or "
-            f"the other, not both",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            errors.UsageError(
+                "--store names a store root and the positional issues-dir "
+                "names a legacy .issues/ directory -- pass one or the "
+                "other, not both",
+                reason="conflicting-flags", flags="--store,issues-dir"),
+            prog=PROG, json_mode=json_mode)
         return errors.EXIT_USAGE
 
     def report(result, collected):
@@ -170,25 +187,34 @@ def run(args) -> int:
                 issues_dir = Path(dirpath) / ".issues"
                 try:
                     report(
-                        reindex_core.reindex_legacy_dir_detail(issues_dir),
+                        reindex_core.reindex_legacy_dir_detail(
+                            issues_dir, dry_run=dry_run
+                        ),
                         targets,
                     )
                 except FileNotFoundError as e:
-                    print(f"Error: {e}", file=sys.stderr)
-                    return 1
+                    common.emit_error(
+                        errors.NotFoundError(str(e)),
+                        prog=PROG, json_mode=json_mode)
+                    return errors.EXIT_PRECONDITION
         # --store overrides the env for the store half of the sweep; the
         # sentinel is deliberately not consulted here, as it never was.
         named_store = args.store or os.environ.get("ISSUE_STORE_ROOT")
         if named_store and Path(named_store).expanduser().is_dir():
             try:
                 report(
-                    _reindex_store(Path(named_store).expanduser()), targets
+                    _reindex_store(
+                        Path(named_store).expanduser(), dry_run=dry_run
+                    ),
+                    targets,
                 )
             except FileNotFoundError as e:
-                print(f"Error: {e}", file=sys.stderr)
-                return 1
+                common.emit_error(
+                    errors.NotFoundError(str(e)),
+                    prog=PROG, json_mode=json_mode)
+                return errors.EXIT_PRECONDITION
         if json_mode:
-            _emit_json("all", targets)
+            _emit_json("all", targets, dry_run)
         elif not targets:
             print(f"No .issues/ directories or store found under {base}.")
         return 0
@@ -199,14 +225,18 @@ def run(args) -> int:
     if args.issues_dir is not None:
         try:
             report(
-                reindex_core.reindex_legacy_dir_detail(args.issues_dir),
+                reindex_core.reindex_legacy_dir_detail(
+                    args.issues_dir, dry_run=dry_run
+                ),
                 targets,
             )
         except FileNotFoundError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+            common.emit_error(
+                errors.NotFoundError(str(e)),
+                prog=PROG, json_mode=json_mode)
+            return errors.EXIT_PRECONDITION
         if json_mode:
-            _emit_json("legacy", targets)
+            _emit_json("legacy", targets, dry_run)
         return 0
 
     # No arg: prefer store mode when detectable.
@@ -215,29 +245,36 @@ def run(args) -> int:
     if store_root is not None:
         store_root = store_root.expanduser()
         try:
-            report(_reindex_store(store_root), targets)
+            report(_reindex_store(store_root, dry_run=dry_run), targets)
         except FileNotFoundError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+            common.emit_error(
+                errors.NotFoundError(str(e)),
+                prog=PROG, json_mode=json_mode)
+            return errors.EXIT_PRECONDITION
         if json_mode:
-            _emit_json("store", targets)
+            _emit_json("store", targets, dry_run)
         return 0
 
     # Legacy fallback: nearest .issues/.
     try:
-        report(reindex_core.reindex_legacy_dir_detail(anchor), targets)
+        report(
+            reindex_core.reindex_legacy_dir_detail(anchor, dry_run=dry_run),
+            targets,
+        )
     except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+        common.emit_error(
+            errors.NotFoundError(str(e)),
+            prog=PROG, json_mode=json_mode)
+        return errors.EXIT_PRECONDITION
     if json_mode:
-        _emit_json("legacy", targets)
+        _emit_json("legacy", targets, dry_run)
     return 0
 
 
-def _reindex_store(store_root) -> dict:
+def _reindex_store(store_root, *, dry_run=False) -> dict:
     # Respect the outer-mutation kill switch exactly as the bash binary did:
     # ISSUE_MGMT_NO_AUTOCOMMIT -> the caller owns the commit, write bare.
     suppress = bool(os.environ.get("ISSUE_MGMT_NO_AUTOCOMMIT"))
     return reindex_core.reindex_store_detail(
-        store_root, suppress_commit=suppress
+        store_root, suppress_commit=suppress, dry_run=dry_run
     )

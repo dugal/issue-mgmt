@@ -108,6 +108,22 @@ def build_parser(groups):
     return parser, history, admin
 
 
+def _targeted_module(groups, argv):
+    """The verb module argv names, or None (unknown verb, bare tier word).
+
+    Convenience-verb argv (e.g. `issue start`) resolves only when a module
+    declares that VERB; a miss returns None and the caller changes nothing.
+    """
+    if not argv or argv[0].startswith("-"):
+        return None
+    if argv[0] in ("history", "admin"):
+        if len(argv) < 2:
+            return None
+        return next(
+            (m for m in groups[argv[0]] if m.VERB == argv[1]), None)
+    return next((m for m in groups["tier1"] if m.VERB == argv[0]), None)
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     groups = cli.discover()
@@ -122,15 +138,23 @@ def main(argv=None):
         return 0
 
     parser, _history, _admin = build_parser(groups)
-    args = parser.parse_args(argv)
-
-    run = getattr(args, "_run", None)
-    if run is None:
-        # No verb resolved (should be unreachable: argparse rejects unknown
-        # verbs with exit 2). Fall back to the tiered help.
-        sys.stdout.write(build_tiered_help(groups))
-        return 0
+    # IM-260: `unrecognized arguments` is reported by the TOP-LEVEL parser
+    # (parse_args collects subcommand extras upward), so a converted verb's
+    # subparser override cannot see it. The dispatcher closes that half:
+    # when the targeted verb declares itself converted, the top-level
+    # refusal also exits through the branchable payload. Unconverted verbs
+    # and unknown verbs keep argparse's prose exit unchanged.
+    target = _targeted_module(groups, argv)
+    if getattr(target, "SURFACE_STRUCTURED_ERRORS", "") == "converted":
+        common.structured_parser_errors(parser)
     try:
+        args = parser.parse_args(argv)
+        run = getattr(args, "_run", None)
+        if run is None:
+            # No verb resolved (should be unreachable: argparse rejects
+            # unknown verbs with exit 2). Fall back to the tiered help.
+            sys.stdout.write(build_tiered_help(groups))
+            return 0
         return run(args)
     except errors.ContractError as err:
         # Dispatcher backstop (IM-294): a ContractError a verb did not
@@ -138,7 +162,10 @@ def main(argv=None):
         # inside the shared store-resolution chain, below every verb's own
         # error handling -- exits through the branchable payload instead of
         # a traceback (`surface.no-traceback`). Verbs that already catch
-        # and render never reach this. The prog and the json opt-in are
+        # and render never reach this. parse_args sits inside the same
+        # backstop because a converted verb's argparse refusals raise
+        # `UsageError` through `common.structured_parser_errors` (IM-260).
+        # The prog and the json opt-in are
         # derived from argv, keeping output a function of argv alone.
         if argv[0] in ("history", "admin") and len(argv) > 1:
             prog = f"issue {argv[0]} {argv[1]}"

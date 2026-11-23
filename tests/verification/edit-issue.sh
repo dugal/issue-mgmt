@@ -838,6 +838,38 @@ assert_eq "ordered" "$J11_TAIL" \
     "J.11 follow-up append landed after the fenced block (true section end)"
 
 # ---------------------------------------------------------------------------
+# Structured failure payloads (IM-260 C2): `edit` is converted
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- structured failure payloads (surface.structured-errors) ---"
+
+RC=0; ERR=$("$EDIT_ISSUE" 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "2" "$RC" "edit with no ID exits 2"
+assert_contains "reason=missing-id" "$ERR" "edit missing-id payload"
+
+RC=0; ERR=$(cd "$LEGACY" && "$EDIT_ISSUE" IM-001 --set status=done 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "2" "$RC" "guarded field exits 2"
+assert_contains "reason=guarded-field" "$ERR" "guarded-field payload"
+assert_contains "field=status" "$ERR" "guarded-field payload names the field"
+
+RC=0; ERR=$(cd "$LEGACY" && "$EDIT_ISSUE" IM-001 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "2" "$RC" "no-op invocation exits 2"
+assert_contains "reason=nothing-to-do" "$ERR" "nothing-to-do payload"
+
+RC=0; ERR=$(cd "$LEGACY" && "$EDIT_ISSUE" IM-999 --set priority=low 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "1" "$RC" "missing issue exits 1"
+assert_contains "error=not-found" "$ERR" "edit not-found payload"
+
+RC=0; ERR=$(cd "$LEGACY" && "$EDIT_ISSUE" IM-001 --set status=done --json 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_contains '"reason":"guarded-field"' "$ERR" \
+    "--json failure emits the one-line JSON payload on stderr"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

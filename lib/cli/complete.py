@@ -33,10 +33,10 @@ ORDER = 20
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C2: converted -- every non-loser-side failure path exits through
+# the branchable payload (the loser-side 3-7 contract was already
+# structured). Ratchets: may never revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 
 _DESCRIPTION = """\
 Mark an issue done. On an `open` issue this performs
@@ -70,6 +70,7 @@ def register(subparsers):
     common.add_lock_timeout_flag(p)
     common.add_store_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -77,11 +78,17 @@ def register(subparsers):
 def run(args):
     prog = "issue complete"
     if not args.issue_id:
-        print(f"{prog}: missing issue ID (use -h for usage)", file=sys.stderr)
+        common.emit_error(
+            errors.UsageError("missing issue ID (use -h for usage)",
+                              reason="missing-id"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
     if args.claim_generation is not None and args.claim_generation < 0:
-        print(f"{prog}: --claim-generation must be a non-negative integer",
-              file=sys.stderr)
+        common.emit_error(
+            errors.UsageError(
+                "--claim-generation must be a non-negative integer",
+                reason="invalid-value", flag="--claim-generation"),
+            prog=prog, json_mode=args.json_mode)
         return errors.EXIT_USAGE
     return transition._execute_transition(
         args.issue_id, "done", reason=args.reason,

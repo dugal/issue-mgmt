@@ -478,6 +478,37 @@ rc=$?
 # COVERS: surface.one-meaning-per-flag
 assert_eq 2 "$rc" "E6: edit refuses a conflicting kind (exit 2)"
 
+# ---------------------------------------------------------------------------
+# Structured failure payloads (IM-260 C2): `dep` is converted
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- structured failure payloads (surface.structured-errors) ---"
+
+rc=0; err=$( cd "$REPO_A" && "$DEP" bogussub DOUG-064 x 2>&1 >/dev/null ) || rc=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$rc" "SE1: unknown subcommand exits 2"
+assert_contains "reason=unknown-subcommand" "$err" "SE1: unknown-subcommand payload"
+
+rc=0; err=$( cd "$REPO_A" && "$DEP" add DOUG-064 2>&1 >/dev/null ) || rc=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$rc" "SE2: missing operand exits 2"
+assert_contains "reason=missing-operand" "$err" "SE2: missing-operand payload"
+
+rc=0; err=$( cd "$REPO_A" && "$DEP" add DOUG-064 bogus:RM-001 2>&1 >/dev/null ) || rc=$?
+# COVERS: surface.structured-errors
+assert_eq 2 "$rc" "SE3: bad dependency kind exits 2"
+assert_contains "reason=bad-operand" "$err" "SE3: bad-kind payload"
+
+rc=0; err=$( cd "$REPO_A" && "$DEP" list DOUG-999 2>&1 >/dev/null ) || rc=$?
+# COVERS: surface.structured-errors
+assert_eq 1 "$rc" "SE4: list on a missing issue exits 1"
+assert_contains "error=not-found" "$err" "SE4: list not-found payload"
+
+rc=0; err=$( cd "$REPO_A" && "$DEP" add DOUG-064 bogus:RM-001 --json 2>&1 >/dev/null ) || rc=$?
+# COVERS: surface.structured-errors
+assert_contains '"reason":"bad-operand"' "$err" \
+    "SE5: --json failure emits the one-line JSON payload on stderr"
+
 echo
 echo "im-153-issue-dep: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]

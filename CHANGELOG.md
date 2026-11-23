@@ -2,6 +2,89 @@
 
 ## [Unreleased]
 
+## [v3.7.0] - 2026-11-22
+
+### Added
+- `--dry-run` on the three multi-file admin verbs that lacked it --
+  `admin reindex` (including `--all`), `admin snapshot`, and
+  `admin install-skills`. Each preview emits the shape the real run
+  would emit and writes nothing: no file write, no commit, no index
+  regeneration, and no lock (a preview contends with nobody). The
+  snapshot preview names exactly the pending paths the real run would
+  commit; the install-skills preview distinguishes new installs from
+  overwrites. Under `--json` every run of the three verbs now carries an
+  unconditional `dry_run` boolean (matching `admin init-store` /
+  `admin reap`), and install-skills entries carry a per-entry `existed`
+  boolean on real runs too -- backward-compatible additions to the
+  documented shapes. Byte-identity proven per verb by
+  `tests/verification/im-259-admin-dry-run.sh`. (IM-259)
+- New failure-matrix no-traceback gate
+  (`tests/verification/im-282-no-traceback.sh`): every verb on the
+  surface -- the list derived from `docs/cli-surface.json`, never a hand
+  list -- is driven through generic failure inductions (unknown flag,
+  exhausted stdin, unresolvable id, unresolvable store) plus targeted
+  malformed-operand inductions, asserting no Python traceback reaches
+  stderr. First full run: 125/125 clean, so `surface.no-traceback` now
+  has a measured clean baseline and the gate is named as its
+  `enforced_by` authority. Dev-tree only; nothing ships in the tarball.
+  (IM-282)
+- `surface-lint --check-issues` resolves `unenforced`-table owners
+  against the store the same way it resolves waiver owners: an entry
+  whose only ownership is `issues` fails per named issue that is done,
+  cancelled, or missing (`unowned-unenforced` finding, unwaivable);
+  an entry naming an `enforced_by` authority needs no open issue.
+  Closes the asymmetry that let two stale entries survive the v3.4.1
+  release (the IM-275 / IM-261 declaration-drift class). (IM-282)
+
+### Changed
+- Every verb on the surface -- all 28 -- now carries the branchable
+  structured-errors payload on every failure path: a stable `key=value`
+  stderr line naming the condition (`error=`, `reason=`, and the
+  recovery fields), and the same condition as a one-line JSON object on
+  stderr under `--json`, extending the loser-side `concurrency.exit-17`
+  design to argument and precondition failures surface-wide. No exit
+  code moved and the old prose rides in `detail=`, so existing greps and
+  the documented exit-2 diagnostic substrings keep matching; `--json`
+  stdout stays one clean document. argparse's own refusals
+  (`unrecognized arguments`, bad flag values, missing operands) are in
+  scope: a converted verb's parser exits through the payload too, via a
+  per-verb override plus a dispatcher-level hook for the top-level
+  parser that keys on the verb's own conversion declaration. New
+  `errors.NotFoundError` (exit 1, `error=not-found`) is the shared
+  point-read and per-record miss condition, distinct from the exit-7
+  claim-path class. Zero-result exits on the enumeration reads are
+  results, not failures, and deliberately carry no payload. The
+  manifest's `structured_errors` unconverted set is EMPTY, the ratchet
+  (manifest-to-clause equality, derived from the requirement sentence)
+  is green, and `surface.structured-errors` flips to `[implemented]`.
+  Payload shapes asserted per verb by `# COVERS:
+  surface.structured-errors` checks across the verification suite.
+  (IM-260)
+- The five passthrough admin verbs (`admin init-store`, `init-project`,
+  `migrate`, `selftest`, `install-skills`) are argparse-native: the
+  hand-walked argv loops, `prefix_chars="\x00"` passthrough subparsers,
+  and `SURFACE_PARSER` / `SURFACE_MANUAL_FLAGS` declarations are
+  retired, and the extractor's special-case paths are deleted -- a
+  passthrough subparser or a resurrected declaration now fails the
+  manifest build. Flag sets, `--json` shapes, and exit codes are
+  preserved; three text normalizations ship with the port (recorded on
+  the issue): `--version` on `selftest` / `install-skills` prints the
+  bare version like every other verb, unknown arguments refuse via
+  argparse's `unrecognized arguments` wording, and a missing `--store` /
+  `--project` reports through argparse's required-argument message --
+  all at the same exit codes. (IM-272)
+- `surface.stability`'s declaration half is enforced by the reviewed-diff
+  discipline by owner decision: human review of each manifest diff IS
+  the measurement (the IM-284 single-consumer ground), so no removal
+  ledger is built and the `unenforced` entry names the manifest diff
+  test plus the plan.md surface-governance convention as its authority.
+  (IM-285)
+- The surface section of `docs/requirements.md` carries no issue IDs or
+  reword history: the decision narratives moved to `docs/spec.md` under
+  "Surface-clause decision history", reached by `[-> IM-NNN]` backrefs,
+  with every requirement key and `[implemented]`/`[planned]` marker
+  unchanged. (IM-274)
+
 ## [v3.6.2] - 2026-11-22
 
 ### Added

@@ -447,6 +447,38 @@ assert_eq "0" "$RC" "--version exits 0"
 assert_contains "v" "$VOUT" "--version output begins with a v-prefixed string"
 
 # ---------------------------------------------------------------------------
+# Structured failure payloads (IM-260 C2): `note` is converted
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- structured failure payloads (surface.structured-errors) ---"
+
+RC=0; ERR=$(cd "$LEGACY" && "$ISSUE_NOTE" 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "2" "$RC" "note with no ID exits 2"
+assert_contains "reason=missing-id" "$ERR" "note missing-id payload"
+
+RC=0; ERR=$(cd "$LEGACY" && "$ISSUE_NOTE" IM-001 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "2" "$RC" "note with no text exits 2"
+assert_contains "reason=missing-text" "$ERR" "note missing-text payload"
+
+RC=0; ERR=$(cd "$LEGACY" && "$ISSUE_NOTE" IM-001 "x" --date junk --no-reindex 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "2" "$RC" "bad --date exits 2"
+assert_contains "reason=invalid-value" "$ERR" "bad --date payload"
+assert_contains "flag=--date" "$ERR" "bad --date payload names the flag"
+
+RC=0; ERR=$(cd "$LEGACY" && "$ISSUE_NOTE" IM-999 "x" --no-reindex 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_eq "1" "$RC" "missing issue exits 1"
+assert_contains "error=not-found" "$ERR" "note not-found payload"
+
+RC=0; ERR=$(cd "$LEGACY" && "$ISSUE_NOTE" IM-001 "x" --date junk --json 2>&1 >/dev/null) || RC=$?
+# COVERS: surface.structured-errors
+assert_contains '"reason":"invalid-value"' "$ERR" \
+    "--json failure emits the one-line JSON payload on stderr"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

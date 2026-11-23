@@ -11,18 +11,18 @@
   "schema": 2,
   "totals": {
     "flag_names": 62,
-    "flag_registrations": 222,
+    "flag_registrations": 225,
     "verbs": 28
   },
   "verbs": [
     {
       "flags": [
         {
-          "action": "store_true",
+          "action": "help",
           "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
           "dest": "help",
           "hidden": false,
           "metavar": null,
@@ -128,16 +128,16 @@
             "--store"
           ],
           "nargs": null,
-          "source": "local",
+          "source": "common.add_store_flag",
           "synonym_of": null,
           "type": null
         },
         {
-          "action": "store_true",
+          "action": "version",
           "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
           "dest": "version",
           "hidden": false,
           "metavar": null,
@@ -147,7 +147,7 @@
             "--version"
           ],
           "nargs": 0,
-          "source": "local",
+          "source": "common.add_version_flag",
           "synonym_of": null,
           "type": null
         }
@@ -156,10 +156,9 @@
       "module": "cli.admin_init_project",
       "mutually_exclusive_groups": [],
       "parser": {
-        "add_help": false,
-        "internal_prog": "issue admin init-project",
-        "kind": "argparse-internal",
-        "passthrough": true
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
       },
       "path": "issue admin init-project",
       "positionals": [],
@@ -168,16 +167,12 @@
           "issue admin init-project"
         ],
         "dispatcher": "issue admin init-project",
-        "message_prefixes": [
-          "concurrent-edit"
-        ],
-        "usage_names": [
-          "issue admin init-project"
-        ]
+        "message_prefixes": [],
+        "usage_names": []
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "init-project",
       "verb_class": "scaffolding"
@@ -204,11 +199,11 @@
           "type": null
         },
         {
-          "action": "store_true",
+          "action": "help",
           "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
           "dest": "help",
           "hidden": false,
           "metavar": null,
@@ -281,11 +276,11 @@
           "type": null
         },
         {
-          "action": "store_true",
+          "action": "version",
           "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
           "dest": "version",
           "hidden": false,
           "metavar": null,
@@ -295,7 +290,7 @@
             "--version"
           ],
           "nargs": 0,
-          "source": "local",
+          "source": "common.add_version_flag",
           "synonym_of": null,
           "type": null
         }
@@ -304,10 +299,9 @@
       "module": "cli.admin_init_store",
       "mutually_exclusive_groups": [],
       "parser": {
-        "add_help": false,
-        "internal_prog": "issue admin init-store",
-        "kind": "argparse-internal",
-        "passthrough": true
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
       },
       "path": "issue admin init-store",
       "positionals": [],
@@ -317,101 +311,13 @@
         ],
         "dispatcher": "issue admin init-store",
         "message_prefixes": [],
-        "usage_names": [
-          "issue admin init-store"
-        ]
-      },
-      "record_fields": [],
-      "store": "flag",
-      "structured_errors": "unconverted",
-      "tier": "admin",
-      "verb": "init-store",
-      "verb_class": "scaffolding"
-    },
-    {
-      "flags": [
-        {
-          "action": "help",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": false,
-          "dest": null,
-          "hidden": false,
-          "metavar": null,
-          "mutex_group": null,
-          "name": "--help",
-          "names": [
-            "-h",
-            "--help"
-          ],
-          "nargs": null,
-          "source": "manual-declaration",
-          "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "store_true",
-          "choices": null,
-          "const": null,
-          "default": false,
-          "default_suppressed": false,
-          "dest": "json_mode",
-          "hidden": false,
-          "metavar": null,
-          "mutex_group": null,
-          "name": "--json",
-          "names": [
-            "--json"
-          ],
-          "nargs": null,
-          "source": "manual-declaration",
-          "synonym_of": null,
-          "type": null
-        },
-        {
-          "action": "version",
-          "choices": null,
-          "const": null,
-          "default": null,
-          "default_suppressed": false,
-          "dest": null,
-          "hidden": false,
-          "metavar": null,
-          "mutex_group": null,
-          "name": "--version",
-          "names": [
-            "--version"
-          ],
-          "nargs": null,
-          "source": "manual-declaration",
-          "synonym_of": null,
-          "type": null
-        }
-      ],
-      "generation_fields": [],
-      "module": "cli.admin_install_skills",
-      "mutually_exclusive_groups": [],
-      "parser": {
-        "add_help": false,
-        "kind": "manual",
-        "passthrough": true
-      },
-      "path": "issue admin install-skills",
-      "positionals": [],
-      "prog": {
-        "declared": [
-          "issue admin install-skills"
-        ],
-        "dispatcher": "issue admin install-skills",
-        "message_prefixes": [],
         "usage_names": []
       },
       "record_fields": [],
-      "store": "none",
-      "structured_errors": "unconverted",
+      "store": "flag",
+      "structured_errors": "converted",
       "tier": "admin",
-      "verb": "install-skills",
+      "verb": "init-store",
       "verb_class": "scaffolding"
     },
     {
@@ -436,11 +342,11 @@
           "type": null
         },
         {
-          "action": "store_true",
+          "action": "help",
           "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
           "dest": "help",
           "hidden": false,
           "metavar": null,
@@ -470,7 +376,112 @@
             "--json"
           ],
           "nargs": 0,
+          "source": "common.add_json_flag",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "version",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "version",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--version",
+          "names": [
+            "--version"
+          ],
+          "nargs": 0,
+          "source": "common.add_version_flag",
+          "synonym_of": null,
+          "type": null
+        }
+      ],
+      "generation_fields": [],
+      "module": "cli.admin_install_skills",
+      "mutually_exclusive_groups": [],
+      "parser": {
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
+      },
+      "path": "issue admin install-skills",
+      "positionals": [],
+      "prog": {
+        "declared": [
+          "issue admin install-skills"
+        ],
+        "dispatcher": "issue admin install-skills",
+        "message_prefixes": [],
+        "usage_names": []
+      },
+      "record_fields": [],
+      "store": "none",
+      "structured_errors": "converted",
+      "tier": "admin",
+      "verb": "install-skills",
+      "verb_class": "scaffolding"
+    },
+    {
+      "flags": [
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "dry_run",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--dry-run",
+          "names": [
+            "--dry-run"
+          ],
+          "nargs": 0,
           "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "help",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
+          "dest": "help",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--help",
+          "names": [
+            "-h",
+            "--help"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "json_mode",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--json",
+          "names": [
+            "--json"
+          ],
+          "nargs": 0,
+          "source": "common.add_json_flag",
           "synonym_of": null,
           "type": null
         },
@@ -489,7 +500,7 @@
             "--lock-timeout"
           ],
           "nargs": null,
-          "source": "local",
+          "source": "common.add_lock_timeout_flag",
           "synonym_of": null,
           "type": "float"
         },
@@ -584,16 +595,16 @@
             "--store"
           ],
           "nargs": null,
-          "source": "local",
+          "source": "common.add_store_flag",
           "synonym_of": null,
           "type": null
         },
         {
-          "action": "store_true",
+          "action": "version",
           "choices": null,
-          "const": true,
-          "default": false,
-          "default_suppressed": false,
+          "const": null,
+          "default": null,
+          "default_suppressed": true,
           "dest": "version",
           "hidden": false,
           "metavar": null,
@@ -603,7 +614,7 @@
             "--version"
           ],
           "nargs": 0,
-          "source": "local",
+          "source": "common.add_version_flag",
           "synonym_of": null,
           "type": null
         }
@@ -612,10 +623,9 @@
       "module": "cli.admin_migrate",
       "mutually_exclusive_groups": [],
       "parser": {
-        "add_help": false,
-        "internal_prog": "issue admin migrate",
-        "kind": "argparse-internal",
-        "passthrough": true
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
       },
       "path": "issue admin migrate",
       "positionals": [],
@@ -625,13 +635,11 @@
         ],
         "dispatcher": "issue admin migrate",
         "message_prefixes": [],
-        "usage_names": [
-          "issue admin migrate"
-        ]
+        "usage_names": []
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "migrate",
       "verb_class": "mutating"
@@ -814,7 +822,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "reap",
       "verb_class": "mutating"
@@ -834,6 +842,25 @@
           "name": "--all",
           "names": [
             "--all"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "dry_run",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--dry-run",
+          "names": [
+            "--dry-run"
           ],
           "nargs": 0,
           "source": "local",
@@ -951,7 +978,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "reindex",
       "verb_class": "mutating"
@@ -963,8 +990,8 @@
           "choices": null,
           "const": null,
           "default": null,
-          "default_suppressed": false,
-          "dest": null,
+          "default_suppressed": true,
+          "dest": "help",
           "hidden": false,
           "metavar": null,
           "mutex_group": null,
@@ -973,15 +1000,15 @@
             "-h",
             "--help"
           ],
-          "nargs": null,
-          "source": "manual-declaration",
+          "nargs": 0,
+          "source": "local",
           "synonym_of": null,
           "type": null
         },
         {
           "action": "store_true",
           "choices": null,
-          "const": null,
+          "const": true,
           "default": false,
           "default_suppressed": false,
           "dest": "json_mode",
@@ -992,8 +1019,8 @@
           "names": [
             "--json"
           ],
-          "nargs": null,
-          "source": "manual-declaration",
+          "nargs": 0,
+          "source": "common.add_json_flag",
           "synonym_of": null,
           "type": null
         },
@@ -1002,8 +1029,8 @@
           "choices": null,
           "const": null,
           "default": null,
-          "default_suppressed": false,
-          "dest": null,
+          "default_suppressed": true,
+          "dest": "version",
           "hidden": false,
           "metavar": null,
           "mutex_group": null,
@@ -1011,8 +1038,8 @@
           "names": [
             "--version"
           ],
-          "nargs": null,
-          "source": "manual-declaration",
+          "nargs": 0,
+          "source": "common.add_version_flag",
           "synonym_of": null,
           "type": null
         }
@@ -1021,9 +1048,9 @@
       "module": "cli.admin_selftest",
       "mutually_exclusive_groups": [],
       "parser": {
-        "add_help": false,
-        "kind": "manual",
-        "passthrough": true
+        "add_help": true,
+        "kind": "argparse",
+        "passthrough": false
       },
       "path": "issue admin selftest",
       "positionals": [],
@@ -1047,7 +1074,7 @@
       },
       "record_fields": [],
       "store": "pinned",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "selftest",
       "verb_class": "scaffolding"
@@ -1072,6 +1099,25 @@
           "source": "common.add_commit_timeout_flag",
           "synonym_of": null,
           "type": "float"
+        },
+        {
+          "action": "store_true",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "default_suppressed": false,
+          "dest": "dry_run",
+          "hidden": false,
+          "metavar": null,
+          "mutex_group": null,
+          "name": "--dry-run",
+          "names": [
+            "--dry-run"
+          ],
+          "nargs": 0,
+          "source": "local",
+          "synonym_of": null,
+          "type": null
         },
         {
           "action": "help",
@@ -1171,7 +1217,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "snapshot",
       "verb_class": "mutating"
@@ -1270,7 +1316,7 @@
       },
       "record_fields": [],
       "store": "none",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "admin",
       "verb": "validate",
       "verb_class": "point-read"
@@ -1466,7 +1512,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "block",
       "verb_class": "mutating"
@@ -1662,7 +1708,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "cancel",
       "verb_class": "mutating"
@@ -1858,7 +1904,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "complete",
       "verb_class": "mutating"
@@ -2073,7 +2119,7 @@
         "created"
       ],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "create",
       "verb_class": "mutating"
@@ -2283,18 +2329,17 @@
       ],
       "prog": {
         "declared": [
-          "issue dep"
-        ],
-        "dispatcher": "issue dep",
-        "message_prefixes": [
+          "issue dep",
           "issue dep add",
           "issue dep remove"
         ],
+        "dispatcher": "issue dep",
+        "message_prefixes": [],
         "usage_names": []
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "dep",
       "verb_class": "mutating"
@@ -2909,7 +2954,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "edit",
       "verb_class": "mutating"
@@ -3073,7 +3118,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "history",
       "verb": "activity",
       "verb_class": "enumeration-read"
@@ -3210,7 +3255,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "history",
       "verb": "at",
       "verb_class": "point-read"
@@ -3366,7 +3411,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "history",
       "verb": "search",
       "verb_class": "enumeration-read"
@@ -3503,7 +3548,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "history",
       "verb": "show",
       "verb_class": "point-read"
@@ -3662,14 +3707,12 @@
           "issue index"
         ],
         "dispatcher": "issue index",
-        "message_prefixes": [
-          "issue index"
-        ],
+        "message_prefixes": [],
         "usage_names": []
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "index",
       "verb_class": "enumeration-read"
@@ -3831,7 +3874,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "list",
       "verb_class": "enumeration-read"
@@ -4040,7 +4083,7 @@
         "note"
       ],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "note",
       "verb_class": "mutating"
@@ -4225,7 +4268,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "ready",
       "verb_class": "enumeration-read"
@@ -4436,14 +4479,12 @@
           "issue search"
         ],
         "dispatcher": "issue search",
-        "message_prefixes": [
-          "issue search"
-        ],
+        "message_prefixes": [],
         "usage_names": []
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "search",
       "verb_class": "enumeration-read"
@@ -4620,7 +4661,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "show",
       "verb_class": "point-read"
@@ -4856,7 +4897,7 @@
         "claim.lease_until"
       ],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "start",
       "verb_class": "mutating"
@@ -5163,7 +5204,7 @@
         "claim.lease_until"
       ],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "transition",
       "verb_class": "mutating"
@@ -5381,7 +5422,7 @@
       },
       "record_fields": [],
       "store": "flag",
-      "structured_errors": "unconverted",
+      "structured_errors": "converted",
       "tier": "tier1",
       "verb": "unblock",
       "verb_class": "mutating"

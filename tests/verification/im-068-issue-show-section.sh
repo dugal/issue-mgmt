@@ -362,10 +362,13 @@ assert_contains "=== IM-001 ===" "$OUT_STDOUT" "mixed-success: IM-001 rendered t
 assert_contains "=== IM-002 ===" "$OUT_STDOUT" "mixed-success: IM-002 rendered to stdout"
 assert_not_contains "=== IM-999 ===" "$OUT_STDOUT" \
     "mixed-success: failed id does NOT appear in stdout"
-assert_contains "=== IM-999 ===" "$OUT_STDERR" \
-    "mixed-success: failed id appears in stderr"
-assert_contains "[error:" "$OUT_STDERR" \
-    "mixed-success: stderr line carries [error: ...]"
+# IM-260: the per-id failure is one branchable payload line whose `id=`
+# field replaces the former `=== <id> === [error: ...]` stderr header.
+# COVERS: surface.structured-errors
+assert_contains "id=IM-999" "$OUT_STDERR" \
+    "mixed-success: failed id named in the stderr payload"
+assert_contains "error=not-found" "$OUT_STDERR" \
+    "mixed-success: stderr line carries the not-found payload"
 
 # ---------------------------------------------------------------------------
 # Section H: Multi-id JSON mode
@@ -517,6 +520,61 @@ if find "$STORE" -type d -name ".locks" 2>/dev/null | grep -q .; then
 else
     pass "no .locks/ directory created by issue-show"
 fi
+
+# ---------------------------------------------------------------------------
+# Section M: Structured failure payloads (IM-260 conversion; `show` is the
+# exemplar converted verb -- every failure path carries the branchable
+# key=value stderr line, and the same condition as one-line JSON under --json)
+# ---------------------------------------------------------------------------
+echo
+echo "[M] Structured failure payloads (surface.structured-errors)"
+
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_SHOW" 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "missing ID exits 2"
+assert_contains "error=usage-error" "$ERR" "missing ID carries the payload"
+assert_contains "reason=missing-id" "$ERR" "missing ID names its reason"
+
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_SHOW" IM-999 2>&1 >/dev/null); RC=$?
+assert_eq 1 "$RC" "missing issue exits 1 (point-read not-found rule)"
+assert_contains "error=not-found" "$ERR" "missing issue carries not-found"
+assert_contains "id=IM-999" "$ERR" "missing issue payload names the id"
+
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_SHOW" IM-001 --section "No Such Section" 2>&1 >/dev/null); RC=$?
+assert_eq 1 "$RC" "missing section exits 1"
+assert_contains "error=not-found" "$ERR" "missing section carries not-found"
+assert_contains 'section="No Such Section"' "$ERR" \
+    "missing section payload names the section"
+
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_SHOW" IM-001 --no-body --section Summary 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "conflicting flags exit 2"
+assert_contains "reason=conflicting-flags" "$ERR" \
+    "conflicting flags name their reason"
+
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_SHOW" IM-001 --bogus-flag 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unrecognized flag exits 2"
+assert_contains "reason=bad-arguments" "$ERR" \
+    "argparse refusal exits through the payload (dispatcher override)"
+
+# COVERS: surface.structured-errors
+# `--json <fields>` sets json mode, so the payload is the one-line JSON.
+ERR=$("$ISSUE_SHOW" IM-001 --json nosuchfield 2>&1 >/dev/null); RC=$?
+assert_eq 2 "$RC" "unknown --json field exits 2"
+assert_contains '"reason":"bad-json-field"' "$ERR" \
+    "unknown --json field names its reason"
+
+# COVERS: surface.structured-errors
+ERR=$("$ISSUE_SHOW" IM-999 --json 2>&1 >/dev/null); RC=$?
+assert_eq 1 "$RC" "missing issue under --json exits 1"
+assert_contains '"class":"not-found"' "$ERR" \
+    "--json failure emits the one-line JSON payload on stderr"
+OUT=$("$ISSUE_SHOW" IM-999 --json 2>/dev/null)
+assert_contains '"error": "issue file not found' "$OUT" \
+    "--json stdout keeps the documented per-id error document"
 
 # ---------------------------------------------------------------------------
 # Summary

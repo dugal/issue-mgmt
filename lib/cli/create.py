@@ -54,10 +54,10 @@ ORDER = 10
 # Surface-manifest declarations (IM-245); protocol table in lib/cli/__init__.py.
 SURFACE_CLASS = "mutating"
 SURFACE_STORE = "flag"
-# IM-254: `unconverted` until every failure path on this verb carries the
-# key=value payload; the set is enumerated, never waived, and only shrinks
-# (conversion work is IM-260).
-SURFACE_STRUCTURED_ERRORS = "unconverted"
+# IM-260 C2: converted -- every non-loser-side failure path exits through
+# the branchable payload (the loser-side 3-7 contract was already
+# structured). Ratchets: may never revert to `unconverted`.
+SURFACE_STRUCTURED_ERRORS = "converted"
 # IM-250 / IM-262: `created` is the new issue's own creation date, read from
 # the clock and written into the record -- record content, not a stamp
 # describing this render. Declared so an ambient value cannot reach `--json`
@@ -147,6 +147,7 @@ def register(subparsers):
     common.add_lock_timeout_flag(p)
     common.add_no_reindex_flag(p)
     common.add_version_flag(p)
+    common.structured_parser_errors(p)
     p.set_defaults(_run=run)
     return p
 
@@ -284,13 +285,16 @@ def _build_issue_text(template_path, id_, title, type_, priority, today,
     return "---\n" + "\n".join(fm_lines) + "\n" + "---\n" + body_text
 
 
-def _validate(value, options, label):
+def _validate(value, options, label, json_mode=False):
     if value not in options:
-        print(
-            f"Error: invalid {label} '{value}'. Must be one of: "
-            f"{' '.join(options)}",
-            file=sys.stderr,
-        )
+        import errors as _errors
+        common.emit_error(
+            _errors.PreconditionError(
+                f"invalid {label} '{value}'. Must be one of: "
+                f"{' '.join(options)}",
+                reason=f"invalid-{label}", value=value,
+                valid=",".join(options)),
+            prog=PROG, json_mode=json_mode)
         return False
     return True
 
@@ -311,20 +315,23 @@ def _stdin_is_tty() -> bool:
 
 def run(args) -> int:
     # --- argument shape / body-input validation (new-issue.sh order) ---
+    import errors as _errors
     section_pairs = []
     for spec in args.set_sections:
         if "=" not in spec:
-            print(
-                f"Error: --set-section requires NAME=TEXT format "
-                f"(got '{spec}')",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                _errors.UsageError(
+                    f"--set-section requires NAME=TEXT format (got '{spec}')",
+                    reason="bad-operand", flag="--set-section"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
         name, _, text = spec.partition("=")
         if not name:
-            print(
-                "Error: --set-section NAME must be non-empty", file=sys.stderr
-            )
+            common.emit_error(
+                _errors.UsageError(
+                    "--set-section NAME must be non-empty",
+                    reason="bad-operand", flag="--set-section"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
         # IM-291: the IM-174 escaping-header guard, here at parse time --
         # before any store is resolved or any directory created -- so a
@@ -335,15 +342,20 @@ def run(args) -> int:
         try:
             _fm.check_body_nests(text, "", f"--set-section {name!r}")
         except ValueError as e:
-            print(f"{PROG}: {e}", file=sys.stderr)
+            common.emit_error(
+                _errors.UsageError(str(e), reason="escaping-header",
+                                   flag="--set-section"),
+                prog=PROG, json_mode=args.json_mode)
             return 2
         section_pairs.append((name, text))
 
     if section_pairs and args.from_file:
-        print(
-            "Error: --set-section and --from-file are mutually exclusive",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            _errors.UsageError(
+                "--set-section and --from-file are mutually exclusive",
+                reason="conflicting-flags",
+                flags="--set-section,--from-file"),
+            prog=PROG, json_mode=args.json_mode)
         return 2
 
     # IM-248: the zero-positional form prompts, and an unanswerable prompt is
@@ -355,7 +367,6 @@ def run(args) -> int:
     # Checked ahead of the stdin staging below so `--from-file -` cannot
     # consume a stream the verb is about to refuse.
     if not args.words and not _stdin_is_tty():
-        import errors as _errors
         common.emit_error(
             _errors.UsageError(
                 "stdin is not a TTY, so the interactive prompt for title, "
@@ -379,10 +390,12 @@ def run(args) -> int:
             f.write(sys.stdin.buffer.read())
     elif args.from_file:
         if not os.access(args.from_file, os.R_OK):
-            print(
-                f"Error: --from-file path not readable: {args.from_file}",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                _errors.PreconditionError(
+                    f"--from-file path not readable: {args.from_file}",
+                    reason="unreadable-file", flag="--from-file",
+                    file=args.from_file),
+                prog=PROG, json_mode=args.json_mode)
             return 1
         from_file_staged = args.from_file
 
@@ -397,6 +410,7 @@ def run(args) -> int:
 
 
 def _run_inner(args, section_pairs, from_file_staged) -> int:
+    import errors as _errors
     anchor = _find_project_anchor()
     store_root = _resolve_store_root(anchor, args.store)
 
@@ -407,33 +421,38 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
         else:
             repo_name = _repo.resolve_main_basename()
             if not repo_name:
-                print(
-                    "Error: store mode requires --repo NAME or a git repository\n"
-                    f"       (cwd: {os.getcwd()})",
-                    file=sys.stderr,
-                )
+                common.emit_error(
+                    _errors.PreconditionError(
+                        "store mode requires --repo NAME or a git "
+                        f"repository (cwd: {os.getcwd()})",
+                        reason="no-repo-identity"),
+                    prog=PROG, json_mode=args.json_mode)
                 return 1
 
         registry_prefix = _lookup_repo_prefix(store_root, repo_name)
         if not registry_prefix:
-            print(
-                f"Error: repo '{repo_name}' is not registered in "
-                f"{store_root}/.repos\n"
-                "       Run 'issue admin init-project' to register this project.",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                _errors.PreconditionError(
+                    f"repo '{repo_name}' is not registered in "
+                    f"{store_root}/.repos; run 'issue admin init-project' "
+                    "to register this project",
+                    reason="unregistered-repo", repo=repo_name),
+                prog=PROG, json_mode=args.json_mode)
             return 1
 
         local_prefix_file = anchor / ".prefix"
         if local_prefix_file.is_file():
             local_prefix = local_prefix_file.read_text(encoding="utf-8").strip()
             if local_prefix and local_prefix != registry_prefix:
-                print(
-                    f"Error: prefix mismatch for repo '{repo_name}':\n"
-                    f"       registry ({store_root}/.repos): {registry_prefix}\n"
-                    f"       local ({local_prefix_file}): {local_prefix}",
-                    file=sys.stderr,
-                )
+                common.emit_error(
+                    _errors.PreconditionError(
+                        f"prefix mismatch for repo '{repo_name}': "
+                        f"registry ({store_root}/.repos) says "
+                        f"{registry_prefix}, local ({local_prefix_file}) "
+                        f"says {local_prefix}",
+                        reason="prefix-mismatch", repo=repo_name,
+                        registry=registry_prefix, local=local_prefix),
+                    prog=PROG, json_mode=args.json_mode)
                 return 1
 
         prefix = registry_prefix
@@ -443,10 +462,11 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
         # --- Legacy mode ---
         issues_dir = anchor
         if not issues_dir.is_dir():
-            print(
-                f"Error: issues directory not found at {issues_dir}",
-                file=sys.stderr,
-            )
+            common.emit_error(
+                _errors.PreconditionError(
+                    f"issues directory not found at {issues_dir}",
+                    reason="store-unresolvable"),
+                prog=PROG, json_mode=args.json_mode)
             return 1
         prefix_file = anchor / ".prefix"
         if prefix_file.is_file():
@@ -456,37 +476,40 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
 
     template = _find_template(store_root, prefix)
     if not template:
-        print(
-            "Error: ISSUE-TEMPLATE.md not found. Install issue-mgmt via "
-            "Homebrew or place a template under <store>/ or "
-            f"<store>/{prefix}/.",
-            file=sys.stderr,
-        )
+        common.emit_error(
+            _errors.PreconditionError(
+                "ISSUE-TEMPLATE.md not found. Install issue-mgmt via "
+                "Homebrew or place a template under <store>/ or "
+                f"<store>/{prefix}/.",
+                reason="missing-template"),
+            prog=PROG, json_mode=args.json_mode)
         return 1
 
     # --- Collect title/type/priority ---
     words = args.words
     if len(words) >= 3:
         title, type_, priority = words[0], words[1], words[2]
-        if not _validate(type_, VALID_TYPES, "type"):
+        if not _validate(type_, VALID_TYPES, "type", args.json_mode):
             return 1
-        if not _validate(priority, VALID_PRIORITIES, "priority"):
+        if not _validate(priority, VALID_PRIORITIES, "priority",
+                         args.json_mode):
             return 1
     elif len(words) == 0:
         title = input("Title: ")
         type_ = input("Type [bug/feature/chore/spike/decision]: ")
-        if not _validate(type_, VALID_TYPES, "type"):
+        if not _validate(type_, VALID_TYPES, "type", args.json_mode):
             return 1
         priority = input("Priority [high/medium/low]: ")
-        if not _validate(priority, VALID_PRIORITIES, "priority"):
+        if not _validate(priority, VALID_PRIORITIES, "priority",
+                         args.json_mode):
             return 1
     else:
-        print(
-            "Error: provide 0 or 3 positional arguments (title type "
-            "priority)\n"
-            f'Usage: {PROG} [--repo NAME] ["title" type priority]',
-            file=sys.stderr,
-        )
+        common.emit_error(
+            _errors.PreconditionError(
+                "provide 0 or 3 positional arguments (title type priority); "
+                f'usage: {PROG} [--repo NAME] ["title" type priority]',
+                reason="bad-positional-count"),
+            prog=PROG, json_mode=args.json_mode)
         return 1
 
     issue_id = _next_id(issues_dir, prefix)
@@ -517,7 +540,6 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
             )
 
     if store_root is not None and not no_autocommit_env:
-        import errors as _errors
         rel_file = f"{prefix}/{filename.name}"
         commit_paths = [rel_file, f"{prefix}/INDEX.md", "INDEX.md"]
         if args.json_mode:
@@ -529,14 +551,21 @@ def _run_inner(args, section_pairs, from_file_staged) -> int:
             ):
                 _write_and_reindex(suppress_commit=True)
         except concurrency.StoreCommitError as e:
-            print(e.format_stderr("issue create"), file=sys.stderr)
+            detail = e.git_error or e.message
+            recovery = (
+                "file is on disk; fix and rerun any mutation to recover"
+                if e.write_attempted else
+                "no changes were written; fix the store and retry"
+            )
+            common.emit_error(
+                _errors.PreconditionError(
+                    f"store commit failed: {detail}",
+                    reason="store-commit-failed", recovery=recovery),
+                prog=PROG, json_mode=args.json_mode)
             return _errors.EXIT_PRECONDITION
         except _errors.ContractError as e:
             # store-commit-lock timeout -> ConcurrentEdit (exit 3), etc.
-            print(
-                e.format_stderr("issue create", json_mode=args.json_mode),
-                file=sys.stderr,
-            )
+            common.emit_error(e, prog=PROG, json_mode=args.json_mode)
             return e.exit_code
     else:
         _write_and_reindex(suppress_commit=bool(no_autocommit_env))

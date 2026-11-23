@@ -320,6 +320,13 @@ is lock-free.
 | `issue admin selftest` | End-to-end functional smoke against a throwaway temp store |
 | `issue admin install-skills` | Install the Claude Code skills into `~/.claude/skills/` |
 
+Every admin verb whose blast radius exceeds a single issue file --
+`init-store`, `migrate`, `reindex`, `reap`, `snapshot`, `install-skills` --
+offers `--dry-run`: the preview emits the shape the real run would emit and
+writes nothing (no file write, no commit, no lock). `admin snapshot --dry-run`
+is the one to know: it names exactly the pending paths the real sweep would
+commit, before they become a commit.
+
 ### Exit codes
 
 Reads report emptiness through the exit code -- one rule per class, so a script
@@ -337,9 +344,15 @@ Two non-empty failures must not be read as a zero result: scoping to a
 `error=unknown-prefix`, naming the known set), and a store that cannot be
 resolved is a precondition failure (`1`, `reason=store-unresolvable`). Mutating
 verbs add the loser-side contract for write-time races -- `3` concurrent-edit,
-`4` lost-race, `5` stale-local-view, `7` not-claimable -- each carrying a
-`key=value` stderr line that names the contended resource and the recovery
-parameters, and the same condition as one JSON object under `--json`.
+`4` lost-race, `5` stale-local-view, `7` not-claimable.
+
+Beyond the exit code itself, **every non-zero exit on every verb carries a
+machine-branchable payload**: a stable `key=value` stderr line naming the
+condition and its recovery parameters (`error=`, `reason=`, and the
+human-readable prose in `detail=`), and the same condition as a one-line JSON
+object on stderr under `--json`. That includes argument errors, precondition
+failures, and even the parser's own refusals -- so a script or agent branches
+on the payload instead of scraping prose, on verbs it has never called before.
 
 ### Projects are git repositories
 
